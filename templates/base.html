@@ -1,0 +1,49 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}English with Marry{% endblock %}</title>
+
+    <!-- Style CSS -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+
+<body class="d-flex flex-column min-vh-100">
+
+    <!-- Sticky Navbar -->
+    <nav class="navbar navbar-expand-md navbar-custom sticky-top py-3">
+        <div class="container max-w-5xl px-4 d-flex align-items-center justify-content-between">
+            <a class="navbar-brand m-0" href="{% url 'portfolio:home' %}">English with Marry</a>
+
+            <div class="d-flex align-items-center gap-4">
+                <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#about">About</a>
+                <a class="nav-link-custom d-none d-md-inline"
+                    href="{% url 'portfolio:home' %}#testimonials">Testimonials</a>
+                <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#contact">Contact</a>
+                <a href="#" class="btn-login fw-bold">Log in</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow-1">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-top py-4 mt-auto" style="border-color: var(--border-color) !important;">
+        <div
+            class="container max-w-5xl px-4 d-flex flex-column flex-md-row align-items-center justify-content-between gap-2">
+            <span class="font-serif text-sm fw-semibold">English with Marry</span>
+            <span class="text-xs text-muted" style="font-size: 0.75rem;">© 2026 · All rights reserved</span>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/main.js' %}"></script>
+</body>
+
+</html>
