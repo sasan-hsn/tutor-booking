@@ -1,5 +1,6 @@
-from django.db import models
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db import models, transaction
 
 
 class RegularAvailability(models.Model):
@@ -188,4 +189,85 @@ class AvailabilitySlot(models.Model):
             f'{self.teacher} | {self.date} |'
             f" {self.start_time.strftime('%H:%M')} -"
             f" {self.end_time.strftime('%H:%M')} | {status}"
+        )
+
+
+
+class Booking(models.Model):
+    class LessonType(models.TextChoices):
+        TRIAL = 'trial', 'Trial Lesson'
+        REGULAR = 'regular', 'Regular Lesson'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        CONFIRMED = 'confirmed', 'Confirmed'
+        COMPLETED = 'completed', 'Completed'
+        CANCELLED = 'cancelled', 'Cancelled'
+        DISPUTING = 'disputing', 'Disputing'
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='bookings',
+    )
+    slot = models.OneToOneField(
+        'booking.AvailabilitySlot',
+        on_delete=models.CASCADE,
+        related_name='booking',
+    )
+    lesson_type = models.CharField(
+        max_length=10,
+        choices=LessonType.choices,
+        default=LessonType.REGULAR,
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Booking'
+        verbose_name_plural = 'Bookings'
+
+    def clean(self):
+        super().clean()
+
+        if hasattr(self, 'slot') and self.slot:
+            # 1. Prevent a teacher from booking their own availability slot
+            if (
+                hasattr(self, 'student')
+                and self.student
+                and self.slot.teacher.user == self.student
+            ):
+                raise ValidationError({
+                    'student': 'A teacher cannot book their own slot.'
+                })
+
+            # 2. Prevent creating a new booking on an already booked slot
+            if self.slot.is_booked and not self.pk:
+                raise ValidationError({'slot': 'This slot is already booked.'})
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+        # Sync slot status based on booking lifecycle
+        if is_new and self.status != self.Status.CANCELLED:
+            self.slot.is_booked = True
+            self.slot.save(update_fields=['is_booked'])
+        elif not is_new and self.status == self.Status.CANCELLED:
+            if self.slot.is_booked:
+                self.slot.is_booked = False
+                self.slot.save(update_fields=['is_booked'])
+
+    def __str__(self):
+        return (
+            f'Booking #{self.id} | {self.student} |'
+            f' {self.get_lesson_type_display()} | {self.get_status_display()}'
         )
