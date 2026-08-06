@@ -14,6 +14,7 @@ class TeacherProfile(models.Model):
     intro_video_url = models.URLField(max_length=500, blank=True, default='')
 
     lesson_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    lesson_duration_minutes = models.PositiveSmallIntegerField(default=50)
     offers_trial = models.BooleanField(default=True)
     trial_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
