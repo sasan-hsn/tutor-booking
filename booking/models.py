@@ -290,13 +290,15 @@ class Review(models.Model):
     def clean(self):
         super().clean()
 
-        # Ensure the booking is completed before allowing a review
-        if self.booking.status != Booking.Status.COMPLETED:
-            raise ValidationError('You can only review completed bookings.')
+        if hasattr(self, 'booking') and self.booking:
+            # Ensure the booking is completed before allowing a review
+            if self.booking.status != Booking.Status.COMPLETED:
+                raise ValidationError('You can only review completed bookings.')
 
-        # Ensure the student writing the review is the one who made the booking
-        if self.booking.student != self.student:
-            raise ValidationError('You can only review your own bookings.')
+            # Ensure the student writing the review is the one who made the booking
+            if hasattr(self, 'student') and self.student:
+                if self.booking.student != self.student:
+                    raise ValidationError('You can only review your own bookings.')
 
     def save(self, *args, **kwargs):
         self.full_clean()  
