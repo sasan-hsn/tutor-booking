@@ -23,7 +23,7 @@
                 <a class="nav-link-custom d-none d-md-inline"
                     href="{% url 'portfolio:home' %}#testimonials">Testimonials</a>
                 <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#contact">Contact</a>
-                <a href="#" class="btn-login fw-bold">Log in</a>
+                <a href={% url 'accounts:login' %} class="btn-login fw-bold">Log in</a>
             </div>
         </div>
     </nav>
