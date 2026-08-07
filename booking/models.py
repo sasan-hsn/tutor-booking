@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models, transaction
 
 
@@ -271,3 +272,35 @@ class Booking(models.Model):
             f'Booking #{self.id} | {self.student} |'
             f' {self.get_lesson_type_display()} | {self.get_status_display()}'
         )
+
+
+
+class Review(models.Model):
+    student = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='reviews',)
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
+    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    comment = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Review'
+        verbose_name_plural = 'Reviews'
+
+    def clean(self):
+        super().clean()
+
+        # Ensure the booking is completed before allowing a review
+        if self.booking.status != Booking.Status.COMPLETED:
+            raise ValidationError('You can only review completed bookings.')
+
+        # Ensure the student writing the review is the one who made the booking
+        if self.booking.student != self.student:
+            raise ValidationError('You can only review your own bookings.')
+
+    def save(self, *args, **kwargs):
+        self.full_clean()  
+        super().save(*args, **kwargs)        
+
+    def __str__(self):
+        return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'        
