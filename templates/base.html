@@ -23,7 +23,14 @@
                 <a class="nav-link-custom d-none d-md-inline"
                     href="{% url 'portfolio:home' %}#testimonials">Testimonials</a>
                 <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#contact">Contact</a>
-                <a href={% url 'accounts:login' %} class="btn-login fw-bold">Log in</a>
+                {% if user.is_authenticated %}
+                <form method="post" action="{% url 'accounts:logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-login fw-bold">Log out</button>
+                </form>
+                {% else %}
+                <a href="{% url 'accounts:login' %}" class="btn-login fw-bold">Log in</a>
+                {% endif %}
             </div>
         </div>
     </nav>
