@@ -10,7 +10,7 @@ from django.db import IntegrityError
 class ReviewModelTests(TestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(username='testteacher', password='test123', role=User.Role.TEACHER )
-        self.teacher = TeacherProfile.objects.create(user=self.teacher_user)
+        self.teacher = self.teacher_user.teacher_profile
 
         self.student_user = User.objects.create_user(username='teststudent', password='test123', role=User.Role.STUDENT)
 

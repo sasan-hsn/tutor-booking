@@ -12,7 +12,7 @@ class BookingModelTests(TestCase):
         self.teacher_user = User.objects.create_user(
             username='testteacher', password='test123', role=User.Role.TEACHER
         )
-        self.teacher = TeacherProfile.objects.create(user=self.teacher_user)
+        self.teacher = self.teacher_user.teacher_profile
 
         # Create student user
         self.student_user = User.objects.create_user(
