@@ -1,4 +1,5 @@
 from django.contrib.auth.forms import AuthenticationForm
+from django.views.decorators.http import require_POST
 from django.shortcuts import render
 from django.contrib.auth import login, logout
 from django.shortcuts import redirect
@@ -33,6 +34,7 @@ def user_login(request):
     return render(request, 'accounts/login.html', {'form': form})
 
 
+@require_POST
 def user_logout(request):
     logout(request)
-    return redirect('/')  # Redirect to home page after logout  
+    return redirect('/')  
