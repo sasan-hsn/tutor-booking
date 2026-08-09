@@ -12,6 +12,7 @@ class TeacherProfile(models.Model):
     bio = models.TextField(blank=True, default='')
     teaching_philosophy = models.TextField(blank=True, default='')
     intro_video_url = models.URLField(max_length=500, blank=True, default='')
+    headline = models.CharField(max_length=255, blank=True, default='')
 
     lesson_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     lesson_duration_minutes = models.PositiveSmallIntegerField(default=50)

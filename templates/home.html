@@ -1,7 +1,183 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
+{% load static %}
 
-{% block title %}English with Marry{% endblock %}
+{% block title %}
+{% if teacher %}{{ teacher.user.get_full_name|default:teacher.user.username }} - Tutor Portfolio{% else %}Home - Tutor
+Portfolio{% endif %}
+{% endblock %}
 
 {% block content %}
-<h1>Hello World!</h1>
+{% if teacher %}
+
+<!-- 1. Hero Section -->
+<section class="hero-section">
+    <div class="container max-w-5xl px-4">
+        <div class="row align-items-center g-5">
+
+            <!-- Headline, Subtext, CTA -->
+            <div class="col-md-6 text-center text-md-start">
+
+                <!-- Headline: fixed two-tone text (not from DB) -->
+                <h1 class="hero-title mb-4">
+                    Learn English<br>
+                    <span class="highlight">with Marry</span>
+                </h1>
+
+                <!-- Subtext: now pulled from teacher.headline field -->
+                <p class="hero-bio mb-4">
+                    {{ hero_subtext }}
+                </p>
+
+                <!-- CTA -->
+                <div>
+                    <!-- TODO: #18 auth-aware routing -->
+                    <a href="#" class="btn-accent shadow-sm">
+                        Book a Trial Lesson <span class="btn-arrow">&rarr;</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Teacher photo with decorative offset layer -->
+            <div class="col-md-6">
+                <div class="hero-image-wrapper">
+                    <img src="{% static 'images/hero-piture.png' %}"
+                        alt="{{ teacher.user.get_full_name|default:'Teacher' }}, English tutor" class="hero-image">
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- 2. About & Video Section (#about) -->
+<section id="about" class="section-padding border-top">
+    <div class="container max-w-5xl px-4">
+        <div class="row align-items-center g-5">
+
+            <!-- About text -->
+            <div class="col-md-6">
+                <h2 class="section-title">About Me</h2>
+                <p>{{ teacher.bio }}</p>
+            </div>
+
+            <!-- Intro video -->
+            <div class="col-md-6">
+                {% if teacher.intro_video_url %}
+                <div class="video-wrapper">
+                    <iframe src="{{ teacher.intro_video_url }}" title="Intro video"
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen></iframe>
+                </div>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</section>
+
+
+<!-- 4. Certificates Section -->
+<section class="section-padding border-top">
+    <div class="container max-w-5xl px-4">
+
+
+        <div class="row g-5 mt-2 align-items-center">
+            <!-- Philosophy: two-thirds -->
+
+            <div class="col-md-8">
+                <h2 class="section-title">Teaching Philosophy</h2>
+                {% if teacher.teaching_philosophy %}
+                <p class="lead">{{ teacher.teaching_philosophy }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Certificates: one-third, stacked vertically -->
+            <div class="col-md-4">
+                <div class="cert-card p-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h2 class="mb-0">Certificates</h2>
+                        <i class="bi bi-patch-check-fill cert-card-icon"></i>
+                    </div>
+
+                    <div class="d-flex flex-column gap-3">
+                        {% for cert in certificates %}
+                        {% if cert.credential_url %}
+                        <a href="{{ cert.credential_url }}" target="_blank" rel="noopener"
+                            class="cert-badge text-decoration-none">
+                            <div class="cert-icon"><i class="bi bi-award"></i></div>
+                            <div>
+                                <h6 class="mb-0">{{ cert.title }}</h6>
+                                <p class="text-muted mb-0 small">{{ cert.issued_by }}</p>
+                                {% if cert.issue_date %}
+                                <p class="text-muted mb-0 small">{{ cert.issue_date|date:'Y' }}</p>
+                                {% endif %}
+                            </div>
+                        </a>
+                        {% else %}
+                        <div class="cert-badge">
+                            <div class="cert-icon"><i class="bi bi-award"></i></div>
+                            <div>
+                                <h6 class="mb-0">{{ cert.title }}</h6>
+                                <p class="text-muted mb-0 small">{{ cert.issued_by }}</p>
+                                {% if cert.issue_date %}
+                                <p class="text-muted mb-0 small">{{ cert.issue_date|date:'Y' }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% empty %}
+                        <p class="text-muted">No certificates uploaded yet.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 5. Rates & Pricing Section -->
+<section class="section-padding border-top pricing-section">
+    <div class="container max-w-5xl px-4">
+        <h2 class="section-title">Lesson Rate</h2>
+
+        <div class="row justify-content-center">
+            <div class="col-md-5">
+                <div class="pricing-card p-4">
+                    <h4>PRIVATE SESSIONS</h4>
+                    <span class="pricing-amount">${{ teacher.lesson_price }}</span>
+                    <span> / {{ teacher.lesson_duration_minutes }} min</span>
+
+                    {% if teacher.offers_trial %}
+                    <p class="mt-2 mb-3">
+                        {% if teacher.trial_price %}
+                        Trial session: ${{ teacher.trial_price }}
+                        {% else %}
+                        First trial session free
+                        {% endif %}
+                    </p>
+                    {% endif %}
+
+                    <ul class="list-unstyled mt-3 mb-4">
+                        <li><i class="bi bi-check-circle-fill me-2"></i>1-on-1 Lessons</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>All Levels</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>Flexible Scheduling</li>
+                        <li><i class="bi bi-check-circle-fill me-2"></i>Personalized Feedback</li>
+                    </ul>
+
+                    <!-- TODO: #18 auth-aware routing -->
+                    <a href="#" class="btn-accent">Get Started</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% else %}
+<!-- Empty state: no teacher profile created yet -->
+<div class="container max-w-5xl px-4 py-5 text-center">
+    <h2>Teacher Profile Coming Soon</h2>
+    <p class="text-muted">No teacher profile is currently available.</p>
+</div>
+{% endif %}
 {% endblock %}
