@@ -428,3 +428,13 @@ h6,
     justify-content: center;
     margin-bottom: 0.75rem;
 }
+
+
+.review-avatar {
+    width: 40px;
+    height: 40px;
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+    font-size: 0.9rem;
+    border: 2px solid var(--accent-amber);
+}
