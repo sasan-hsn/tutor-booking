@@ -136,6 +136,48 @@ Portfolio{% endif %}
     </div>
 </section>
 
+
+<!-- Testimonials Section -->
+<section class="section-padding border-top">
+    <div class="container max-w-5xl px-4">
+        <h2 class="section-title">What Students Say</h2>
+
+        <div class="row g-4">
+            {% for review in reviews %}
+            <div class="col-md-4">
+                <div class="glass-card h-100 p-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <div
+                                class="review-avatar d-inline-flex align-items-center justify-content-center rounded-circle">
+                                <span class="fw-bold"></span>
+                            </div>
+                            <p class="mb-0 fw-bold">{{ review.student.get_full_name|default:review.student.username }}
+                            </p>
+                        </div>
+
+                        <div>
+                            {% for filled in review.star_range %}
+                            {% if filled %}
+                            <i class="bi bi-star-fill" style="color: var(--accent-amber);"></i>
+                            {% else %}
+                            <i class="bi bi-star" style="color: var(--accent-amber);"></i>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <p class="mb-0">{{ review.comment }}</p>
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-muted">No reviews yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+
 <!-- 5. Rates & Pricing Section -->
 <section class="section-padding border-top pricing-section">
     <div class="container max-w-5xl px-4">
