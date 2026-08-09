@@ -16,13 +16,14 @@
     <!-- Sticky Navbar -->
     <nav class="navbar navbar-expand-md navbar-custom sticky-top py-3">
         <div class="container max-w-5xl px-4 d-flex align-items-center justify-content-between">
-            <a class="navbar-brand m-0" href="{% url 'portfolio:home' %}">English with Marry</a>
+            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">English with Marry</a>
 
             <div class="d-flex align-items-center gap-4">
-                <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#about">About</a>
+                <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:landing_page' %}#about">About</a>
                 <a class="nav-link-custom d-none d-md-inline"
-                    href="{% url 'portfolio:home' %}#testimonials">Testimonials</a>
-                <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:home' %}#contact">Contact</a>
+                    href="{% url 'portfolio:landing_page' %}#testimonials">Testimonials</a>
+                <a class="nav-link-custom d-none d-md-inline"
+                    href="{% url 'portfolio:landing_page' %}#contact">Contact</a>
                 {% if user.is_authenticated %}
                 <form method="post" action="{% url 'accounts:logout' %}">
                     {% csrf_token %}
