@@ -1,4 +1,5 @@
 from django.contrib.auth.forms import AuthenticationForm
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from django.shortcuts import render
 from django.contrib.auth import login, logout
@@ -20,18 +21,24 @@ def student_signup(request):
 
 
 def user_login(request):
+    next_url = request.POST.get('next') or request.GET.get('next')
+
     if request.method == 'POST':
         form = AuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+
+            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                return redirect(next_url)
+
             if user.role == User.Role.TEACHER:
                 return redirect('/')  # TODO: replace with teacher_dashboard when built
             else:
                 return redirect('/')  # TODO: replace with student_dashboard when built
     else:
         form = AuthenticationForm()
-    return render(request, 'accounts/login.html', {'form': form})
+    return render(request, 'accounts/login.html', {'form': form, 'next': next_url})
 
 
 @require_POST
