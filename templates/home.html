@@ -30,10 +30,16 @@ Portfolio{% endif %}
 
                 <!-- CTA -->
                 <div>
-                    <!-- TODO: #18 auth-aware routing -->
+                    {% if user.is_authenticated %}
+                    <!-- TODO: #18 replace with booking:calendar URL when Milestone 5 is built -->
                     <a href="#" class="btn-accent shadow-sm">
-                        Book a Trial Lesson <span class="btn-arrow">&rarr;</span>
+                        Book Now <span class="btn-arrow">&rarr;</span>
                     </a>
+                    {% else %}
+                    <a href="{% url 'accounts:login' %}?next=/" class="btn-accent shadow-sm">
+                        Book Now <span class="btn-arrow">&rarr;</span>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -207,8 +213,16 @@ Portfolio{% endif %}
                         <li><i class="bi bi-check-circle-fill me-2"></i>Personalized Feedback</li>
                     </ul>
 
-                    <!-- TODO: #18 auth-aware routing -->
-                    <a href="#" class="btn-accent">Get Started</a>
+                    {% if user.is_authenticated %}
+                    <!-- TODO: #18 replace with booking:calendar URL when Milestone 5 is built -->
+                    <a href="#" class="btn-accent shadow-sm">
+                        Get Started <span class="btn-arrow">&rarr;</span>
+                    </a>
+                    {% else %}
+                    <a href="{% url 'accounts:login' %}?next=/" class="btn-accent shadow-sm">
+                        Get Started <span class="btn-arrow">&rarr;</span>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
