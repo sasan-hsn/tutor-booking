@@ -1,0 +1,61 @@
+{% extends "dashboard_base.html" %}
+
+{% block sidebar_links %}
+<a href="{% url 'booking:student_dashboard' %}" class="sidebar-link active">
+    <i class="bi bi-grid"></i> Dashboard
+</a>
+<a href="#" class="sidebar-link">
+    <i class="bi bi-calendar3"></i> Calendar
+</a>
+{% endblock %}
+
+{% block page_content %}
+<h2 class="mb-3">My Lessons</h2>
+
+<div class="lessons-row">
+    <div class="lessons-actions">
+        <a href="#" class="btn-minimal">
+            <i class="bi bi-plus-lg"></i> Book Now
+        </a>
+        <a href="#" class="btn-minimal">
+            <i class="bi bi-calendar3"></i> Calendar
+        </a>
+    </div>
+
+    {% if upcoming_bookings %}
+    <div class="lesson-cards-wrapper">
+        <button type="button" class="scroll-arrow scroll-arrow-left" aria-label="Scroll left">
+            <i class="bi bi-chevron-left"></i>
+        </button>
+        <div class="lesson-cards-scroll" id="lessonCardsScroll">
+            {% for booking in upcoming_bookings %}
+            <div class="lesson-card">
+                <div class="lesson-card-date">
+                    <span class="lesson-card-month">{{ booking.slot.date|date:"M" }}</span>
+                    <span class="lesson-card-day">{{ booking.slot.date|date:"d" }}</span>
+                    <span class="lesson-card-weekday">{{ booking.slot.date|date:"D" }}</span>
+                </div>
+                <div class="lesson-card-body">
+                    <span class="lesson-card-time">
+                        {{ booking.slot.start_time|time:"H:i" }} – {{ booking.slot.end_time|time:"H:i" }}
+                    </span>
+                    <span class="lesson-card-teacher">{{ booking.slot.teacher.user.get_full_name }}</span>
+                    <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
+                </div>
+                <div class="lesson-card-avatar">
+                    <span class="avatar-initial">{{ booking.slot.teacher.user.first_name|first|upper }}</span>
+                </div>
+            </div>
+            {% endfor %}
+            <button type="button" class="scroll-arrow scroll-arrow-right" aria-label="Scroll right">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+        {% else %}
+        <div class="empty-state flex-grow-1">
+            <p>You don't have any upcoming lessons.</p>
+            <a href="#" class="btn-accent">Book a Lesson</a>
+        </div>
+        {% endif %}
+    </div>
+    {% endblock %}
