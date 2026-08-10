@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="dashboard-wrapper">
+
+    <!-- Sidebar (desktop: fixed, mobile: off-canvas) -->
+    <aside class="dashboard-sidebar offcanvas-md offcanvas-start" tabindex="-1" id="sidebarOffcanvas">
+        <div class="offcanvas-header d-md-none">
+            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">English with Marry</a>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sidebarOffcanvas"
+                aria-label="Close"></button>
+        </div>
+
+        <div class="offcanvas-body d-flex flex-column">
+            <a class="navbar-brand m-0 d-none d-md-block mb-4" href="{% url 'portfolio:landing_page' %}">English with
+                Marry</a>
+
+            <nav class="sidebar-nav flex-grow-1">
+                {% block sidebar_links %}
+                {% endblock %}
+            </nav>
+        </div>
+    </aside>
+
+    <!-- Main column: top bar + page content -->
+    <div class="dashboard-main">
+
+        <!-- Top bar -->
+        <header class="dashboard-topbar d-flex align-items-center justify-content-between">
+            <button class="btn d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas"
+                aria-controls="sidebarOffcanvas" aria-label="Open menu">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+
+            <div></div>
+
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-icon" type="button" aria-label="Notifications">
+                    <i class="bi bi-bell"></i>
+                </button>
+
+                <div class="dropdown">
+                    <button class="btn dropdown-toggle d-flex align-items-center gap-2" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="avatar-initial">{{ user.first_name|first|upper }}</span>
+                        <span class="d-none d-md-inline">{{ user.first_name }}</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <form method="post" action="{% url 'accounts:logout' %}" class="px-3 py-1">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-logout-link">Log out</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+
+        <!-- Page content -->
+        <main class="dashboard-content">
+            {% block page_content %}
+            {% endblock %}
+        </main>
+
+    </div>
+</div>
+{% endblock %}

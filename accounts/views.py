@@ -38,7 +38,7 @@ def user_login(request):
                 return redirect('/')  # TODO: replace with student_dashboard when built
     else:
         form = AuthenticationForm()
-    return render(request, 'accounts/login.html', {'form': form, 'next': next_url})
+    return render(request, 'accounts/login.html', {'form': form, 'next': next_url or ''})
 
 
 @require_POST
