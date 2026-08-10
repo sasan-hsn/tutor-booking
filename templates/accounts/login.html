@@ -1,13 +1,13 @@
-{% extends "base.html" %}
+{% extends "landing_base.html" %}
 
 {% block title %}Log In{% endblock %}
 
-{% block content %}
+{% block page_content %}
 <div class="container max-w-5xl px-4 py-5">
     <h1>Log In</h1>
     <form method="post">
         {% csrf_token %}
-        <input type="hidden" name="next" value="{{ next }}">
+        <input type="hidden" name="next" value="{{ next|default:'' }}">
         {{ form.as_p }}
         <button type="submit" class="btn-login fw-bold">Log In</button>
     </form>
