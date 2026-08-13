@@ -131,13 +131,13 @@ def student_booking_week_ajax(request):
     })
 
 
-
 @student_required
 @require_POST
 def book_slot(request):
     slot_id = request.POST.get('slot_id')
     if not slot_id:
         return JsonResponse({'error': 'slot_id is required.'}, status=400)
+
     try:
         with transaction.atomic():
             slot = AvailabilitySlot.objects.select_for_update().get(pk=slot_id)
@@ -154,17 +154,19 @@ def book_slot(request):
                 status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
             ).exists()
 
-            lesson_type = (
-                Booking.LessonType.REGULAR if has_previous_lesson
-                else Booking.LessonType.TRIAL
-            )
+            if slot.teacher.offers_trial and not has_previous_lesson:
+                lesson_type = Booking.LessonType.TRIAL
+                price = slot.teacher.trial_price 
+            else:
+                lesson_type = Booking.LessonType.REGULAR
+                price = slot.teacher.lesson_price
 
             booking = Booking.objects.create(
                 student=request.user,
                 slot=slot,
                 lesson_type=lesson_type,
+                price=price,
             )
-            booking.save()
 
     except AvailabilitySlot.DoesNotExist:
         return JsonResponse({'error': 'Slot not found.'}, status=404)
@@ -175,4 +177,5 @@ def book_slot(request):
         'success': True,
         'booking_id': booking.id,
         'lesson_type': booking.get_lesson_type_display(),
+        'price': str(booking.price) if booking.price is not None else 'Free',
     })        
