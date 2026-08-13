@@ -80,5 +80,6 @@
 {% block extra_js %}
 <script>
     window.bookingWeekAjaxUrl = "{% url 'booking:student_booking_week_ajax' %}";
+    window.bookSlotUrl = "{% url 'booking:book_slot' %}";
 </script>
 {% endblock %}
