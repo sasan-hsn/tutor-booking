@@ -101,6 +101,7 @@ function initBookingModal() {
 
     const modalEl = document.getElementById('confirmBookingModal');
     const modal = new bootstrap.Modal(modalEl);
+    const confirmBtn = document.getElementById('confirmBookingBtn');
 
     const teacherName = dayPicker.dataset.teacherName;
     const teacherInitial = dayPicker.dataset.teacherInitial;
@@ -111,15 +112,48 @@ function initBookingModal() {
 
         document.getElementById('modalTeacherAvatar').textContent = teacherInitial;
         document.getElementById('modalTeacherName').textContent = teacherName;
-        // it should change dynamically based on the slot type (issue #23), but for now we can just set it to "Regular Lesson"
-        document.getElementById('modalLessonTypeBadge').textContent = 'Regular Lesson';
         document.getElementById('modalLessonDate').textContent = slotBtn.dataset.weekday;
         document.getElementById('modalLessonTime').textContent =
             `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
 
-        document.getElementById('confirmBookingBtn').dataset.slotId = slotBtn.dataset.slotId;
+        confirmBtn.dataset.slotId = slotBtn.dataset.slotId;
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Next';
 
         modal.show();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        const slotId = confirmBtn.dataset.slotId;
+        if (!slotId) return;
+
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Booking...';
+
+        try {
+            const response = await csrfFetch(window.bookSlotUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `slot_id=${encodeURIComponent(slotId)}`,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error || 'Something went wrong. Please try again.');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Next';
+                return;
+            }
+
+            modal.hide();
+            window.location.reload();
+
+        } catch (err) {
+            alert('Network error. Please try again.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Next';
+        }
     });
 }
 

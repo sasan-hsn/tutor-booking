@@ -1,9 +1,12 @@
 from datetime import date, timedelta
 from django.utils import timezone
+from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.shortcuts import render
 from accounts.decorators import student_required
 from django.template.loader import render_to_string
 from django.http import JsonResponse
+from django.views.decorators.http import require_POST
 
 from booking.models import Booking, AvailabilitySlot
 from portfolio.models import TeacherProfile
@@ -126,3 +129,50 @@ def student_booking_week_ajax(request):
         'next_week_start': (week_start + timedelta(days=7)).isoformat(),
         'can_go_prev': can_go_prev,
     })
+
+
+
+@student_required
+@require_POST
+def book_slot(request):
+    slot_id = request.POST.get('slot_id')
+    if not slot_id:
+        return JsonResponse({'error': 'slot_id is required.'}, status=400)
+    try:
+        with transaction.atomic():
+            slot = AvailabilitySlot.objects.select_for_update().get(pk=slot_id)
+
+            if slot.is_booked:
+                return JsonResponse({'error': 'This slot is already booked.'}, status=409)
+
+            if slot.teacher.user == request.user:
+                return JsonResponse({'error': 'You cannot book your own slot.'}, status=400)
+
+            has_previous_lesson = Booking.objects.filter(
+                student=request.user,
+                slot__teacher=slot.teacher,
+                status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+            ).exists()
+
+            lesson_type = (
+                Booking.LessonType.REGULAR if has_previous_lesson
+                else Booking.LessonType.TRIAL
+            )
+
+            booking = Booking.objects.create(
+                student=request.user,
+                slot=slot,
+                lesson_type=lesson_type,
+            )
+            booking.save()
+
+    except AvailabilitySlot.DoesNotExist:
+        return JsonResponse({'error': 'Slot not found.'}, status=404)
+    except ValidationError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'booking_id': booking.id,
+        'lesson_type': booking.get_lesson_type_display(),
+    })        
