@@ -823,3 +823,171 @@ h6,
 .scroll-arrow.is-hidden {
     display: none;
 }
+
+
+
+
+
+
+/* ===== Booking: Week Navigation ===== */
+
+.booking-week-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.week-nav-arrow {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-soft);
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.week-nav-arrow:hover:not(:disabled) {
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+    border-color: var(--primary-blue);
+}
+
+.week-nav-arrow:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.week-range-label {
+    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+    color: var(--text-main);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 0.4rem 1rem;
+    min-width: 200px;
+    text-align: center;
+}
+
+/* ===== Booking: Day Picker ===== */
+
+.day-picker {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+}
+
+.day-column {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 140px;
+}
+
+.day-column-empty {
+    opacity: 0.5;
+}
+
+.day-column-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.2;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--primary-blue-light);
+    width: 100%;
+}
+
+.day-column-weekday {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-main);
+    text-transform: uppercase;
+}
+
+.day-column-date {
+    font-size: 1.1rem;
+    font-weight: 800;
+    font-family: 'Outfit', sans-serif;
+    color: var(--primary-blue);
+}
+
+.day-column-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.day-column-no-slots {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding-top: 0.5rem;
+}
+
+.slot-pill {
+    width: 100%;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+}
+
+.slot-open {
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.slot-open:hover {
+    background-color: var(--primary-blue);
+    color: #fff;
+}
+
+.slot-disabled {
+    background-color: var(--bg-main);
+    color: var(--text-muted);
+    text-decoration: line-through;
+    border-color: var(--border-soft);
+}
+
+/* Mobile: day picker becomes horizontally scrollable instead of a 7-col grid */
+@media (max-width: 767px) {
+    .day-picker {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x proximity;
+        padding-bottom: 0.5rem;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .day-picker::-webkit-scrollbar {
+        display: none;
+    }
+
+    .day-column {
+        flex: 0 0 110px;
+        scroll-snap-align: start;
+    }
+
+    .booking-week-nav {
+        padding: 0 2.5rem;
+    }
+}
