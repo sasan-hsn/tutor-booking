@@ -1,0 +1,26 @@
+{% for day_info in week_data %}
+<div class="day-column {% if not day_info.slots %}day-column-empty{% endif %}">
+    <div class="day-column-header">
+        <span class="day-column-weekday">{{ day_info.day|date:"D" }}</span>
+        <span class="day-column-date">{{ day_info.day|date:"d" }}</span>
+    </div>
+
+    <div class="day-column-slots">
+        {% for slot in day_info.slots %}
+        {% if slot.is_booked %}
+        <div class="slot-pill slot-disabled">
+            {{ slot.start_time|time:"H:i" }} – {{ slot.end_time|time:"H:i" }}
+        </div>
+        {% else %}
+        <button type="button" class="slot-pill slot-open" data-slot-id="{{ slot.id }}"
+            data-date="{{ day_info.day|date:'Y-m-d' }}" data-weekday="{{ day_info.day|date:'D, M d' }}"
+            data-start="{{ slot.start_time|time:'H:i' }}" data-end="{{ slot.end_time|time:'H:i' }}">
+            {{ slot.start_time|time:"H:i" }} – {{ slot.end_time|time:"H:i" }}
+        </button>
+        {% endif %}
+        {% empty %}
+        <span class="day-column-no-slots">—</span>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}

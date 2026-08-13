@@ -30,13 +30,18 @@ Portfolio{% endif %}
 
                 <!-- CTA -->
                 <div>
-                    {% if user.is_authenticated %}
-                    <!-- TODO: #18 replace with booking:calendar URL when Milestone 5 is built -->
+                    {% if user.is_authenticated and user.role == 'teacher' %}
+                    <!-- TODO: #25 replace with booking:teacher_dashboard URL when built -->
                     <a href="#" class="btn-accent shadow-sm">
+                        Go to Dashboard <span class="btn-arrow">&rarr;</span>
+                    </a>
+                    {% elif user.is_authenticated %}
+                    <a href="{% url 'booking:student_booking' %}" class="btn-accent shadow-sm">
                         Book Now <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% else %}
-                    <a href="{% url 'accounts:login' %}?next=/" class="btn-accent shadow-sm">
+                    <a href="{% url 'accounts:login' %}?next={% url 'booking:student_booking' %}"
+                        class="btn-accent shadow-sm">
                         Book Now <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% endif %}
@@ -213,13 +218,18 @@ Portfolio{% endif %}
                         <li><i class="bi bi-check-circle-fill me-2"></i>Personalized Feedback</li>
                     </ul>
 
-                    {% if user.is_authenticated %}
-                    <!-- TODO: #18 replace with booking:calendar URL when Milestone 5 is built -->
+                    {% if user.is_authenticated and user.role == 'teacher' %}
+                    <!-- TODO: #25 replace with booking:teacher_dashboard URL when built -->
                     <a href="#" class="btn-accent shadow-sm">
+                        Go to Dashboard <span class="btn-arrow">&rarr;</span>
+                    </a>
+                    {% elif user.is_authenticated %}
+                    <a href="{% url 'booking:student_booking' %}" class="btn-accent shadow-sm">
                         Get Started <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% else %}
-                    <a href="{% url 'accounts:login' %}?next=/" class="btn-accent shadow-sm">
+                    <a href="{% url 'accounts:login' %}?next={% url 'booking:student_booking' %}"
+                        class="btn-accent shadow-sm">
                         Get Started <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% endif %}

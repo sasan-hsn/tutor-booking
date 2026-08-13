@@ -1,0 +1,84 @@
+{% extends "dashboard_base.html" %}
+
+{% block sidebar_links %}
+<a href="{% url 'booking:student_dashboard' %}"
+    class="sidebar-link {% if request.resolver_match.url_name == 'student_dashboard' %}active{% endif %}">
+    <i class="bi bi-grid"></i> Dashboard
+</a>
+<a href="{% url 'booking:student_booking' %}"
+    class="sidebar-link {% if request.resolver_match.url_name == 'student_booking' %}active{% endif %}">
+    <i class="bi bi-calendar-plus"></i> Book a Lesson
+</a>
+<a href="#" class="sidebar-link">
+    <i class="bi bi-calendar3"></i> Calendar
+</a>
+{% endblock %}
+
+{% block page_content %}
+<h2 class="mb-3">Book a Lesson</h2>
+
+<div class="booking-week-nav">
+    <button type="button" class="week-nav-arrow" id="weekPrevBtn" data-week-start="{{ prev_week_start|date:'Y-m-d' }}"
+        {% if not can_go_prev %}disabled{% endif %} aria-label="Previous week">
+        <i class="bi bi-chevron-left"></i>
+    </button>
+
+    <span class="week-range-label" id="weekRangeLabel">
+        {{ week_start|date:"M d" }} – {{ week_data.6.day|date:"M d, Y" }}
+    </span>
+
+    <button type="button" class="week-nav-arrow" id="weekNextBtn" data-week-start="{{ next_week_start|date:'Y-m-d' }}"
+        aria-label="Next week">
+        <i class="bi bi-chevron-right"></i>
+    </button>
+</div>
+
+
+<div class="day-picker" id="dayPicker" data-teacher-name="{{ teacher.user.get_full_name }}"
+    data-teacher-initial="{{ teacher.user.first_name|first|upper }}">
+    {% include "partials/_day_picker_columns.html" %}
+</div>
+
+<div class="modal fade" id="confirmBookingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="avatar-initial" id="modalTeacherAvatar"></span>
+                    <div>
+                        <div class="fw-bold" id="modalTeacherName"></div>
+                        <span class="badge-lesson-type" id="modalLessonTypeBadge"></span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Lesson date</th>
+                            <th>Lesson time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td id="modalLessonDate"></td>
+                            <td id="modalLessonTime"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-minimal" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn-accent" id="confirmBookingBtn">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.bookingWeekAjaxUrl = "{% url 'booking:student_booking_week_ajax' %}";
+</script>
+{% endblock %}
