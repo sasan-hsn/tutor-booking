@@ -14,12 +14,13 @@
 <div class="lessons-header">
     <h2 class="mb-0">My Lessons</h2>
     <div class="lessons-actions-inline">
-        <a href="#" class="btn-minimal position-relative">
+        <button type="button" class="btn-minimal position-relative" data-bs-toggle="modal"
+            data-bs-target="#lessonRequestsModal" id="openLessonRequestsBtn">
             <i class="bi bi-calendar-check"></i> Lesson Requests
             {% if lesson_requests_count > 0 %}
             <span class="badge-count">{{ lesson_requests_count }}</span>
             {% endif %}
-        </a>
+        </button>
         <a href="#" class="btn-minimal">
             <i class="bi bi-people"></i> Student Management
         </a>
@@ -28,5 +29,20 @@
 
 <div class="lessons-row">
     {% include 'partials/_lesson_cards.html' %}
+</div>
+
+<div class="modal fade" id="lessonRequestsModal" data-url="{% url 'booking:teacher_lesson_requests' %}"
+    data-respond-url="{% url 'booking:respond_to_booking' booking_id=0 %}" tabindex="-1"
+    aria-labelledby="lessonRequestsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="lessonRequestsModalLabel">Lesson Requests</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="lessonRequestsModalBody">
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

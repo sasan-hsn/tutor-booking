@@ -158,3 +158,91 @@ function initBookingModal() {
 }
 
 document.addEventListener('DOMContentLoaded', initBookingModal);
+
+
+
+function initLessonRequestsModal() {
+    const modalEl = document.getElementById('lessonRequestsModal');
+    if (!modalEl) return;
+
+    const modalBody = document.getElementById('lessonRequestsModalBody');
+    const url = modalEl.dataset.url;
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        fetch(url)
+            .then(response => response.text())
+            .then(html => { modalBody.innerHTML = html; })
+            .catch(() => {
+                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+            });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initLessonRequestsModal);
+
+
+function initLessonRequestsActions() {
+    const modalEl = document.getElementById('lessonRequestsModal');
+    if (!modalEl) return;
+
+    const modalBody = document.getElementById('lessonRequestsModalBody');
+    const respondUrlTemplate = modalEl.dataset.respondUrl;
+
+    let hasChanges = false;
+
+    modalBody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.btn-accept, .btn-decline');
+        if (!btn) return;
+
+        const isDecline = btn.classList.contains('btn-decline');
+        if (isDecline && !confirm('Are you sure you want to decline this lesson request?')) {
+            return;
+        }
+
+        const bookingId = btn.dataset.bookingId;
+        const action = isDecline ? 'decline' : 'accept';
+        const item = btn.closest('.request-item');
+        const url = respondUrlTemplate.replace('/0/', `/${bookingId}/`);
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `action=${action}`,
+            });
+
+            if (!response.ok) {
+                alert('Something went wrong. Please try again.');
+                btn.disabled = false;
+                return;
+            }
+
+            item.remove();
+            hasChanges = true;
+            const badge = document.querySelector('#openLessonRequestsBtn .badge-count');
+            if (badge) {
+                const newCount = parseInt(badge.textContent, 10) - 1;
+                if (newCount > 0) {
+                    badge.textContent = newCount;
+                } else {
+                    badge.remove();
+                }
+            }
+
+        } catch (err) {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initLessonRequestsActions);
