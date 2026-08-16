@@ -14,7 +14,7 @@ def student_signup(request):
         if form.is_valid():
             user = form.save()
             login(request, user)  
-            return redirect('/')  # TODO: replace with student_dashboard when built
+            return redirect('booking:student_dashboard')
     else:
         form = StudentSignUpForm()  
     return render(request, 'accounts/student_signup.html', {'form': form})
@@ -33,9 +33,9 @@ def user_login(request):
                 return redirect(next_url)
 
             if user.role == User.Role.TEACHER:
-                return redirect('/')  # TODO: replace with teacher_dashboard when built
+                return redirect('booking:teacher_dashboard') 
             else:
-                return redirect('/')  # TODO: replace with student_dashboard when built
+                return redirect('booking:student_dashboard')
     else:
         form = AuthenticationForm()
     return render(request, 'accounts/login.html', {'form': form, 'next': next_url or ''})
