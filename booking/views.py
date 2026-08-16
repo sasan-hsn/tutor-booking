@@ -8,6 +8,10 @@ from django.template.loader import render_to_string
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.shortcuts import get_object_or_404
+from django.contrib.auth import get_user_model
+from django.db.models import Q
+
+
 
 from booking.models import Booking, AvailabilitySlot
 from portfolio.models import TeacherProfile
@@ -261,3 +265,61 @@ def respond_to_booking(request, booking_id):
     booking.save()
 
     return JsonResponse({'success': True})
+
+
+
+@teacher_required
+def student_management(request):
+    User = get_user_model()
+
+    students = User.objects.filter(
+        bookings__slot__teacher__user=request.user,
+        bookings__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+    ).distinct()
+
+    now = timezone.localtime()
+    today = now.date()
+    current_time = now.time()
+
+    for student in students:
+
+        student_bookings = Booking.objects.filter(
+            student=student,
+            slot__teacher__user=request.user,
+        )
+
+        student.completed_count = student_bookings.filter(
+            status=Booking.Status.COMPLETED,
+        ).count() + student_bookings.filter(
+            status=Booking.Status.CONFIRMED,
+        ).filter(
+            Q(slot__date__lt=today) | Q(slot__date=today, slot__start_time__lt=current_time)
+        ).count()
+
+        student.upcoming_count = student_bookings.filter(
+            status=Booking.Status.CONFIRMED,
+        ).filter(
+            Q(slot__date__gt=today) | Q(slot__date=today, slot__start_time__gte=current_time)
+        ).count()
+
+        last_lesson = student_bookings.filter(
+            status__in=[Booking.Status.COMPLETED, Booking.Status.CONFIRMED],
+        ).filter(
+            Q(slot__date__lt=today) | Q(slot__date=today, slot__start_time__lt=current_time)
+        ).order_by('-slot__date', '-slot__start_time').first()
+
+        student.previous_date = last_lesson.slot.date if last_lesson else None
+
+        next_lesson = student_bookings.filter(
+            status=Booking.Status.CONFIRMED,
+        ).filter(
+            Q(slot__date__gt=today) | Q(slot__date=today, slot__start_time__gte=current_time)
+        ).order_by('slot__date', 'slot__start_time').first()
+
+        student.next_date = next_lesson.slot.date if next_lesson else None
+
+        student.display_name = student.get_full_name() or student.username
+
+    return render(request, 'teacher_student_management.html', {
+    'students': students,
+})
