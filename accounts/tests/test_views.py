@@ -43,8 +43,7 @@ class LoginViewTestCase(TestCase):
         })
         self.assertTrue(response.wsgi_request.user.is_authenticated)
         self.assertEqual(response.wsgi_request.user.role, User.Role.STUDENT)
-        # TODO: once student_dashboard exists, assert redirect target is student_dashboard
-        self.assertRedirects(response, '/')
+        self.assertRedirects(response, reverse('booking:student_dashboard'))
 
     def test_teacher_login_authenticates_and_redirects(self):
         response = self.client.post(reverse('accounts:login'), {
@@ -53,8 +52,7 @@ class LoginViewTestCase(TestCase):
         })
         self.assertTrue(response.wsgi_request.user.is_authenticated)
         self.assertEqual(response.wsgi_request.user.role, User.Role.TEACHER)
-        # TODO: once teacher_dashboard exists, assert redirect target is teacher_dashboard
-        self.assertRedirects(response, '/')
+        self.assertRedirects(response, reverse('booking:teacher_dashboard'))
 
     def test_invalid_credentials_not_authenticated(self):
         response = self.client.post(reverse('accounts:login'), {
