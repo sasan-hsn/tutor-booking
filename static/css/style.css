@@ -1058,3 +1058,48 @@ h6,
     color: var(--text-main);
     border-color: var(--text-muted);
 }
+
+/* ===== Student Roster Table (Teacher, #27) ===== */
+
+.student-roster-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--bg-card);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.student-roster-table th,
+.student-roster-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.student-roster-table th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 700;
+    background-color: var(--bg-main);
+}
+
+.student-roster-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.student-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.lesson-status-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}

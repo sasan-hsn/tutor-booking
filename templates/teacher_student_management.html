@@ -1,0 +1,54 @@
+{% extends "dashboard_base.html" %}
+
+{% block sidebar_links %}
+<a href="{% url 'booking:teacher_dashboard' %}"
+    class="sidebar-link {% if request.resolver_match.url_name == 'teacher_dashboard' %}active{% endif %}">
+    <i class="bi bi-grid"></i> Dashboard
+</a>
+<a href="#" class="sidebar-link">
+    <i class="bi bi-calendar3"></i> Calendar
+</a>
+{% endblock %}
+
+{% block page_content %}
+<h2 class="mb-3">Student Management</h2>
+
+{% if students %}
+<div class="table-responsive">
+    <table class="student-roster-table">
+        <thead>
+            <tr>
+                <th>Student</th>
+                <th>Lesson Status</th>
+                <th>Previous Lesson</th>
+                <th>Next Lesson</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for student in students %}
+            <tr>
+                <td>
+                    <div class="student-cell">
+                        <span class="avatar-initial">{{ student.display_name|first|upper }}</span>
+                        <span>{{ student.display_name }}</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="lesson-status-cell">
+                        <span>Completed: {{ student.completed_count }}</span>
+                        <span>Upcoming: {{ student.upcoming_count }}</span>
+                    </div>
+                </td>
+                <td>{{ student.previous_date|date:"M d, Y"|default:"—" }}</td>
+                <td>{{ student.next_date|date:"M d, Y"|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <p>You don't have any students yet.</p>
+</div>
+{% endif %}
+{% endblock %}
