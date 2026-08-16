@@ -7,14 +7,12 @@
     --text-main: #2F3E32;
     --text-muted: #5C6E61;
 
-    /* Trustworthy Sage Green */
-    --primary-blue: #638C76;
-    --primary-blue-hover: #4B6E5B;
+    --primary-blue: #4F7A62;
+    --primary-blue-hover: #3D6049;
     --primary-blue-light: #E8F0EA;
 
-    /* Warm Terracotta/Peach */
-    --accent-amber: #E2A676;
-    --accent-amber-hover: #CE8F5F;
+    --accent-amber: #DB8A52;
+    --accent-amber-hover: #C4713C;
 
     --bg-card: #FFFFFF;
     --border-soft: #E5E7EB;
@@ -621,41 +619,6 @@ h6,
     /* Chrome, Safari */
 }
 
-.scroll-arrow {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 5;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background-color: var(--bg-card);
-    border: 1px solid var(--border-soft);
-    box-shadow: var(--shadow-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-main);
-    transition: all 0.2s ease;
-}
-
-.scroll-arrow:hover {
-    background-color: var(--primary-blue);
-    color: #fff;
-    border-color: var(--primary-blue);
-}
-
-.scroll-arrow-left {
-    left: -6px;
-}
-
-.scroll-arrow-right {
-    right: -6px;
-}
-
-.scroll-arrow.is-hidden {
-    display: none;
-}
 
 .lesson-card {
     flex: 0 0 300px;
@@ -774,13 +737,23 @@ h6,
     border-color: var(--primary-blue);
 }
 
-.lesson-cards-wrapper {
-    position: relative;
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: center;
+.badge-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background-color: var(--accent-amber, #E07A5F);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    display: inline-block;
 }
+
 
 .scroll-arrow {
     position: absolute;
@@ -990,4 +963,19 @@ h6,
     .booking-week-nav {
         padding: 0 2.5rem;
     }
+}
+
+.lessons-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.lessons-actions-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
 }
