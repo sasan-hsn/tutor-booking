@@ -1,0 +1,25 @@
+{% if lesson_requests %}
+<div class="request-list">
+    {% for booking in lesson_requests %}
+    <div class="request-item" data-booking-id="{{ booking.id }}">
+        <div class="request-avatar">
+            <span class="avatar-initial">{{ booking.display_name|first|upper }}</span>
+        </div>
+        <div class="request-info">
+            <span class="request-name">{{ booking.display_name }}</span>
+            <span class="request-datetime">
+                {{ booking.slot.date|date:"M d" }}, {{ booking.time_range }}
+            </span>
+        </div>
+        <div class="request-actions">
+            <button type="button" class="btn-accept" data-booking-id="{{ booking.id }}">Accept</button>
+            <button type="button" class="btn-decline" data-booking-id="{{ booking.id }}">Decline</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No pending lesson requests.</p>
+</div>
+{% endif %}

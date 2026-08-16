@@ -7,6 +7,7 @@ from accounts.decorators import student_required, teacher_required
 from django.template.loader import render_to_string
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from django.shortcuts import get_object_or_404
 
 from booking.models import Booking, AvailabilitySlot
 from portfolio.models import TeacherProfile
@@ -218,4 +219,45 @@ def teacher_dashboard(request):
     return render(request, 'teacher_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
         'lesson_requests_count' : lesson_requests_count
-    })            
+    })
+
+
+@teacher_required
+def teacher_lesson_requests(request):
+
+    lesson_requests = Booking.objects.filter(
+        slot__teacher__user = request.user,
+        status = Booking.Status.PENDING,
+    ).select_related('slot', 'student').order_by('slot__date', 'slot__start_time')
+
+    for booking in lesson_requests:
+        booking.display_name = booking.student.get_full_name() or booking.student.username
+        booking.time_range = f'{booking.slot.start_time:%H:%M}–{booking.slot.end_time:%H:%M}'
+
+    return render(request, 'partials/_lesson_requests_list.html', {
+    'lesson_requests': lesson_requests,
+    })
+
+
+@teacher_required
+@require_POST
+def respond_to_booking(request, booking_id):
+    booking = get_object_or_404(
+        Booking,
+        id=booking_id,
+        slot__teacher__user=request.user,
+        status=Booking.Status.PENDING,
+    )
+
+    action = request.POST.get('action')
+
+    if action == 'accept':
+        booking.status = Booking.Status.CONFIRMED
+    elif action == 'decline':
+        booking.status = Booking.Status.CANCELLED
+    else:
+        return JsonResponse({'error': 'Invalid action.'}, status=400)
+
+    booking.save()
+
+    return JsonResponse({'success': True})
