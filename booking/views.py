@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.shortcuts import render
-from accounts.decorators import student_required
+from accounts.decorators import student_required, teacher_required
 from django.template.loader import render_to_string
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -31,6 +31,9 @@ def student_dashboard(request):
         .select_related('slot', 'slot__teacher', 'slot__teacher__user')
         .order_by('slot__date', 'slot__start_time')[:10]
     )
+
+    for booking in upcoming_bookings:
+        booking.display_name = booking.slot.teacher.user.get_full_name() or booking.slot.teacher.user.username
 
     return render(request, 'student_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
@@ -76,6 +79,8 @@ def student_booking(request):
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
+
+
 
     context = {
         'week_data': week_data,
@@ -178,4 +183,39 @@ def book_slot(request):
         'booking_id': booking.id,
         'lesson_type': booking.get_lesson_type_display(),
         'price': str(booking.price) if booking.price is not None else 'Free',
-    })        
+    })
+
+
+
+@teacher_required
+def teacher_dashboard(request):
+    now = timezone.localtime()
+
+    upcoming_bookings = (
+        Booking.objects
+        .filter(
+            slot__teacher__user = request.user,
+            status = Booking.Status.CONFIRMED,
+            slot__date__gte=now.date(),
+        )
+        .exclude(
+            slot__date=now.date(),
+            slot__start_time__lt=now.time(),
+        )
+        .select_related('slot', 'student')
+        .order_by('slot__date', 'slot__start_time')[:10]
+    )
+
+    for booking in upcoming_bookings:
+        booking.display_name = booking.student.get_full_name() or booking.student.username
+
+
+    lesson_requests_count = Booking.objects.filter(
+        slot__teacher__user = request.user,
+        status=Booking.Status.PENDING,
+    ).count()
+
+    return render(request, 'teacher_dashboard.html', {
+        'upcoming_bookings': upcoming_bookings,
+        'lesson_requests_count' : lesson_requests_count
+    })            
