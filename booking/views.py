@@ -13,7 +13,7 @@ from django.db.models import Q
 
 
 
-from booking.models import Booking, AvailabilitySlot
+from booking.models import Booking, AvailabilitySlot, RegularAvailability, WeeklyOverride
 from portfolio.models import TeacherProfile
 
 
@@ -323,3 +323,150 @@ def student_management(request):
     return render(request, 'teacher_student_management.html', {
     'students': students,
 })
+
+
+
+
+@teacher_required
+def teacher_regular_schedule(request):
+    availabilities = RegularAvailability.objects.filter(
+        teacher=request.user.teacher_profile,
+    ).order_by('day_of_week', 'start_time')
+
+    schedule = {str(day): [] for day in range(7)}
+
+    for availability in availabilities:
+        schedule[str(availability.day_of_week)].append({
+            'id': availability.id,
+            'start': availability.start_time.strftime('%H:%M'),
+            'end': availability.end_time.strftime('%H:%M'),
+        })
+
+    return JsonResponse(schedule)
+
+
+
+@teacher_required
+@require_POST
+def teacher_regular_schedule_add(request):
+    day_of_week = request.POST.get('day_of_week')
+    start_time = request.POST.get('start_time')
+    end_time = request.POST.get('end_time')
+
+    availability = RegularAvailability(
+        teacher=request.user.teacher_profile,
+        day_of_week=day_of_week,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    try:
+        availability.full_clean()
+        availability.save()
+    except ValidationError as e:
+        return JsonResponse({'error': e.message_dict}, status=400)
+
+    return JsonResponse({
+        'id': availability.id,
+        'day_of_week': availability.day_of_week,
+        'start': availability.start_time.strftime('%H:%M'),
+        'end': availability.end_time.strftime('%H:%M'),
+    })
+
+
+@teacher_required
+@require_POST
+def teacher_regular_schedule_delete(request, availability_id):
+    availability = get_object_or_404(
+        RegularAvailability,
+        id=availability_id,
+        teacher=request.user.teacher_profile,
+    )
+    availability.delete()
+    return JsonResponse({'success': True})
+
+
+
+@teacher_required
+def teacher_weekly_override(request):
+    today = timezone.localdate()
+    week_start = today - timedelta(days=today.weekday())
+    week_days = [week_start + timedelta(days=i) for i in range(7)]
+
+    teacher_profile = request.user.teacher_profile
+
+    regular_availabilities = RegularAvailability.objects.filter(teacher=teacher_profile)
+    regular_by_day = {}
+    for reg in regular_availabilities:
+        regular_by_day.setdefault(reg.day_of_week, []).append({
+            'start': reg.start_time.strftime('%H:%M'),
+            'end': reg.end_time.strftime('%H:%M'),
+        })
+
+    overrides = WeeklyOverride.objects.filter(
+        teacher=teacher_profile,
+        date__range=(week_start, week_start + timedelta(days=6)),
+        is_available=True,
+    ).order_by('date', 'start_time')
+
+    schedule = {}
+    for day in week_days:
+        schedule[day.isoformat()] = {
+            'is_past': day < today,
+            'regular_ranges': regular_by_day.get(day.weekday(), []),
+            'override_ranges': [],
+        }
+
+    for override in overrides:
+        schedule[override.date.isoformat()]['override_ranges'].append({
+            'id': override.id,
+            'start': override.start_time.strftime('%H:%M'),
+            'end': override.end_time.strftime('%H:%M'),
+        })
+
+    return JsonResponse(schedule)
+
+
+
+@teacher_required
+@require_POST
+def teacher_weekly_override_add(request):
+    date_str = request.POST.get('date')
+    start_time = request.POST.get('start_time')
+    end_time = request.POST.get('end_time')
+
+    override = WeeklyOverride(
+        teacher=request.user.teacher_profile,
+        date=date_str,
+        start_time=start_time,
+        end_time=end_time,
+        is_available=True,
+    )
+
+    try:
+        override.full_clean()
+        override.save()
+    except ValidationError as e:
+        return JsonResponse({'error': e.message_dict}, status=400)
+
+    return JsonResponse({
+        'id': override.id,
+        'date': override.date.isoformat(),
+        'start': override.start_time.strftime('%H:%M'),
+        'end': override.end_time.strftime('%H:%M'),
+    })
+
+
+
+@teacher_required
+@require_POST
+def teacher_weekly_override_delete(request, override_id):
+    override = get_object_or_404(
+        WeeklyOverride,
+        id=override_id,
+        teacher=request.user.teacher_profile,
+    )
+    override.delete()
+    return JsonResponse({'success': True})
+
+

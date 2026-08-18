@@ -1103,3 +1103,322 @@ h6,
     font-size: 0.85rem;
     color: var(--text-muted);
 }
+
+
+/* ===== Teacher Tools (Teacher, #28) ===== */
+
+.teacher-tools-section {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+}
+
+.teacher-tool-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    cursor: pointer;
+    max-width: 420px;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.teacher-tool-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.tool-icon {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+}
+
+.tool-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.tool-title {
+    font-weight: 700;
+    color: var(--text-main);
+    font-size: 1rem;
+}
+
+.tool-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* ===== Timetable Calendar Matrix (24-Hour) ===== */
+
+.timetable-container {
+    display: flex;
+    border: 1px solid #e5e7eb;
+    border-radius: var(--radius-md);
+    background-color: #ffffff;
+    overflow: visible;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.timetable-time-col {
+    width: 52px;
+    flex-shrink: 0;
+    border-right: 1px solid #e5e7eb;
+    background-color: #fafbfc;
+    display: flex;
+    flex-direction: column;
+}
+
+.timetable-time-header {
+    height: 38px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.timetable-time-slot {
+    height: 16px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: #94a3b8;
+    text-align: right;
+    padding-right: 6px;
+    line-height: 16px;
+    user-select: none;
+    border-bottom: 1px solid transparent;
+}
+
+.schedule-grid {
+    display: flex;
+    flex-grow: 1;
+    gap: 0;
+}
+
+.schedule-day-column {
+    position: relative;
+    flex: 1;
+    border-right: 1px solid #e5e7eb;
+    cursor: pointer;
+    text-align: center;
+    background-color: transparent;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
+.schedule-day-column:last-child {
+    border-right: none;
+}
+
+.schedule-day-label {
+    height: 38px;
+    line-height: 38px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: #334155;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f8fafc;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.schedule-hour-cell {
+    position: relative;
+    height: 16px;
+    border-bottom: 1px solid #f1f5f9;
+    background-color: transparent;
+    transition: filter 0.15s ease;
+}
+
+.schedule-hour-cell:last-child {
+    border-bottom: none;
+}
+
+.schedule-hour-cell.is-available {
+    background-color: #4ed2b7;
+    border-bottom-color: #3fba9f;
+}
+
+.schedule-hour-cell.is-override {
+    background-color: #818cf8;
+    border-bottom-color: #6366f1;
+}
+
+.schedule-day-column:not(.schedule-day-disabled):hover {
+    z-index: 10;
+    transform: translateY(-2px);
+    background: rgba(241, 245, 249, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12),
+        0 0 0 1.5px rgba(79, 122, 98, 0.4);
+    border-radius: 6px;
+}
+
+.schedule-day-column:not(.schedule-day-disabled):hover .schedule-day-label {
+    background: transparent;
+    color: var(--primary-blue);
+    font-weight: 800;
+}
+
+.schedule-day-column:not(.schedule-day-disabled):hover .schedule-hour-cell {
+    border-bottom-color: rgba(226, 232, 240, 0.6);
+}
+
+.schedule-day-column:not(.schedule-day-disabled) .schedule-hour-cell:hover::after {
+    content: attr(data-time);
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0f172a;
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 500;
+    padding: 3px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.schedule-day-column:not(.schedule-day-disabled) .schedule-hour-cell:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 95%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: #0f172a;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.schedule-day-column.schedule-day-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background-color: #f8fafc;
+}
+
+/* ===== Schedule Modal Day-Edit Panel (Regular & Override) ===== */
+
+#dayEditPanel,
+#overrideDayEditPanel {
+    padding-top: 0.5rem;
+}
+
+#dayEditTitle,
+#overrideDayEditTitle {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 0.75rem;
+}
+
+#dayEditExistingRanges,
+#overrideDayEditExistingRanges {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.existing-range {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 260px;
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+    border: 1px solid rgba(79, 122, 98, 0.2);
+    border-radius: var(--radius-md);
+    padding: 0.45rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.existing-range-regular {
+    background-color: var(--bg-main);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-soft);
+}
+
+.remove-range-btn {
+    background: transparent;
+    border: none;
+    color: #ef4444;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+
+.day-edit-add-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-soft);
+}
+
+.day-edit-add-row select {
+    width: 120px !important;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-soft);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.9rem;
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+.day-edit-add-row span {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+#dayEditAddBtn,
+#overrideDayEditAddBtn {
+    background: transparent;
+    border: none;
+    color: var(--primary-blue);
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.15s ease, color 0.15s ease;
+}
+
+#dayEditAddBtn:hover,
+#overrideDayEditAddBtn:hover {
+    color: var(--primary-blue-hover);
+    transform: scale(1.1);
+}
+
+#dayEditAddBtn:disabled,
+#overrideDayEditAddBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
