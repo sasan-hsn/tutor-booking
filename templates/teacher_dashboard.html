@@ -31,6 +31,19 @@
     {% include 'partials/_lesson_cards.html' %}
 </div>
 
+<div class="teacher-tools-section">
+    <h2 class="mb-3 mt-4">Teacher Tools</h2>
+    <div class="teacher-tool-card" data-bs-toggle="modal" data-bs-target="#scheduleModal">
+        <div class="tool-icon">
+            <i class="bi bi-calendar-week"></i>
+        </div>
+        <div class="tool-info">
+            <span class="tool-title">Scheduling & Availability</span>
+            <span class="tool-desc">Set or modify your teaching availability</span>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="lessonRequestsModal" data-url="{% url 'booking:teacher_lesson_requests' %}"
     data-respond-url="{% url 'booking:respond_to_booking' booking_id=0 %}" tabindex="-1"
     aria-labelledby="lessonRequestsModalLabel" aria-hidden="true">
@@ -41,6 +54,82 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="lessonRequestsModalBody">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="scheduleModal" data-url="{% url 'booking:teacher_regular_schedule' %}"
+    data-add-url="{% url 'booking:teacher_regular_schedule_add' %}"
+    data-delete-url="{% url 'booking:teacher_regular_schedule_delete' availability_id=0 %}"
+    data-override-url="{% url 'booking:teacher_weekly_override' %}"
+    data-override-add-url="{% url 'booking:teacher_weekly_override_add' %}"
+    data-override-delete-url="{% url 'booking:teacher_weekly_override_delete' override_id=0 %}" tabindex=" -1"
+    aria-labelledby="scheduleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduleModalLabel">Scheduling & Availability</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs" id="scheduleTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="regular-tab" data-bs-toggle="tab"
+                            data-bs-target="#regular-pane" type="button" role="tab">Regular Schedule</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="override-tab" data-bs-toggle="tab" data-bs-target="#override-pane"
+                            type="button" role="tab">This Week</button>
+                    </li>
+                </ul>
+                <div class="tab-content pt-3" id="scheduleTabContent">
+                    <div class="tab-pane fade show active" id="regular-pane" role="tabpanel">
+                        <div id="regularScheduleGrid">
+                            <p class="text-muted text-center py-3">Loading...</p>
+                        </div>
+                        <div id="dayEditPanel" class="d-none">
+                            <button type="button" class="btn-minimal mb-3" id="dayEditBackBtn">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                            <h6 id="dayEditTitle" class="mb-3"></h6>
+
+                            <div id="dayEditExistingRanges" class="mb-3"></div>
+
+                            <div class="day-edit-add-row">
+                                <select id="dayEditStartSelect" class="form-select form-select-sm"></select>
+                                <span>To</span>
+                                <select id="dayEditEndSelect" class="form-select form-select-sm"></select>
+                                <button type="button" class="btn-icon" id="dayEditAddBtn">
+                                    <i class="bi bi-plus-circle-fill"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="override-pane" role="tabpanel">
+                        <div id="overrideScheduleGrid">
+                            <p class="text-muted text-center py-3">Loading...</p>
+                        </div>
+
+                        <div id="overrideDayEditPanel" class="d-none">
+                            <button type="button" class="btn-minimal mb-3" id="overrideDayEditBackBtn">
+                                <i class="bi bi-arrow-left"></i> Back
+                            </button>
+                            <h6 id="overrideDayEditTitle" class="mb-3"></h6>
+
+                            <div id="overrideDayEditExistingRanges" class="mb-3"></div>
+
+                            <div class="day-edit-add-row">
+                                <select id="overrideDayEditStartSelect" class="form-select form-select-sm"></select>
+                                <span>To</span>
+                                <select id="overrideDayEditEndSelect" class="form-select form-select-sm"></select>
+                                <button type="button" class="btn-icon" id="overrideDayEditAddBtn">
+                                    <i class="bi bi-plus-circle-fill"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
