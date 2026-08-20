@@ -139,60 +139,6 @@ class WeeklyOverride(models.Model):
 
 
 
-class AvailabilitySlot(models.Model):
-    teacher = models.ForeignKey(
-        'portfolio.TeacherProfile',
-        on_delete=models.CASCADE,
-        related_name='availability_slots'
-    )
-    date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    is_booked = models.BooleanField(default=False)
-
-    class Meta:
-        ordering = ['date', 'start_time']
-        verbose_name = 'Availability Slot'
-        constraints = [
-            models.UniqueConstraint(
-                fields=['teacher', 'date', 'start_time'],
-                name='unique_teacher_slot_per_start_time',
-            )
-        ]
-
-    def clean(self):
-        super().clean()
-
-        if self.start_time >= self.end_time:
-            raise ValidationError({
-                'end_time': 'End time must be after start time.'
-            })
-
-        # Check for overlapping slots for the same teacher on the same date
-        overlapping_qs = AvailabilitySlot.objects.filter(
-            teacher=self.teacher,
-            date=self.date,
-            start_time__lt=self.end_time,
-            end_time__gt=self.start_time,
-        )
-        if self.pk:
-            overlapping_qs = overlapping_qs.exclude(pk=self.pk)
-
-        if overlapping_qs.exists():
-            raise ValidationError(
-                'This time slot overlaps with another availability slot on the same date.'
-            )
-
-    
-    def __str__(self):
-        status = 'Booked' if self.is_booked else 'Available'
-        return (
-            f'{self.teacher} | {self.date} |'
-            f" {self.start_time.strftime('%H:%M')} -"
-            f" {self.end_time.strftime('%H:%M')} | {status}"
-        )
-
-
 
 class Booking(models.Model):
     class LessonType(models.TextChoices):
@@ -206,26 +152,13 @@ class Booking(models.Model):
         CANCELLED = 'cancelled', 'Cancelled'
         DISPUTING = 'disputing', 'Disputing'
 
-    student = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='bookings',
-    )
-    slot = models.OneToOneField(
-        'booking.AvailabilitySlot',
-        on_delete=models.CASCADE,
-        related_name='booking',
-    )
-    lesson_type = models.CharField(
-        max_length=10,
-        choices=LessonType.choices,
-        default=LessonType.REGULAR,
-    )
-    status = models.CharField(
-        max_length=10,
-        choices=Status.choices,
-        default=Status.PENDING,
-    )
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings')
+    teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE, related_name='bookings')
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    lesson_type = models.CharField(max_length=10, choices=LessonType.choices, default=LessonType.REGULAR)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -234,39 +167,45 @@ class Booking(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Booking'
         verbose_name_plural = 'Bookings'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['teacher', 'date', 'start_time'],
+                condition=models.Q(status__in=['pending', 'confirmed']),
+                name='unique_active_teacher_datetime_booking',
+            )
+        ]
 
     def clean(self):
         super().clean()
 
-        if hasattr(self, 'slot') and self.slot:
-            # 1. Prevent a teacher from booking their own availability slot
-            if (
-                hasattr(self, 'student')
-                and self.student
-                and self.slot.teacher.user == self.student
-            ):
-                raise ValidationError({
-                    'student': 'A teacher cannot book their own slot.'
-                })
+        # 1. Basic time sanity check
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            raise ValidationError({'end_time': 'End time must be after start time.'})
 
-            # 2. Prevent creating a new booking on an already booked slot
-            if self.slot.is_booked and not self.pk:
-                raise ValidationError({'slot': 'This slot is already booked.'})
+        # 2. Prevent a teacher from booking their own availability
+        if self.teacher_id and self.student_id and self.teacher.user_id == self.student_id:
+            raise ValidationError({'student': 'A teacher cannot book their own availability.'})
 
-    @transaction.atomic
+        # 3. Prevent overlapping active bookings for the same teacher
+        if self.teacher_id and self.date and self.start_time and self.end_time:
+            overlapping = Booking.objects.filter(
+                teacher=self.teacher,
+                date=self.date,
+                status__in=[self.Status.PENDING, self.Status.CONFIRMED],
+                start_time__lt=self.end_time,
+                end_time__gt=self.start_time,
+            )
+            if self.pk:
+                overlapping = overlapping.exclude(pk=self.pk)
+
+            if overlapping.exists():
+                raise ValidationError('This time overlaps with another booking for this teacher.')
+
+
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
         self.full_clean()
         super().save(*args, **kwargs)
 
-        # Sync slot status based on booking lifecycle
-        if is_new and self.status != self.Status.CANCELLED:
-            self.slot.is_booked = True
-            self.slot.save(update_fields=['is_booked'])
-        elif not is_new and self.status == self.Status.CANCELLED:
-            if self.slot.is_booked:
-                self.slot.is_booked = False
-                self.slot.save(update_fields=['is_booked'])
 
     def __str__(self):
         return (

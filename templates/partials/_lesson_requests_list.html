@@ -8,7 +8,7 @@
         <div class="request-info">
             <span class="request-name">{{ booking.display_name }}</span>
             <span class="request-datetime">
-                {{ booking.slot.date|date:"M d" }}, {{ booking.time_range }}
+                {{ booking.date|date:"M d" }}, {{ booking.time_range }}
             </span>
         </div>
         <div class="request-actions">

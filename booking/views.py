@@ -1,20 +1,24 @@
-from datetime import date, timedelta
-from django.utils import timezone
-from django.db import transaction
-from django.core.exceptions import ValidationError
-from django.shortcuts import render
-from accounts.decorators import student_required, teacher_required
-from django.template.loader import render_to_string
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-from django.shortcuts import get_object_or_404
+from datetime import date, datetime, timedelta
+
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, render
+from django.template.loader import render_to_string
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-
-
-from booking.models import Booking, AvailabilitySlot, RegularAvailability, WeeklyOverride
+from accounts.decorators import student_required, teacher_required
+from booking.models import Booking, RegularAvailability, WeeklyOverride
 from portfolio.models import TeacherProfile
+
+from .services import (
+    get_availability_windows,
+    get_available_start_times,
+    get_lesson_type_and_price,
+)
 
 
 
@@ -27,18 +31,18 @@ def student_dashboard(request):
         .filter(
             student=request.user,
             status=Booking.Status.CONFIRMED,
-            slot__date__gte=now.date(),
+            date__gte=now.date(),
         )
         .exclude(
-            slot__date=now.date(),
-            slot__start_time__lt=now.time(),
+            date=now.date(),
+            start_time__lt=now.time(),
         )
-        .select_related('slot', 'slot__teacher', 'slot__teacher__user')
-        .order_by('slot__date', 'slot__start_time')[:10]
+        .select_related('teacher', 'teacher__user')
+        .order_by('date', 'start_time')[:10]
     )
 
     for booking in upcoming_bookings:
-        booking.display_name = booking.slot.teacher.user.get_full_name() or booking.slot.teacher.user.username
+        booking.display_name = booking.teacher.user.get_full_name() or booking.teacher.user.username
 
     return render(request, 'student_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
@@ -49,7 +53,6 @@ def student_dashboard(request):
 @student_required
 def student_booking(request):
     today = timezone.localdate()
-
     week_start_param = request.GET.get('week_start')
     if week_start_param:
         try:
@@ -62,39 +65,35 @@ def student_booking(request):
     if week_start < today:
         week_start = today
 
-    week_end = week_start + timedelta(days=6)
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-
     teacher = TeacherProfile.objects.first()
 
-    slots = (
-        AvailabilitySlot.objects
-        .filter(teacher=teacher, date__range=(week_start, week_end))
-        .order_by('date', 'start_time')
-    )
+    lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
 
-    slots_by_day = {day: [] for day in week_days}
-    for slot in slots:
-        slots_by_day[slot.date].append(slot)
-
-    week_data = [
-        {'day': day, 'slots': slots_by_day[day]}
-        for day in week_days
-    ]
+    week_data = []
+    for day in week_days:
+        start_times = get_available_start_times(teacher, day, duration_minutes)
+        day_slots = [
+            {
+                'start_time': t,
+                'end_time': (datetime.combine(day, t) + timedelta(minutes=duration_minutes)).time(),
+            }
+            for t in start_times
+        ]
+        week_data.append({'day': day, 'slots': day_slots})
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
 
-
-
     context = {
         'week_data': week_data,
-        'slots_by_day': slots_by_day,
         'week_start': week_start,
         'next_week_start': week_start + timedelta(days=7),
         'prev_week_start': prev_week_start,
         'can_go_prev': can_go_prev,
         'today': today,
+        'teacher': teacher,
+        'lesson_type': lesson_type,
     }
     return render(request, 'student_booking.html', context)
 
@@ -104,7 +103,6 @@ def student_booking(request):
 def student_booking_week_ajax(request):
     today = timezone.localdate()
     week_start_param = request.GET.get('week_start')
-
     try:
         week_start = date.fromisoformat(week_start_param)
     except (TypeError, ValueError):
@@ -113,19 +111,22 @@ def student_booking_week_ajax(request):
     if week_start < today:
         week_start = today
 
-    week_end = week_start + timedelta(days=6)
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-
     teacher = TeacherProfile.objects.first()
-    slots = (
-        AvailabilitySlot.objects
-        .filter(teacher=teacher, date__range=(week_start, week_end))
-        .order_by('date', 'start_time')
-    )
-    slots_by_day = {day: [] for day in week_days}
-    for slot in slots:
-        slots_by_day[slot.date].append(slot)
-    week_data = [{'day': day, 'slots': slots_by_day[day]} for day in week_days]
+
+    lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
+
+    week_data = []
+    for day in week_days:
+        start_times = get_available_start_times(teacher, day, duration_minutes)
+        day_slots = [
+            {
+                'start_time': t,
+                'end_time': (datetime.combine(day, t) + timedelta(minutes=duration_minutes)).time(),
+            }
+            for t in start_times
+        ]
+        week_data.append({'day': day, 'slots': day_slots})
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
@@ -141,45 +142,57 @@ def student_booking_week_ajax(request):
     })
 
 
+
 @student_required
 @require_POST
 def book_slot(request):
-    slot_id = request.POST.get('slot_id')
-    if not slot_id:
-        return JsonResponse({'error': 'slot_id is required.'}, status=400)
+    date_str = request.POST.get('date')
+    start_time_str = request.POST.get('start_time')
+
+    if not date_str or not start_time_str:
+        return JsonResponse({'error': 'date and start_time are required.'}, status=400)
+
+    try:
+        date_val = date.fromisoformat(date_str)
+        start_time_val = datetime.strptime(start_time_str, '%H:%M').time()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date or time format.'}, status=400)
+
+    teacher = TeacherProfile.objects.first()
+
+    if teacher.user == request.user:
+        return JsonResponse({'error': 'You cannot book your own availability.'}, status=400)
 
     try:
         with transaction.atomic():
-            slot = AvailabilitySlot.objects.select_for_update().get(pk=slot_id)
+            list(Booking.objects.select_for_update().filter(
+                teacher=teacher,
+                date=date_val,
+                status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+            ))
 
-            if slot.is_booked:
-                return JsonResponse({'error': 'This slot is already booked.'}, status=409)
+            lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
+            available_starts = get_available_start_times(teacher, date_val, duration_minutes)
 
-            if slot.teacher.user == request.user:
-                return JsonResponse({'error': 'You cannot book your own slot.'}, status=400)
+            if start_time_val not in available_starts:
+                return JsonResponse({'error': 'This time is no longer available.'}, status=409)
 
-            has_previous_lesson = Booking.objects.filter(
-                student=request.user,
-                slot__teacher=slot.teacher,
-                status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
-            ).exists()
-
-            if slot.teacher.offers_trial and not has_previous_lesson:
-                lesson_type = Booking.LessonType.TRIAL
-                price = slot.teacher.trial_price 
-            else:
-                lesson_type = Booking.LessonType.REGULAR
-                price = slot.teacher.lesson_price
+            end_time_val = (
+                datetime.combine(date_val, start_time_val) + timedelta(minutes=duration_minutes)
+            ).time()
 
             booking = Booking.objects.create(
                 student=request.user,
-                slot=slot,
+                teacher=teacher,
+                date=date_val,
+                start_time=start_time_val,
+                end_time=end_time_val,
                 lesson_type=lesson_type,
                 price=price,
             )
 
-    except AvailabilitySlot.DoesNotExist:
-        return JsonResponse({'error': 'Slot not found.'}, status=404)
+    except IntegrityError:
+        return JsonResponse({'error': 'This time is no longer available.'}, status=409)
     except ValidationError as e:
         return JsonResponse({'error': str(e)}, status=400)
 
@@ -199,47 +212,45 @@ def teacher_dashboard(request):
     upcoming_bookings = (
         Booking.objects
         .filter(
-            slot__teacher__user = request.user,
-            status = Booking.Status.CONFIRMED,
-            slot__date__gte=now.date(),
+            teacher__user=request.user,
+            status=Booking.Status.CONFIRMED,
+            date__gte=now.date(),
         )
         .exclude(
-            slot__date=now.date(),
-            slot__start_time__lt=now.time(),
+            date=now.date(),
+            start_time__lt=now.time(),
         )
-        .select_related('slot', 'student')
-        .order_by('slot__date', 'slot__start_time')[:10]
+        .select_related('student')
+        .order_by('date', 'start_time')[:10]
     )
 
     for booking in upcoming_bookings:
         booking.display_name = booking.student.get_full_name() or booking.student.username
 
-
     lesson_requests_count = Booking.objects.filter(
-        slot__teacher__user = request.user,
+        teacher__user=request.user,
         status=Booking.Status.PENDING,
     ).count()
 
     return render(request, 'teacher_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
-        'lesson_requests_count' : lesson_requests_count
+        'lesson_requests_count': lesson_requests_count
     })
 
 
 @teacher_required
 def teacher_lesson_requests(request):
-
     lesson_requests = Booking.objects.filter(
-        slot__teacher__user = request.user,
-        status = Booking.Status.PENDING,
-    ).select_related('slot', 'student').order_by('slot__date', 'slot__start_time')
+        teacher__user=request.user,
+        status=Booking.Status.PENDING,
+    ).select_related('student').order_by('date', 'start_time')
 
     for booking in lesson_requests:
         booking.display_name = booking.student.get_full_name() or booking.student.username
-        booking.time_range = f'{booking.slot.start_time:%H:%M}–{booking.slot.end_time:%H:%M}'
+        booking.time_range = f'{booking.start_time:%H:%M}–{booking.end_time:%H:%M}'
 
     return render(request, 'partials/_lesson_requests_list.html', {
-    'lesson_requests': lesson_requests,
+        'lesson_requests': lesson_requests,
     })
 
 
@@ -249,7 +260,7 @@ def respond_to_booking(request, booking_id):
     booking = get_object_or_404(
         Booking,
         id=booking_id,
-        slot__teacher__user=request.user,
+        teacher__user=request.user,
         status=Booking.Status.PENDING,
     )
 
@@ -273,7 +284,7 @@ def student_management(request):
     User = get_user_model()
 
     students = User.objects.filter(
-        bookings__slot__teacher__user=request.user,
+        bookings__teacher__user=request.user,
         bookings__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
     ).distinct()
 
@@ -282,10 +293,9 @@ def student_management(request):
     current_time = now.time()
 
     for student in students:
-
         student_bookings = Booking.objects.filter(
             student=student,
-            slot__teacher__user=request.user,
+            teacher__user=request.user,
         )
 
         student.completed_count = student_bookings.filter(
@@ -293,36 +303,36 @@ def student_management(request):
         ).count() + student_bookings.filter(
             status=Booking.Status.CONFIRMED,
         ).filter(
-            Q(slot__date__lt=today) | Q(slot__date=today, slot__start_time__lt=current_time)
+            Q(date__lt=today) | Q(date=today, start_time__lt=current_time)
         ).count()
 
         student.upcoming_count = student_bookings.filter(
             status=Booking.Status.CONFIRMED,
         ).filter(
-            Q(slot__date__gt=today) | Q(slot__date=today, slot__start_time__gte=current_time)
+            Q(date__gt=today) | Q(date=today, start_time__gte=current_time)
         ).count()
 
         last_lesson = student_bookings.filter(
             status__in=[Booking.Status.COMPLETED, Booking.Status.CONFIRMED],
         ).filter(
-            Q(slot__date__lt=today) | Q(slot__date=today, slot__start_time__lt=current_time)
-        ).order_by('-slot__date', '-slot__start_time').first()
+            Q(date__lt=today) | Q(date=today, start_time__lt=current_time)
+        ).order_by('-date', '-start_time').first()
 
-        student.previous_date = last_lesson.slot.date if last_lesson else None
+        student.previous_date = last_lesson.date if last_lesson else None
 
         next_lesson = student_bookings.filter(
             status=Booking.Status.CONFIRMED,
         ).filter(
-            Q(slot__date__gt=today) | Q(slot__date=today, slot__start_time__gte=current_time)
-        ).order_by('slot__date', 'slot__start_time').first()
+            Q(date__gt=today) | Q(date=today, start_time__gte=current_time)
+        ).order_by('date', 'start_time').first()
 
-        student.next_date = next_lesson.slot.date if next_lesson else None
+        student.next_date = next_lesson.date if next_lesson else None
 
         student.display_name = student.get_full_name() or student.username
 
     return render(request, 'teacher_student_management.html', {
-    'students': students,
-})
+        'students': students,
+    })
 
 
 
