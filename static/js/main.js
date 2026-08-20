@@ -116,7 +116,8 @@ function initBookingModal() {
         document.getElementById('modalLessonTime').textContent =
             `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
 
-        confirmBtn.dataset.slotId = slotBtn.dataset.slotId;
+        confirmBtn.dataset.date = slotBtn.dataset.date;
+        confirmBtn.dataset.start = slotBtn.dataset.start;
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Next';
 
@@ -124,8 +125,9 @@ function initBookingModal() {
     });
 
     confirmBtn.addEventListener('click', async () => {
-        const slotId = confirmBtn.dataset.slotId;
-        if (!slotId) return;
+        const dateVal = confirmBtn.dataset.date;
+        const startVal = confirmBtn.dataset.start;
+        if (!dateVal || !startVal) return;
 
         confirmBtn.disabled = true;
         confirmBtn.textContent = 'Booking...';
@@ -134,7 +136,7 @@ function initBookingModal() {
             const response = await csrfFetch(window.bookSlotUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `slot_id=${encodeURIComponent(slotId)}`,
+                body: `date=${encodeURIComponent(dateVal)}&start_time=${encodeURIComponent(startVal)}`,
             });
 
             const data = await response.json();

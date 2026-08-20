@@ -1,80 +1,88 @@
 from datetime import datetime, timedelta
-from django.db import transaction
 
-from .models import AvailabilitySlot, RegularAvailability, WeeklyOverride
+from .models import RegularAvailability, WeeklyOverride, Booking
 
 
-@transaction.atomic
-def generate_slots_for_teacher(teacher, start_date, end_date):
-    """Generates availability slots for a teacher within a date range (inclusive),
-
-    respecting WeeklyOverrides and RegularAvailability rules.
+def get_availability_windows(teacher, date_val):
+    """Returns a list of (start_time, end_time) tuples representing the
+    teacher's available windows on date_val, applying the #28 "Replacing"
+    rule: if any WeeklyOverride exists for this date, only override windows
+    apply (RegularAvailability is ignored); otherwise RegularAvailability
+    for that weekday applies.
     """
-    duration = timedelta(minutes=teacher.lesson_duration_minutes)
-    created_slots = []
+    overrides = WeeklyOverride.objects.filter(teacher=teacher, date=date_val)
 
-    current_date = start_date
-    while current_date <= end_date:
-        # 1. Check for WeeklyOverride on current_date
-        overrides = WeeklyOverride.objects.filter(
-            teacher=teacher, date=current_date
+    if overrides.exists():
+        if overrides.filter(is_available=False).exists():
+            return []
+        return [
+            (o.start_time, o.end_time)
+            for o in overrides.filter(is_available=True)
+        ]
+
+    weekday = date_val.weekday()
+    regular_rules = RegularAvailability.objects.filter(
+        teacher=teacher, day_of_week=weekday
+    )
+    return [(r.start_time, r.end_time) for r in regular_rules]
+
+
+def get_available_start_times(teacher, date_val, duration_minutes):
+    """Returns a sorted list of bookable start times (datetime.time objects)
+    on date_val for a lesson of the given duration, respecting availability
+    windows and existing active bookings.
+    """
+    windows = get_availability_windows(teacher, date_val)
+    if not windows:
+        return []
+
+    duration = timedelta(minutes=duration_minutes)
+
+    existing_bookings = Booking.objects.filter(
+        teacher=teacher,
+        date=date_val,
+        status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+    )
+    booked_ranges = [
+        (
+            datetime.combine(date_val, b.start_time),
+            datetime.combine(date_val, b.end_time),
         )
+        for b in existing_bookings
+    ]
 
-        if overrides.exists():
-            # If any override is full-day off (is_available=False), no slots generated for today
-            is_full_day_off = overrides.filter(is_available=False).exists()
-            if not is_full_day_off:
-                # Process active override windows
-                active_overrides = overrides.filter(is_available=True)
-                for override in active_overrides:
-                    _create_slots_in_window(
-                        teacher=teacher,
-                        date_val=current_date,
-                        start_time=override.start_time,
-                        end_time=override.end_time,
-                        duration=duration,
-                        created_slots=created_slots,
-                    )
-        else:
-            # 2. Fall back to RegularAvailability for the weekday
-            weekday = current_date.weekday()
-            regular_rules = RegularAvailability.objects.filter(
-                teacher=teacher, day_of_week=weekday
+    available_times = []
+    step = timedelta(minutes=30)
+
+    for window_start, window_end in windows:
+        current_dt = datetime.combine(date_val, window_start)
+        window_end_dt = datetime.combine(date_val, window_end)
+
+        while current_dt + duration <= window_end_dt:
+            candidate_end = current_dt + duration
+
+            overlaps = any(
+                current_dt < b_end and candidate_end > b_start
+                for b_start, b_end in booked_ranges
             )
-            for rule in regular_rules:
-                _create_slots_in_window(
-                    teacher=teacher,
-                    date_val=current_date,
-                    start_time=rule.start_time,
-                    end_time=rule.end_time,
-                    duration=duration,
-                    created_slots=created_slots,
-                )
 
-        current_date += timedelta(days=1)
+            if not overlaps:
+                available_times.append(current_dt.time())
 
-    return created_slots
+            current_dt += step
+
+    return sorted(set(available_times))
 
 
-def _create_slots_in_window(
-    teacher, date_val, start_time, end_time, duration, created_slots
-):
-    """Helper function to slice a time window into slots based on lesson_duration_minutes."""
-    current_dt = datetime.combine(date_val, start_time)
-    end_dt = datetime.combine(date_val, end_time)
+def get_lesson_type_and_price(teacher, student):
+    """Returns (lesson_type, price, duration_minutes) for a given
+    student booking with this teacher."""
+    has_previous_lesson = Booking.objects.filter(
+        student=student,
+        teacher=teacher,
+        status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+    ).exists()
 
-    while current_dt + duration <= end_dt:
-        slot_start = current_dt.time()
-        slot_end = (current_dt + duration).time()
-
-        slot, created = AvailabilitySlot.objects.get_or_create(
-            teacher=teacher,
-            date=date_val,
-            start_time=slot_start,
-            defaults={'end_time': slot_end, 'is_booked': False},
-        )
-
-        if created:
-            created_slots.append(slot)
-
-        current_dt += duration
+    if teacher.offers_trial and not has_previous_lesson:
+        return Booking.LessonType.TRIAL, teacher.trial_price, teacher.trial_duration_minutes
+    return Booking.LessonType.REGULAR, teacher.lesson_price, teacher.lesson_duration_minutes

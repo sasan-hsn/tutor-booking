@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.db import connection
 from datetime import date, time
 from accounts.models import User
-from booking.models import AvailabilitySlot, Booking
+from booking.models import RegularAvailability, Booking
 
 
 class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
@@ -21,12 +21,14 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             username='student2', password='test123', role=User.Role.STUDENT
         )
 
-        self.slot = AvailabilitySlot.objects.create(
+        # 2026-09-28 is a Monday
+        self.booking_date = date(2026, 9, 28)
+
+        RegularAvailability.objects.create(
             teacher=self.teacher,
-            date=date(2026, 9, 25),
+            day_of_week=RegularAvailability.DayOfWeek.MONDAY,
             start_time=time(10, 0),
             end_time=time(11, 0),
-            is_booked=False,
         )
 
         self.book_url = reverse('booking:book_slot')
@@ -38,7 +40,10 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
         def make_request(username):
             client = Client()
             client.login(username=username, password='test123')
-            response = client.post(self.book_url, {'slot_id': self.slot.id})
+            response = client.post(self.book_url, {
+                'date': self.booking_date.isoformat(),
+                'start_time': '10:00',
+            })
             status_codes.append(response.status_code)
             connection.close()
 
@@ -52,4 +57,11 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
 
         self.assertIn(200, status_codes)
         self.assertIn(409, status_codes)
-        self.assertEqual(Booking.objects.filter(slot=self.slot).count(), 1)
+        self.assertEqual(
+            Booking.objects.filter(
+                teacher=self.teacher,
+                date=self.booking_date,
+                status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+            ).count(),
+            1,
+        )

@@ -7,13 +7,13 @@
         {% for booking in upcoming_bookings %}
         <div class="lesson-card">
             <div class="lesson-card-date">
-                <span class="lesson-card-month">{{ booking.slot.date|date:"M" }}</span>
-                <span class="lesson-card-day">{{ booking.slot.date|date:"d" }}</span>
-                <span class="lesson-card-weekday">{{ booking.slot.date|date:"D" }}</span>
+                <span class="lesson-card-month">{{ booking.date|date:"M" }}</span>
+                <span class="lesson-card-day">{{ booking.date|date:"d" }}</span>
+                <span class="lesson-card-weekday">{{ booking.date|date:"D" }}</span>
             </div>
             <div class="lesson-card-body">
                 <span class="lesson-card-time">
-                    {{ booking.slot.start_time|time:"H:i" }} – {{ booking.slot.end_time|time:"H:i" }}
+                    {{ booking.start_time|time:"H:i" }} – {{ booking.end_time|time:"H:i" }}
                 </span>
                 <span class="lesson-card-teacher">{{ booking.display_name }}</span>
                 <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>

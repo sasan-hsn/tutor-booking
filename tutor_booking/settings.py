@@ -74,6 +74,8 @@ DATABASES = {
     )
 }
 
+if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+    DATABASES['default'].setdefault('OPTIONS', {})['timeout'] = 20
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

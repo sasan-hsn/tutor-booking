@@ -18,6 +18,7 @@ class TeacherProfile(models.Model):
     lesson_duration_minutes = models.PositiveSmallIntegerField(default=50)
     offers_trial = models.BooleanField(default=True)
     trial_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    trial_duration_minutes = models.PositiveSmallIntegerField(default=25)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
