@@ -1,0 +1,44 @@
+<div class="booking-week-nav">
+    <button type="button" class="week-nav-arrow"
+        data-url="{% url 'booking:teacher_calendar_ajax' %}?year={{ prev_year }}&month={{ prev_month }}">
+        &lt;
+    </button>
+    <span class="week-range-label">{{ month_label }}</span>
+    <button type="button" class="week-nav-arrow"
+        data-url="{% url 'booking:teacher_calendar_ajax' %}?year={{ next_year }}&month={{ next_month }}">
+        &gt;
+    </button>
+</div>
+
+
+<div class="calendar-grid" data-month-label="{{ month_label }}">
+    <div class="calendar-grid-header">
+        <div class="calendar-day-name">Sun</div>
+        <div class="calendar-day-name">Mon</div>
+        <div class="calendar-day-name">Tue</div>
+        <div class="calendar-day-name">Wed</div>
+        <div class="calendar-day-name">Thu</div>
+        <div class="calendar-day-name">Fri</div>
+        <div class="calendar-day-name">Sat</div>
+    </div>
+
+    {% for week in calendar_grid %}
+    <div class="calendar-week">
+        {% for day in week %}
+        <div
+            class="calendar-day{% if not day.is_current_month %} calendar-day-muted{% endif %}{% if day.is_today %} calendar-day-today{% endif %}">
+            <div class="calendar-day-number">{{ day.day }}</div>
+            <div class="calendar-day-bookings">
+                {% for booking in day.bookings %}
+                <div class="calendar-booking-row" data-student-id="{{ booking.student.id }}"
+                    data-status="{{ booking.status }}">
+                    <span class="calendar-booking-time">{{ booking.start_time|time:"H:i" }}</span>
+                    <span class="calendar-booking-student">{{ booking.display_name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>

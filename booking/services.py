@@ -1,4 +1,7 @@
-from datetime import datetime, timedelta
+import calendar
+from collections import defaultdict
+from datetime import datetime, timedelta, date
+from django.utils import timezone
 
 from .models import RegularAvailability, WeeklyOverride, Booking
 
@@ -86,3 +89,81 @@ def get_lesson_type_and_price(teacher, student):
     if teacher.offers_trial and not has_previous_lesson:
         return Booking.LessonType.TRIAL, teacher.trial_price, teacher.trial_duration_minutes
     return Booking.LessonType.REGULAR, teacher.lesson_price, teacher.lesson_duration_minutes
+
+
+
+def get_calendar_grid(teacher, year, month):
+    """Generate a monthly calendar grid (Sun-Sat) with pre-fetched teacher bookings.
+
+    Returns a matrix of weeks, where each day contains date metadata,
+    active month flags, and associated booking records.
+    """
+
+    _, last_day = calendar.monthrange(year, month)
+    start_date = date(year, month, 1)
+    end_date = date(year, month, last_day)
+
+    bookings = Booking.objects.filter(
+        teacher=teacher,
+        date__range=(start_date, end_date)
+    ).select_related("student").order_by("start_time")
+
+    bookings_by_date = defaultdict(list)
+    for booking in bookings:
+        booking.display_name = booking.student.first_name or booking.student.username
+        bookings_by_date[booking.date].append(booking)
+
+    cal = calendar.Calendar(firstweekday=6)
+    month_matrix = cal.monthdatescalendar(year, month)
+    today = timezone.localdate()
+
+    calendar_grid = []
+    for week in month_matrix:
+        week_data = []
+        for day_date in week:
+            week_data.append({
+                "date": day_date,
+                "day": day_date.day,
+                "is_current_month": day_date.month == month,
+                "is_today": day_date == today,
+                "bookings": bookings_by_date.get(day_date, []),
+            })
+        calendar_grid.append(week_data)
+
+    return calendar_grid
+
+
+
+def get_calendar_navigation(request, today):
+    try:
+        current_year = int(request.GET.get("year", today.year))
+        current_month = int(request.GET.get("month", today.month))
+        if not (1 <= current_month <= 12):
+            raise ValueError
+    except (ValueError, TypeError):
+        current_year = today.year
+        current_month = today.month
+
+    if current_month == 1:
+        prev_month = 12
+        prev_year = current_year -1 
+    else:
+        prev_month = current_month - 1
+        prev_year = current_year 
+
+    if current_month == 12:
+        next_month = 1
+        next_year = current_year + 1
+    else:
+        next_month = current_month + 1
+        next_year = current_year
+
+    return {
+        "current_year": current_year,
+        "current_month": current_month,
+        "month_label": date(current_year, current_month, 1).strftime("%B %Y"),
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+    }

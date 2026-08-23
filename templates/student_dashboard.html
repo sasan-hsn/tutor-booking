@@ -1,19 +1,5 @@
 {% extends "dashboard_base.html" %}
 
-{% block sidebar_links %}
-<a href="{% url 'booking:student_dashboard' %}"
-    class="sidebar-link {% if request.resolver_match.url_name == 'student_dashboard' %}active{% endif %}">
-    <i class="bi bi-grid"></i> Dashboard
-</a>
-<a href="{% url 'booking:student_booking' %}"
-    class="sidebar-link {% if request.resolver_match.url_name == 'student_booking' %}active{% endif %}">
-    <i class="bi bi-calendar-plus"></i> Book a Lesson
-</a>
-<a href="#" class="sidebar-link">
-    <i class="bi bi-calendar3"></i> Calendar
-</a>
-{% endblock %}
-
 {% block page_content %}
 <h2 class="mb-3">My Lessons</h2>
 

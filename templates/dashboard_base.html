@@ -17,8 +17,29 @@
                 Marry</a>
 
             <nav class="sidebar-nav flex-grow-1">
-                {% block sidebar_links %}
-                {% endblock %}
+                {% if user.teacher_profile %}
+                <a href="{% url 'booking:teacher_dashboard' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'teacher_dashboard' %}active{% endif %}">
+                    <i class="bi bi-grid"></i> Dashboard
+                </a>
+                <a href="{% url 'booking:student_management' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'student_management' %}active{% endif %}">
+                    <i class="bi bi-people"></i> Students
+                </a>
+                <a href="{% url 'booking:teacher_calendar' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'teacher_calendar' %}active{% endif %}">
+                    <i class="bi bi-calendar3"></i> Calendar
+                </a>
+                {% elif user.student_profile %}
+                <a href="{% url 'booking:student_dashboard' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'student_dashboard' %}active{% endif %}">
+                    <i class="bi bi-grid"></i> Dashboard
+                </a>
+                <a href="{% url 'booking:student_booking' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'student_booking' %}active{% endif %}">
+                    <i class="bi bi-calendar-plus"></i> Book a Lesson
+                </a>
+                {% endif %}
             </nav>
         </div>
     </aside>

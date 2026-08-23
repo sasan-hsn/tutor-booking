@@ -17,4 +17,6 @@ urlpatterns = [
     path('teacher/schedule/overrides/', views.teacher_weekly_override, name='teacher_weekly_override'),
     path('teacher/schedule/overrides/add/', views.teacher_weekly_override_add, name='teacher_weekly_override_add'),
     path('teacher/schedule/overrides/<int:override_id>/delete/', views.teacher_weekly_override_delete, name='teacher_weekly_override_delete'),
+    path("teacher/calendar/", views.teacher_calendar, name="teacher_calendar"),
+    path("teacher/calendar/ajax/", views.teacher_calendar_ajax, name="teacher_calendar_ajax"),
  ]
