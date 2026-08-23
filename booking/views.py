@@ -168,11 +168,7 @@ def book_slot(request):
 
     try:
         with transaction.atomic():
-            list(Booking.objects.select_for_update().filter(
-                teacher=teacher,
-                date=date_val,
-                status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
-            ))
+            teacher = TeacherProfile.objects.select_for_update().get(pk=teacher.pk)
 
             lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
             available_starts = get_available_start_times(teacher, date_val, duration_minutes)
