@@ -671,3 +671,103 @@ function initOverrideScheduleModal() {
 }
 
 document.addEventListener('DOMContentLoaded', initOverrideScheduleModal);
+
+
+/* ==========================================================================
+   Teacher Calendar (#30)
+   ========================================================================== */
+
+document.addEventListener("DOMContentLoaded", function () {
+    const calendarPage = document.querySelector(".calendar-page");
+    if (!calendarPage) return;
+
+    const gridContainer = document.getElementById("calendar-grid-container");
+    const monthLabel = document.querySelector(".week-range-label");
+
+    /* ---------- Dropdown open/close ---------- */
+    function setupDropdown(buttonId, panelId) {
+        const btn = document.getElementById(buttonId);
+        const panel = document.getElementById(panelId);
+        if (!btn || !panel) return;
+
+        btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            panel.classList.toggle("open");
+        });
+
+        document.addEventListener("click", function (e) {
+            if (!panel.contains(e.target) && !btn.contains(e.target)) {
+                panel.classList.remove("open");
+            }
+        });
+    }
+
+    setupDropdown("status-filter-btn", "status-filter-panel");
+    setupDropdown("student-filter-btn", "student-filter-panel");
+
+    /* ---------- Client-side filtering ---------- */
+    function applyFilters() {
+        const checkedStatuses = Array.from(
+            document.querySelectorAll(".status-checkbox:checked")
+        ).map((cb) => cb.value);
+
+        const checkedStudents = Array.from(
+            document.querySelectorAll(".student-checkbox:checked")
+        ).map((cb) => cb.value);
+
+        document.querySelectorAll(".calendar-booking-row").forEach((row) => {
+            const status = row.dataset.status;
+            const studentId = row.dataset.studentId;
+
+            const statusOk = checkedStatuses.includes(status);
+            const studentOk =
+                checkedStudents.length === 0 || checkedStudents.includes(studentId);
+
+            row.style.display = statusOk && studentOk ? "" : "none";
+        });
+    }
+
+    document.addEventListener("change", function (e) {
+        if (e.target.matches(".status-checkbox") || e.target.matches(".student-checkbox")) {
+            applyFilters();
+        }
+    });
+
+    /* ---------- Student search ---------- */
+    const studentSearch = document.getElementById("student-filter-search");
+    if (studentSearch) {
+        studentSearch.addEventListener("input", function () {
+            const query = studentSearch.value.trim().toLowerCase();
+            document.querySelectorAll(".student-filter-option").forEach((option) => {
+                const name = option.textContent.trim().toLowerCase();
+                option.style.display = name.includes(query) ? "" : "none";
+            });
+        });
+    }
+
+    /* ---------- Month navigation (AJAX) ---------- */
+    function loadMonth(url) {
+        fetch(url)
+            .then((response) => response.text())
+            .then((html) => {
+                gridContainer.innerHTML = html;
+
+                const newGrid = gridContainer.querySelector(".calendar-grid");
+                if (newGrid && monthLabel) {
+                    monthLabel.textContent = newGrid.dataset.monthLabel;
+                }
+
+                applyFilters();
+            });
+    }
+
+    document.addEventListener("click", function (e) {
+        const navBtn = e.target.closest(".week-nav-arrow");
+        if (navBtn) {
+            loadMonth(navBtn.dataset.url);
+        }
+    });
+
+    /* ---------- Initial filter run ---------- */
+    applyFilters();
+});

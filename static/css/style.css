@@ -1422,3 +1422,326 @@ h6,
     cursor: not-allowed;
     transform: none;
 }
+
+
+
+
+/* ==========================================================================
+   Teacher Calendar (#30)
+   ========================================================================== */
+
+.calendar-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+}
+
+
+.calendar-page .booking-week-nav {
+    justify-content: flex-start;
+    margin-top: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.calendar-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+#calendar-grid-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+}
+
+.calendar-grid-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-bottom: 1px solid var(--border-soft);
+    grid-column: 1 / -1;
+    min-width: 600px;
+}
+
+.calendar-day-name {
+    padding: 8px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.calendar-week {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-column: 1 / -1;
+    min-width: 600px;
+}
+
+.calendar-day {
+    min-height: 110px;
+    padding: 6px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-card);
+    min-width: 0;
+}
+
+.calendar-day-muted {
+    background: var(--bg-main);
+}
+
+.calendar-day-muted .calendar-day-number {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.calendar-day-today .calendar-day-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background-color: #E4463C;
+    color: #fff;
+}
+
+.calendar-day-number {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.calendar-day-bookings {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.calendar-booking-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 2px 8px;
+    border-left: 3px solid var(--border-soft);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: var(--text-muted);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.calendar-booking-time {
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.calendar-booking-student {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* status colors */
+.calendar-booking-row[data-status="pending"] {
+    border-left-color: var(--accent-amber);
+    color: var(--accent-amber-hover);
+}
+
+.calendar-booking-row[data-status="confirmed"] {
+    border-left-color: #2FA84F;
+    color: #2FA84F;
+}
+
+.calendar-booking-row[data-status="completed"] {
+    border-left-color: #6B7280;
+    color: #6B7280;
+}
+
+.calendar-booking-row[data-status="cancelled"] {
+    border-left-color: #B0B7C3;
+    color: #B0B7C3;
+    text-decoration: line-through;
+}
+
+.calendar-booking-row[data-status="disputing"] {
+    border-left-color: #E4463C;
+    color: #E4463C;
+}
+
+/* ===== Calendar: Status Filter Dropdown ===== */
+
+.status-filter-dropdown {
+    position: relative;
+}
+
+.status-filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+.status-filter-dots {
+    display: flex;
+    gap: 3px;
+}
+
+.status-filter-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 20;
+    min-width: 200px;
+    padding: 0.5rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow-md);
+}
+
+.status-filter-panel.open {
+    display: flex;
+    flex-direction: column;
+}
+
+.status-filter-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.4rem 0.3rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.status-filter-option:hover {
+    background-color: var(--bg-main);
+    border-radius: 6px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot[data-status="pending"] {
+    background-color: var(--accent-amber);
+}
+
+.status-dot[data-status="confirmed"] {
+    background-color: #2FA84F;
+}
+
+.status-dot[data-status="completed"] {
+    background-color: #6B7280;
+}
+
+.status-dot[data-status="cancelled"] {
+    background-color: #B0B7C3;
+}
+
+.status-dot[data-status="disputing"] {
+    background-color: #E4463C;
+}
+
+/* ===== Calendar: Student Filter Dropdown ===== */
+
+.student-filter-dropdown {
+    position: relative;
+}
+
+.student-filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+.student-filter-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    min-width: 220px;
+    padding: 0.5rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow-md);
+}
+
+.student-filter-panel.open {
+    display: block;
+}
+
+.student-filter-search {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.4rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+}
+
+.student-filter-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.student-filter-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.4rem 0.3rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-main);
+}
+
+.student-filter-option:hover {
+    background-color: var(--bg-main);
+    border-radius: 6px;
+}
+
+/* ===== Calendar: Responsive (mobile) ===== */
+
+@media (max-width: 640px) {
+    .calendar-day {
+        min-height: 70px;
+        padding: 4px;
+    }
+
+    .calendar-booking-row {
+        font-size: 0.7rem;
+    }
+
+    .calendar-grid-header,
+    .calendar-week {
+        min-width: 500px;
+    }
+
+    .calendar-filters {
+        flex-wrap: wrap;
+    }
+}

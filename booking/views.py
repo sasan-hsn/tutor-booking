@@ -13,11 +13,14 @@ from django.views.decorators.http import require_POST
 from accounts.decorators import student_required, teacher_required
 from booking.models import Booking, RegularAvailability, WeeklyOverride
 from portfolio.models import TeacherProfile
+from accounts.models import StudentProfile
 
 from .services import (
     get_availability_windows,
     get_available_start_times,
     get_lesson_type_and_price,
+    get_calendar_grid,
+    get_calendar_navigation
 )
 
 
@@ -165,11 +168,7 @@ def book_slot(request):
 
     try:
         with transaction.atomic():
-            list(Booking.objects.select_for_update().filter(
-                teacher=teacher,
-                date=date_val,
-                status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
-            ))
+            teacher = TeacherProfile.objects.select_for_update().get(pk=teacher.pk)
 
             lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
             available_starts = get_available_start_times(teacher, date_val, duration_minutes)
@@ -480,3 +479,52 @@ def teacher_weekly_override_delete(request, override_id):
     return JsonResponse({'success': True})
 
 
+
+@teacher_required
+def teacher_calendar(request):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    today = timezone.localdate()
+
+    nav = get_calendar_navigation(request, today)
+
+    calendar_grid = get_calendar_grid(
+        teacher=teacher,
+        year=nav["current_year"],
+        month=nav["current_month"],
+    )
+
+    students = (
+        StudentProfile.objects.filter(user__bookings__teacher=teacher)
+        .select_related("user")
+        .distinct()
+    )
+
+    context = {
+        "teacher": teacher,
+        "calendar_grid": calendar_grid,
+        "students": students,
+        **nav,
+    }
+
+    return render(request, "calendar.html", context)
+
+
+@teacher_required
+def teacher_calendar_ajax(request):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    today = timezone.localdate()
+
+    nav = get_calendar_navigation(request, today)
+
+    calendar_grid = get_calendar_grid(
+        teacher=teacher,
+        year=nav["current_year"],
+        month=nav["current_month"],
+    )
+
+    context = {
+        "calendar_grid": calendar_grid,
+        **nav,
+    }
+
+    return render(request, "partials/_calendar_grid.html", context)
