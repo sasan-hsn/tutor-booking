@@ -528,3 +528,40 @@ def teacher_calendar_ajax(request):
     }
 
     return render(request, "partials/_calendar_grid.html", context)
+
+
+
+@teacher_required
+def lesson_detail(request, booking_id):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    booking = get_object_or_404(
+        Booking.objects.select_related("student"),
+        pk=booking_id,
+        teacher=teacher,
+    )
+
+    booking.display_name = booking.student.first_name or booking.student.username
+
+    context = {
+        "booking": booking,
+        "cancellable_statuses": [Booking.Status.PENDING, Booking.Status.CONFIRMED],
+        "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",    }
+
+    return render(request, "partials/_lesson_detail_modal.html", context)
+
+
+@teacher_required
+@require_POST
+def cancel_lesson(request, booking_id):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        teacher=teacher,
+        status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+    )
+
+    booking.status = Booking.Status.CANCELLED
+    booking.save()
+
+    return JsonResponse({"success": True})

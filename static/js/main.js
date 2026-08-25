@@ -674,7 +674,7 @@ document.addEventListener('DOMContentLoaded', initOverrideScheduleModal);
 
 
 /* ==========================================================================
-   Teacher Calendar (#30)
+   Teacher Calendar (#30, #31)
    ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -684,7 +684,39 @@ document.addEventListener("DOMContentLoaded", function () {
     const gridContainer = document.getElementById("calendar-grid-container");
     const monthLabel = document.querySelector(".week-range-label");
 
-    /* ---------- Dropdown open/close ---------- */
+    const MAX_VISIBLE_PER_DAY = 3;
+
+    /* ---------- Overflow ("+N more") ---------- */
+    function updateOverflow() {
+        document.querySelectorAll(".calendar-day").forEach((day) => {
+            const allRows = Array.from(day.querySelectorAll(".calendar-booking-row"));
+            const visibleRows = allRows.filter((row) => !row.classList.contains("filter-hidden"));
+
+            visibleRows.forEach((row, index) => {
+                const overflow = index >= MAX_VISIBLE_PER_DAY;
+                row.style.display = overflow ? "none" : "";
+            });
+
+            allRows.forEach((row) => {
+                if (row.classList.contains("filter-hidden")) {
+                    row.style.display = "none";
+                }
+            });
+
+            const moreBtn = day.querySelector(".calendar-more-link");
+            if (!moreBtn) return;
+
+            const hiddenCount = visibleRows.length - MAX_VISIBLE_PER_DAY;
+            if (hiddenCount > 0) {
+                moreBtn.textContent = `+${hiddenCount} more`;
+                moreBtn.style.display = "block";
+            } else {
+                moreBtn.style.display = "none";
+            }
+        });
+    }
+
+    /* ---------- Dropdown open/close (Display / Lessons with) ---------- */
     function setupDropdown(buttonId, panelId) {
         const btn = document.getElementById(buttonId);
         const panel = document.getElementById(panelId);
@@ -723,8 +755,10 @@ document.addEventListener("DOMContentLoaded", function () {
             const studentOk =
                 checkedStudents.length === 0 || checkedStudents.includes(studentId);
 
-            row.style.display = statusOk && studentOk ? "" : "none";
+            row.classList.toggle("filter-hidden", !(statusOk && studentOk));
         });
+
+        updateOverflow();
     }
 
     document.addEventListener("change", function (e) {
@@ -733,7 +767,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    /* ---------- Student search ---------- */
+    /* ---------- Student search (inside "Lessons with" dropdown) ---------- */
     const studentSearch = document.getElementById("student-filter-search");
     if (studentSearch) {
         studentSearch.addEventListener("input", function () {
@@ -768,6 +802,122 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    /* ---------- Initial filter run ---------- */
+    /* ---------- "+N more" day popup ---------- */
+    const dayMorePopup = document.getElementById("dayMorePopup");
+    const dayMorePopupHeader = document.getElementById("dayMorePopupHeader");
+    const dayMorePopupList = document.getElementById("dayMorePopupList");
+
+    function openDayMorePopup(btn, dayCell) {
+        const visibleRows = Array.from(
+            dayCell.querySelectorAll(".calendar-booking-row")
+        ).filter((row) => !row.classList.contains("filter-hidden"));
+
+        dayMorePopupHeader.textContent = dayCell.querySelector(".calendar-day-number").textContent;
+
+        dayMorePopupList.innerHTML = "";
+        visibleRows.forEach((row) => {
+            const clone = row.cloneNode(true);
+            clone.style.display = "";
+            dayMorePopupList.appendChild(clone);
+        });
+
+        const rect = dayCell.getBoundingClientRect();
+        dayMorePopup.style.top = `${rect.top}px`;
+        dayMorePopup.style.left = `${rect.left}px`;
+        dayMorePopup.style.width = `${rect.width}px`;
+        dayMorePopup.style.minHeight = `${rect.height}px`;
+        dayMorePopup.classList.add("open");
+    }
+
+    document.addEventListener("click", function (e) {
+        const moreBtn = e.target.closest(".calendar-more-link");
+        if (moreBtn) {
+            e.stopPropagation();
+            const dayCell = moreBtn.closest(".calendar-day");
+            openDayMorePopup(moreBtn, dayCell);
+            return;
+        }
+
+        if (!dayMorePopup.contains(e.target)) {
+            dayMorePopup.classList.remove("open");
+        }
+    });
+
+    /* ---------- Lesson detail modal (#31) ---------- */
+    function initLessonDetailModal() {
+        const modalEl = document.getElementById("lessonDetailModal");
+        if (!modalEl) return;
+
+        const modalBody = document.getElementById("lessonDetailModalBody");
+        const urlTemplate = modalEl.dataset.url;
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+        document.addEventListener("click", function (e) {
+            const row = e.target.closest(".calendar-booking-row");
+            if (!row) return;
+
+            const bookingId = row.dataset.bookingId;
+            const url = urlTemplate.replace("/0/", `/${bookingId}/`);
+
+            modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+            modalInstance.show();
+
+            fetch(url)
+                .then((response) => response.text())
+                .then((html) => {
+                    modalBody.innerHTML = html;
+                })
+                .catch(() => {
+                    modalBody.innerHTML =
+                        '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+                });
+        });
+    }
+
+    function initCancelLesson() {
+        const modalBody = document.getElementById("lessonDetailModalBody");
+        if (!modalBody) return;
+
+        let hasChanges = false;
+
+        modalBody.addEventListener("click", async function (e) {
+            const btn = e.target.closest("#cancelLessonBtn");
+            if (!btn) return;
+
+            if (!confirm("Are you sure you want to cancel this lesson?")) return;
+
+            const url = btn.dataset.cancelUrl;
+
+            btn.disabled = true;
+
+            try {
+                const response = await csrfFetch(url, { method: "POST" });
+
+                if (!response.ok) {
+                    alert("Something went wrong. Please try again.");
+                    btn.disabled = false;
+                    return;
+                }
+
+                hasChanges = true;
+                const modalEl = document.getElementById("lessonDetailModal");
+                bootstrap.Modal.getInstance(modalEl).hide();
+            } catch (err) {
+                alert("Network error. Please try again.");
+                btn.disabled = false;
+            }
+        });
+
+        const modalEl = document.getElementById("lessonDetailModal");
+        modalEl.addEventListener("hidden.bs.modal", function () {
+            if (hasChanges) {
+                window.location.reload();
+            }
+        });
+    }
+
+    /* ---------- Init ---------- */
     applyFilters();
+    initLessonDetailModal();
+    initCancelLesson();
 });

@@ -30,13 +30,14 @@
             <div class="calendar-day-number">{{ day.day }}</div>
             <div class="calendar-day-bookings">
                 {% for booking in day.bookings %}
-                <div class="calendar-booking-row" data-student-id="{{ booking.student.id }}"
-                    data-status="{{ booking.status }}">
+                <div class="calendar-booking-row" data-status="{{ booking.status }}" data-booking-id="{{ booking.id }}"
+                    data-student-id="{{ booking.student.id }}">
                     <span class="calendar-booking-time">{{ booking.start_time|time:"H:i" }}</span>
                     <span class="calendar-booking-student">{{ booking.display_name }}</span>
                 </div>
                 {% endfor %}
             </div>
+            <button type="button" class="calendar-more-link" style="display: none;"></button>
         </div>
         {% endfor %}
     </div>

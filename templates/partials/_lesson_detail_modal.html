@@ -1,0 +1,41 @@
+<div class="lesson-detail">
+    <div class="lesson-detail-header">
+        <span class="avatar-initial">{{ booking.display_name|first|upper }}</span>
+        <div>
+            <div class="lesson-detail-student">{{ booking.display_name }}</div>
+        </div>
+    </div>
+
+    <div class="lesson-detail-rows">
+        <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Lesson Type</span>
+            <span class="lesson-detail-value">{{ booking.get_lesson_type_display }}</span>
+        </div>
+        <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Date & Time</span>
+            <span class="lesson-detail-value">{{ date_time_label }}</span>
+        </div>
+        <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Price</span>
+            <span class="lesson-detail-value">
+                {% if booking.price %}${{ booking.price }}{% else %}Free{% endif %}
+            </span>
+        </div>
+        <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Status</span>
+            <span class="lesson-detail-value">
+                <span class="lesson-detail-status-dot" data-status="{{ booking.status }}"></span>
+                {{ booking.get_status_display }}
+            </span>
+        </div>
+    </div>
+
+    {% if booking.status in cancellable_statuses %}
+    <div class="lesson-detail-actions">
+        <button type="button" class="btn-danger-outline" id="cancelLessonBtn"
+            data-cancel-url="{% url 'booking:cancel_lesson' booking_id=booking.id %}">
+            Cancel Lesson
+        </button>
+    </div>
+    {% endif %}
+</div>
