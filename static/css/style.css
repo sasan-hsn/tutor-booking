@@ -1534,6 +1534,17 @@ h6,
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.calendar-booking-row:hover {
+    background-color: rgba(79, 122, 98, 0.1);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: 6px;
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
 }
 
 .calendar-booking-time {
@@ -1542,6 +1553,7 @@ h6,
 }
 
 .calendar-booking-student {
+    margin-left: auto;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -1744,4 +1756,161 @@ h6,
     .calendar-filters {
         flex-wrap: wrap;
     }
+}
+
+
+/* ===== Calendar: More link ===== */
+
+.calendar-more-link {
+    display: none;
+    width: 100%;
+    text-align: left;
+    padding: 2px 8px;
+    margin-top: 2px;
+    border: none;
+    background: none;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--primary-blue);
+    cursor: pointer;
+}
+
+.calendar-more-link:hover {
+    text-decoration: underline;
+}
+
+/* ===== Calendar: More Popup ===== */
+.day-more-popup {
+    display: none;
+    position: fixed;
+    z-index: 30;
+    min-width: 200px;
+    max-width: 260px;
+    padding: 0.5rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow-md);
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.day-more-popup.open {
+    display: block;
+}
+
+.day-more-popup-header {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text-main);
+}
+
+.day-more-popup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: none;
+    overflow-y: visible;
+}
+
+/* ===== Lesson Detail Modal (#31) ===== */
+
+.lesson-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+
+.lesson-detail-student {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.lesson-detail-type {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.lesson-detail-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 1rem;
+}
+
+.lesson-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.lesson-detail-label {
+    color: var(--text-muted);
+}
+
+.lesson-detail-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.lesson-detail-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.lesson-detail-status-dot[data-status="pending"] {
+    background-color: var(--accent-amber);
+}
+
+.lesson-detail-status-dot[data-status="confirmed"] {
+    background-color: #2FA84F;
+}
+
+.lesson-detail-status-dot[data-status="completed"] {
+    background-color: #6B7280;
+}
+
+.lesson-detail-status-dot[data-status="cancelled"] {
+    background-color: #B0B7C3;
+}
+
+.lesson-detail-status-dot[data-status="disputing"] {
+    background-color: #E4463C;
+}
+
+.lesson-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-danger-outline {
+    padding: 0.5rem 1.2rem;
+    border: 1px solid #E4463C;
+    border-radius: var(--radius-md);
+    background: none;
+    color: #E4463C;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+    background-color: #E4463C;
+    color: #fff;
+}
+
+.btn-danger-outline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
