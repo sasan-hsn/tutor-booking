@@ -37,5 +37,16 @@
             Cancel Lesson
         </button>
     </div>
+    {% elif can_request_cancellation %}
+    <div class="lesson-detail-actions">
+        <button type="button" class="btn-danger-outline" id="requestCancellationBtn"
+            data-request-url="{% url 'booking:request_cancellation' booking_id=booking.id %}">
+            Request Cancellation
+        </button>
+    </div>
+    {% elif booking.cancellation_requested %}
+    <div class="lesson-detail-notice">
+        Cancellation request pending teacher approval.
+    </div>
     {% endif %}
 </div>

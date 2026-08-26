@@ -1,19 +1,31 @@
 {% if lesson_requests %}
 <div class="request-list">
     {% for booking in lesson_requests %}
-    <div class="request-item" data-booking-id="{{ booking.id }}">
+    <div class="request-item{% if booking.is_cancellation %} request-item-cancellation{% endif %}"
+        data-booking-id="{{ booking.id }}">
         <div class="request-avatar">
             <span class="avatar-initial">{{ booking.display_name|first|upper }}</span>
         </div>
         <div class="request-info">
-            <span class="request-name">{{ booking.display_name }}</span>
+            <span class="request-name">
+                {{ booking.display_name }}
+                {% if booking.is_cancellation %}
+                <span class="request-badge">Cancellation</span>
+                {% endif %}
+            </span>
             <span class="request-datetime">
                 {{ booking.date|date:"M d" }}, {{ booking.time_range }}
             </span>
         </div>
         <div class="request-actions">
-            <button type="button" class="btn-accept" data-booking-id="{{ booking.id }}">Accept</button>
+            {% if booking.is_cancellation %}
+            <button type="button" class="btn-decline" data-booking-id="{{ booking.id }}">Keep</button>
+            <button type="button" class="btn-accept btn-danger-action"
+                data-booking-id="{{ booking.id }}">Approve</button>
+            {% else %}
             <button type="button" class="btn-decline" data-booking-id="{{ booking.id }}">Decline</button>
+            <button type="button" class="btn-accept" data-booking-id="{{ booking.id }}">Accept</button>
+            {% endif %}
         </div>
     </div>
     {% endfor %}
