@@ -227,8 +227,8 @@ def teacher_dashboard(request):
         booking.display_name = booking.student.get_full_name() or booking.student.username
 
     lesson_requests_count = Booking.objects.filter(
+        Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
         teacher__user=request.user,
-        status=Booking.Status.PENDING,
     ).count()
 
     return render(request, 'teacher_dashboard.html', {
@@ -240,13 +240,14 @@ def teacher_dashboard(request):
 @teacher_required
 def teacher_lesson_requests(request):
     lesson_requests = Booking.objects.filter(
+        Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
         teacher__user=request.user,
-        status=Booking.Status.PENDING,
     ).select_related('student').order_by('date', 'start_time')
 
     for booking in lesson_requests:
         booking.display_name = booking.student.get_full_name() or booking.student.username
         booking.time_range = f'{booking.start_time:%H:%M}–{booking.end_time:%H:%M}'
+        booking.is_cancellation = booking.cancellation_requested
 
     return render(request, 'partials/_lesson_requests_list.html', {
         'lesson_requests': lesson_requests,
@@ -260,19 +261,22 @@ def respond_to_booking(request, booking_id):
         Booking,
         id=booking_id,
         teacher__user=request.user,
-        status=Booking.Status.PENDING,
     )
 
     action = request.POST.get('action')
-
-    if action == 'accept':
-        booking.status = Booking.Status.CONFIRMED
-    elif action == 'decline':
-        booking.status = Booking.Status.CANCELLED
-    else:
+    if action not in ('accept', 'decline'):
         return JsonResponse({'error': 'Invalid action.'}, status=400)
 
-    booking.save()
+    if booking.cancellation_requested:
+        if action == 'accept':
+            booking.status = Booking.Status.CANCELLED
+        booking.cancellation_requested = False
+        booking.save()
+    elif booking.status == Booking.Status.PENDING:
+        booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
+        booking.save()
+    else:
+        return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
 
     return JsonResponse({'success': True})
 
@@ -546,7 +550,7 @@ def lesson_detail(request, booking_id):
 
     context = {
         "booking": booking,
-        "cancellable_statuses": [Booking.Status.PENDING, Booking.Status.CONFIRMED],
+        "cancellable_statuses": [Booking.Status.CONFIRMED],
         "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",    }
 
     return render(request, "partials/_lesson_detail_modal.html", context)
@@ -620,13 +624,37 @@ def lesson_detail_student(request, booking_id):
 
     booking.display_name = booking.teacher.user.first_name or booking.teacher.user.username
 
+    can_request_cancellation = (
+        booking.status == Booking.Status.CONFIRMED
+        and not booking.cancellation_requested
+    )
+
     context = {
         "booking": booking,
         "cancellable_statuses": [],
+        "can_request_cancellation": can_request_cancellation,
         "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",
     }
 
     return render(request, "partials/_lesson_detail_modal.html", context)
+
+
+
+@student_required
+@require_POST
+def request_cancellation(request, booking_id):
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        student=request.user,
+        status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+        cancellation_requested=False,
+    )
+
+    booking.cancellation_requested = True
+    booking.save()
+
+    return JsonResponse({"success": True})
 
 
 

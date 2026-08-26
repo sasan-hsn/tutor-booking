@@ -1027,6 +1027,33 @@ h6,
     flex-shrink: 0;
 }
 
+.request-item-cancellation {
+    border-left: 3px solid #E4463C;
+}
+
+.request-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background-color: rgba(228, 70, 60, 0.12);
+    color: #E4463C;
+    font-size: 0.7rem;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+.btn-danger-action {
+    background-color: #E4463C !important;
+    border-color: #E4463C !important;
+    color: #fff !important;
+}
+
+.btn-danger-action:hover {
+    background-color: #C93A31 !important;
+    border-color: #C93A31 !important;
+}
+
 .btn-accept {
     background-color: var(--primary-blue);
     color: #fff;
@@ -1876,6 +1903,16 @@ h6,
     gap: 6px;
     font-weight: 600;
     color: var(--text-main);
+}
+
+.lesson-detail-notice {
+    padding: 0.6rem 0.8rem;
+    background-color: rgba(219, 138, 82, 0.12);
+    border: 1px solid var(--accent-amber);
+    border-radius: var(--radius-md);
+    color: var(--accent-amber-hover);
+    font-size: 0.85rem;
+    text-align: center;
 }
 
 .lesson-detail-status-dot {

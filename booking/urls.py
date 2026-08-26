@@ -24,4 +24,5 @@ urlpatterns = [
     path("student/calendar/", views.student_calendar, name="student_calendar"),
     path("student/calendar/ajax/", views.student_calendar_ajax, name="student_calendar_ajax"),
     path("student/lesson/<int:booking_id>/", views.lesson_detail_student, name="lesson_detail_student"),
+    path("student/lesson/<int:booking_id>/request-cancellation/", views.request_cancellation, name="request_cancellation"),
  ]

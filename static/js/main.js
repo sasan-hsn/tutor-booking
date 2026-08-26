@@ -916,8 +916,51 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    function initRequestCancellation() {
+        const modalBody = document.getElementById("lessonDetailModalBody");
+        if (!modalBody) return;
+
+        let hasChanges = false;
+
+        modalBody.addEventListener("click", async function (e) {
+            const btn = e.target.closest("#requestCancellationBtn");
+            if (!btn) return;
+
+            if (!confirm("Request cancellation for this lesson? Your teacher will need to approve it.")) return;
+
+            const url = btn.dataset.requestUrl;
+
+            btn.disabled = true;
+
+            try {
+                const response = await csrfFetch(url, { method: "POST" });
+
+                if (!response.ok) {
+                    alert("Something went wrong. Please try again.");
+                    btn.disabled = false;
+                    return;
+                }
+
+                hasChanges = true;
+                const modalEl = document.getElementById("lessonDetailModal");
+                bootstrap.Modal.getInstance(modalEl).hide();
+            } catch (err) {
+                alert("Network error. Please try again.");
+                btn.disabled = false;
+            }
+        });
+
+        const modalEl = document.getElementById("lessonDetailModal");
+        modalEl.addEventListener("hidden.bs.modal", function () {
+            if (hasChanges) {
+                window.location.reload();
+            }
+        });
+    }
+
     /* ---------- Init ---------- */
     applyFilters();
     initLessonDetailModal();
     initCancelLesson();
+    initRequestCancellation();
 });
