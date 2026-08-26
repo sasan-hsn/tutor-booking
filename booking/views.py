@@ -503,6 +503,7 @@ def teacher_calendar(request):
         "teacher": teacher,
         "calendar_grid": calendar_grid,
         "students": students,
+        "ajax_url_name": "booking:teacher_calendar_ajax",
         **nav,
     }
 
@@ -524,6 +525,7 @@ def teacher_calendar_ajax(request):
 
     context = {
         "calendar_grid": calendar_grid,
+        "ajax_url_name": "booking:teacher_calendar_ajax",
         **nav,
     }
 
@@ -565,3 +567,66 @@ def cancel_lesson(request, booking_id):
     booking.save()
 
     return JsonResponse({"success": True})
+
+
+
+@student_required
+def student_calendar(request):
+    today = timezone.localdate()
+    nav = get_calendar_navigation(request, today)
+
+    calendar_grid = get_calendar_grid(
+        student=request.user,
+        year=nav["current_year"],
+        month=nav["current_month"],
+    )
+
+    context = {
+        "calendar_grid": calendar_grid,
+        "ajax_url_name": "booking:student_calendar_ajax",
+        **nav,
+    }
+
+    return render(request, "student_calendar.html", context)
+
+
+@student_required
+def student_calendar_ajax(request):
+    today = timezone.localdate()
+    nav = get_calendar_navigation(request, today)
+
+    calendar_grid = get_calendar_grid(
+        student=request.user,
+        year=nav["current_year"],
+        month=nav["current_month"],
+    )
+
+    context = {
+        "calendar_grid": calendar_grid,
+        "ajax_url_name": "booking:student_calendar_ajax",
+        **nav,
+    }
+
+    return render(request, "partials/_calendar_grid.html", context)
+
+
+@student_required
+def lesson_detail_student(request, booking_id):
+    booking = get_object_or_404(
+        Booking.objects.select_related("teacher__user"),
+        pk=booking_id,
+        student=request.user,
+    )
+
+    booking.display_name = booking.teacher.user.first_name or booking.teacher.user.username
+
+    context = {
+        "booking": booking,
+        "cancellable_statuses": [],
+        "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",
+    }
+
+    return render(request, "partials/_lesson_detail_modal.html", context)
+
+
+

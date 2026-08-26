@@ -1,11 +1,11 @@
 <div class="booking-week-nav">
     <button type="button" class="week-nav-arrow"
-        data-url="{% url 'booking:teacher_calendar_ajax' %}?year={{ prev_year }}&month={{ prev_month }}">
+        data-url="{% url ajax_url_name %}?year={{ prev_year }}&month={{ prev_month }}">
         &lt;
     </button>
     <span class="week-range-label">{{ month_label }}</span>
     <button type="button" class="week-nav-arrow"
-        data-url="{% url 'booking:teacher_calendar_ajax' %}?year={{ next_year }}&month={{ next_month }}">
+        data-url="{% url ajax_url_name %}?year={{ next_year }}&month={{ next_month }}">
         &gt;
     </button>
 </div>

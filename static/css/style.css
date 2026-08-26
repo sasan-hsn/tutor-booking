@@ -1756,6 +1756,22 @@ h6,
     .calendar-filters {
         flex-wrap: wrap;
     }
+
+    .calendar-booking-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        padding: 2px 4px;
+    }
+
+    .calendar-booking-time {
+        font-size: 0.65rem;
+    }
+
+    .calendar-booking-student {
+        font-size: 0.65rem;
+        width: 100%;
+    }
 }
 
 
