@@ -92,8 +92,8 @@ def get_lesson_type_and_price(teacher, student):
 
 
 
-def get_calendar_grid(teacher, year, month):
-    """Generate a monthly calendar grid (Sun-Sat) with pre-fetched teacher bookings.
+def get_calendar_grid(year, month, *, teacher=None, student=None):
+    """Generate a monthly calendar grid (Sun-Sat) with pre-fetched bookings.
 
     Returns a matrix of weeks, where each day contains date metadata,
     active month flags, and associated booking records.
@@ -103,14 +103,29 @@ def get_calendar_grid(teacher, year, month):
     start_date = date(year, month, 1)
     end_date = date(year, month, last_day)
 
-    bookings = Booking.objects.filter(
-        teacher=teacher,
-        date__range=(start_date, end_date)
-    ).select_related("student").order_by("start_time")
+    if teacher is not None:
+        bookings = Booking.objects.filter(
+            teacher=teacher,
+            date__range=(start_date, end_date)
+        ).select_related("student").order_by("start_time")
+
+        for booking in bookings:
+            booking.display_name = booking.student.first_name or booking.student.username
+
+    elif student is not None:
+        bookings = Booking.objects.filter(
+            student=student,
+            date__range=(start_date, end_date)
+        ).select_related("teacher__user").order_by("start_time")
+
+        for booking in bookings:
+            booking.display_name = booking.teacher.user.first_name or booking.teacher.user.username
+
+    else:
+        raise ValueError("Must provide either teacher or student.")
 
     bookings_by_date = defaultdict(list)
     for booking in bookings:
-        booking.display_name = booking.student.first_name or booking.student.username
         bookings_by_date[booking.date].append(booking)
 
     cal = calendar.Calendar(firstweekday=6)

@@ -39,6 +39,10 @@
                     class="sidebar-link {% if request.resolver_match.url_name == 'student_booking' %}active{% endif %}">
                     <i class="bi bi-calendar-plus"></i> Book a Lesson
                 </a>
+                <a href="{% url 'booking:student_calendar' %}"
+                    class="sidebar-link {% if request.resolver_match.url_name == 'teacher_calendar' %}active{% endif %}">
+                    <i class="bi bi-calendar3"></i> Calendar
+                </a>
                 {% endif %}
             </nav>
         </div>

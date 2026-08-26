@@ -1,0 +1,74 @@
+{% extends "dashboard_base.html" %}
+
+{% block page_content %}
+<div class="calendar-page">
+    <h1>Calendar</h1>
+
+    <div class="calendar-toolbar">
+        <div class="calendar-filters">
+            <div class="status-filter-dropdown">
+                <button type="button" class="status-filter-btn" id="status-filter-btn">
+                    Display<span id="student-filter-arrow">▾</span>
+                    <span class="status-filter-dots">
+                        <span class="status-dot" data-status="pending"></span>
+                        <span class="status-dot" data-status="confirmed"></span>
+                        <span class="status-dot" data-status="completed"></span>
+                        <span class="status-dot" data-status="cancelled"></span>
+                        <span class="status-dot" data-status="disputing"></span>
+                    </span>
+                </button>
+                <div class="status-filter-panel" id="status-filter-panel">
+                    <label class="status-filter-option">
+                        <input type="checkbox" class="status-checkbox" value="pending" checked>
+                        <span class="status-dot" data-status="pending"></span>
+                        Pending
+                    </label>
+                    <label class="status-filter-option">
+                        <input type="checkbox" class="status-checkbox" value="confirmed" checked>
+                        <span class="status-dot" data-status="confirmed"></span>
+                        Confirmed
+                    </label>
+                    <label class="status-filter-option">
+                        <input type="checkbox" class="status-checkbox" value="completed" checked>
+                        <span class="status-dot" data-status="completed"></span>
+                        Completed
+                    </label>
+                    <label class="status-filter-option">
+                        <input type="checkbox" class="status-checkbox" value="cancelled" checked>
+                        <span class="status-dot" data-status="cancelled"></span>
+                        Cancelled
+                    </label>
+                    <label class="status-filter-option">
+                        <input type="checkbox" class="status-checkbox" value="disputing" checked>
+                        <span class="status-dot" data-status="disputing"></span>
+                        Disputing
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="calendar-grid-container">
+        {% include "partials/_calendar_grid.html" %}
+    </div>
+</div>
+
+<div class="day-more-popup" id="dayMorePopup">
+    <div class="day-more-popup-header" id="dayMorePopupHeader"></div>
+    <div class="day-more-popup-list" id="dayMorePopupList"></div>
+</div>
+
+<div class="modal fade" id="lessonDetailModal" data-url="{% url 'booking:lesson_detail_student' booking_id=0 %}"
+    tabindex="-1" aria-labelledby="lessonDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="lessonDetailModalLabel">Lesson Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="lessonDetailModalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
