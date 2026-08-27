@@ -3,9 +3,13 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from django.shortcuts import render
 from django.contrib.auth import login, logout
-from django.shortcuts import redirect
-from .forms import StudentSignUpForm
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
+from .forms import StudentSignUpForm, ProfileSettingsForm
 from .models import User
+
+
 
 
 def student_signup(request):
@@ -44,4 +48,23 @@ def user_login(request):
 @require_POST
 def user_logout(request):
     logout(request)
-    return redirect('/')  
+    return redirect('/')
+
+
+
+@login_required
+def profile_settings(request):
+    profile = getattr(request.user, 'teacher_profile', None) or getattr(request.user, 'student_profile', None)
+
+    if request.method == 'POST':
+        form = ProfileSettingsForm(request.POST, request.FILES, profile=profile)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Profile picture updated.')
+            return redirect('accounts:profile_settings')
+    else:
+        form = ProfileSettingsForm(profile=profile)
+
+    return render(request, 'accounts/profile_settings.html', {
+        'form': form,
+    })

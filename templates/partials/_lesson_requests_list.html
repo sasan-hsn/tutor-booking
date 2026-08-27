@@ -1,10 +1,12 @@
+{% load avatar_tags %}
+
 {% if lesson_requests %}
 <div class="request-list">
     {% for booking in lesson_requests %}
     <div class="request-item{% if booking.is_cancellation %} request-item-cancellation{% endif %}"
         data-booking-id="{{ booking.id }}">
         <div class="request-avatar">
-            <span class="avatar-initial">{{ booking.display_name|first|upper }}</span>
+            {% user_avatar booking.display_user 44 %}
         </div>
         <div class="request-info">
             <span class="request-name">

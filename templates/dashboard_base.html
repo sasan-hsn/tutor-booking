@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load avatar_tags %}
 
 {% block content %}
 <div class="dashboard-wrapper">
@@ -61,17 +62,17 @@
             <div></div>
 
             <div class="d-flex align-items-center gap-3">
-                <button class="btn btn-icon" type="button" aria-label="Notifications">
-                    <i class="bi bi-bell"></i>
-                </button>
 
                 <div class="dropdown">
                     <button class="btn dropdown-toggle d-flex align-items-center gap-2" type="button"
                         data-bs-toggle="dropdown" aria-expanded="false">
-                        <span class="avatar-initial">{{ user.first_name|first|upper }}</span>
+                        {% user_avatar user 32 %}
                         <span class="d-none d-md-inline">{{ user.first_name }}</span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'accounts:profile_settings' %}">Profile Settings</a>
+                        </li>
                         <li>
                             <form method="post" action="{% url 'accounts:logout' %}" class="px-3 py-1">
                                 {% csrf_token %}
