@@ -46,6 +46,7 @@ def student_dashboard(request):
 
     for booking in upcoming_bookings:
         booking.display_name = booking.teacher.user.get_full_name() or booking.teacher.user.username
+        booking.display_user = booking.teacher.user
 
     return render(request, 'student_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
@@ -225,6 +226,7 @@ def teacher_dashboard(request):
 
     for booking in upcoming_bookings:
         booking.display_name = booking.student.get_full_name() or booking.student.username
+        booking.display_user = booking.student
 
     lesson_requests_count = Booking.objects.filter(
         Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
@@ -246,6 +248,7 @@ def teacher_lesson_requests(request):
 
     for booking in lesson_requests:
         booking.display_name = booking.student.get_full_name() or booking.student.username
+        booking.display_user = booking.student
         booking.time_range = f'{booking.start_time:%H:%M}–{booking.end_time:%H:%M}'
         booking.is_cancellation = booking.cancellation_requested
 
@@ -547,6 +550,7 @@ def lesson_detail(request, booking_id):
     )
 
     booking.display_name = booking.student.first_name or booking.student.username
+    booking.display_user = booking.student
 
     context = {
         "booking": booking,
@@ -623,6 +627,7 @@ def lesson_detail_student(request, booking_id):
     )
 
     booking.display_name = booking.teacher.user.first_name or booking.teacher.user.username
+    booking.display_user = booking.teacher.user
 
     can_request_cancellation = (
         booking.status == Booking.Status.CONFIRMED

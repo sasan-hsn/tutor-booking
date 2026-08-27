@@ -16,3 +16,16 @@ class StudentSignUpForm(UserCreationForm):
         if commit:
             instance.save()
         return instance
+
+
+class ProfileSettingsForm(forms.Form):
+    profile_picture = forms.ImageField(required=False)
+
+    def __init__(self, *args, profile=None, **kwargs):
+        self.profile = profile
+        super().__init__(*args, **kwargs)
+
+    def save(self):
+        if self.cleaned_data.get('profile_picture'):
+            self.profile.profile_picture = self.cleaned_data['profile_picture']
+            self.profile.save() 

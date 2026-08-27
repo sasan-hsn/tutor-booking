@@ -428,16 +428,6 @@ h6,
 }
 
 
-.review-avatar {
-    width: 40px;
-    height: 40px;
-    background-color: var(--primary-blue-light);
-    color: var(--primary-blue);
-    font-size: 0.9rem;
-    border: 2px solid var(--accent-amber);
-}
-
-
 /* ===== Dashboard Layout ===== */
 
 .dashboard-wrapper {
@@ -532,18 +522,6 @@ h6,
     color: var(--primary-blue);
 }
 
-.avatar-initial {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background-color: var(--primary-blue-light);
-    color: var(--primary-blue);
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.9rem;
-}
 
 .btn-logout-link {
     background: none;

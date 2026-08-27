@@ -1,4 +1,5 @@
 {% extends "dashboard_base.html" %}
+{% load avatar_tags %}
 
 {% block page_content %}
 <h2 class="mb-3">Student Management</h2>
@@ -19,7 +20,7 @@
             <tr>
                 <td>
                     <div class="student-cell">
-                        <span class="avatar-initial">{{ student.display_name|first|upper }}</span>
+                        {% user_avatar student 36 %}
                         <span>{{ student.display_name }}</span>
                     </div>
                 </td>

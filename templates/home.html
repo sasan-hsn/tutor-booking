@@ -1,5 +1,6 @@
 {% extends 'landing_base.html' %}
 {% load static %}
+{% load avatar_tags %}
 
 {% block title %}
 {% if teacher %}{{ teacher.user.get_full_name|default:teacher.user.username }} - Tutor Portfolio{% else %}Home - Tutor
@@ -159,10 +160,7 @@ Portfolio{% endif %}
                 <div class="glass-card h-100 p-4">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="d-flex align-items-center gap-2">
-                            <div
-                                class="review-avatar d-inline-flex align-items-center justify-content-center rounded-circle">
-                                <span class="fw-bold"></span>
-                            </div>
+                            {% user_avatar review.student 40 %}
                             <p class="mb-0 fw-bold">{{ review.student.get_full_name|default:review.student.username }}
                             </p>
                         </div>

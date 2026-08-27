@@ -1,3 +1,5 @@
+{% load avatar_tags %}
+
 {% if upcoming_bookings %}
 <div class="lesson-cards-wrapper">
     <button type="button" class="scroll-arrow scroll-arrow-left" aria-label="Scroll left">
@@ -19,7 +21,7 @@
                 <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
             </div>
             <div class="lesson-card-avatar">
-                <span class="avatar-initial">{{ booking.display_name|first|upper }}</span>
+                {% user_avatar booking.display_user 48 %}
             </div>
         </div>
         {% endfor %}
