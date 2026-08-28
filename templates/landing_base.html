@@ -15,14 +15,18 @@
                     href="{% url 'portfolio:landing_page' %}#testimonials">Testimonials</a>
                 <a class="nav-link-custom d-none d-md-inline"
                     href="{% url 'portfolio:landing_page' %}#contact">Contact</a>
-                {% if user.is_authenticated %}
-                <form method="post" action="{% url 'accounts:logout' %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn-login fw-bold">Log out</button>
-                </form>
-                {% else %}
-                <a href="{% url 'accounts:login' %}" class="btn-login fw-bold">Log in</a>
-                {% endif %}
+
+                <div class="d-flex align-items-center gap-3 ms-md-3">
+                    {% if user.is_authenticated %}
+                    <form method="post" action="{% url 'accounts:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-login fw-bold">Log out</button>
+                    </form>
+                    {% else %}
+                    <a href="{% url 'accounts:login' %}" class="nav-link-custom">Log in</a>
+                    <a href="{% url 'accounts:student_signup' %}" class="btn-signup fw-bold">Sign up</a>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </nav>

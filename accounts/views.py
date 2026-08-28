@@ -6,7 +6,7 @@ from django.contrib.auth import login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
-from .forms import StudentSignUpForm, ProfileSettingsForm
+from .forms import StudentSignUpForm, ProfileSettingsForm, StyledAuthenticationForm
 from .models import User
 
 
@@ -28,7 +28,7 @@ def user_login(request):
     next_url = request.POST.get('next') or request.GET.get('next')
 
     if request.method == 'POST':
-        form = AuthenticationForm(request, data=request.POST)
+        form = StyledAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
@@ -41,7 +41,7 @@ def user_login(request):
             else:
                 return redirect('booking:student_dashboard')
     else:
-        form = AuthenticationForm()
+        form = StyledAuthenticationForm()
     return render(request, 'accounts/login.html', {'form': form, 'next': next_url or ''})
 
 

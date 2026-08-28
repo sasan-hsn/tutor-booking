@@ -4,11 +4,30 @@
 
 {% block page_content %}
 <div class="container max-w-5xl px-4 py-5">
-    <h1>Sign Up</h1>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="btn-login fw-bold">Sign Up</button>
-    </form>
+    <div class="glass-card p-4 mx-auto" style="max-width: 420px;">
+        <h1 class="mb-4">Sign Up</h1>
+        <form method="post">
+            {% csrf_token %}
+
+            {% for field in form %}
+            <div class="mb-3">
+                <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                {{ field }}
+                {% if field.name == 'password1' %}
+                <small class="text-muted d-block mt-1">At least 8 characters, not entirely numeric.</small>
+                {% endif %}
+                {% if field.errors %}
+                <div class="text-danger small mt-1">{{ field.errors }}</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <button type="submit" class="btn-accent w-100 mt-2">Sign Up</button>
+        </form>
+
+        <p class="text-muted text-center mt-4 mb-0">
+            Already have an account? <a href="{% url 'accounts:login' %}" class="text-primary-brand fw-bold">Log in</a>
+        </p>
+    </div>
 </div>
 {% endblock %}

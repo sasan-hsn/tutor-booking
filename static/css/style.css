@@ -63,6 +63,27 @@
     color: #ffffff;
 }
 
+.btn-signup {
+    background-color: transparent;
+    color: var(--primary-blue);
+    border: 1px solid var(--primary-blue);
+    border-radius: var(--radius-full);
+    padding: 0.5rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-signup:hover {
+    opacity: 0.9;
+    background-color: var(--primary-blue);
+    color: #ffffff;
+}
+
 /* Footer Custom Border */
 .footer-custom {
     border-top: 1px solid var(--border-soft);
