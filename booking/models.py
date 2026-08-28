@@ -207,6 +207,21 @@ class Booking(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    @property
+    def student_display_name(self):
+        return self.student.get_full_name() or self.student.username
+
+    @property
+    def teacher_display_name(self):
+        return self.teacher.user.get_full_name() or self.teacher.user.username
+
+    @property
+    def student_display_user(self):
+        return self.student
+
+    @property
+    def teacher_display_user(self):
+        return self.teacher.user
 
     def __str__(self):
         return (

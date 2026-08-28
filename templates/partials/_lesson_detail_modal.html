@@ -2,9 +2,17 @@
 
 <div class="lesson-detail">
     <div class="lesson-detail-header">
-        {% user_avatar booking.display_user 56 %}
+        {% if user.teacher_profile %}
+        {% user_avatar booking.student_display_user 56 %}
+        {% else %}
+        {% user_avatar booking.teacher_display_user 56 %}
+        {% endif %}
         <div>
-            <div class="lesson-detail-student">{{ booking.display_name }}</div>
+            {% if user.teacher_profile %}
+            <div class="lesson-detail-student">{{ booking.student_display_name }}</div>
+            {% else %}
+            <div class="lesson-detail-student">{{ booking.teacher_display_name }}</div>
+            {% endif %}
         </div>
     </div>
 

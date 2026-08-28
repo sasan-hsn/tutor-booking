@@ -6,11 +6,11 @@
     <div class="request-item{% if booking.is_cancellation %} request-item-cancellation{% endif %}"
         data-booking-id="{{ booking.id }}">
         <div class="request-avatar">
-            {% user_avatar booking.display_user 44 %}
+            {% user_avatar booking.student_display_user 44 %}
         </div>
         <div class="request-info">
             <span class="request-name">
-                {{ booking.display_name }}
+                {{ booking.student_display_name }}
                 {% if booking.is_cancellation %}
                 <span class="request-badge">Cancellation</span>
                 {% endif %}

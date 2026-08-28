@@ -109,17 +109,11 @@ def get_calendar_grid(year, month, *, teacher=None, student=None):
             date__range=(start_date, end_date)
         ).select_related("student").order_by("start_time")
 
-        for booking in bookings:
-            booking.display_name = booking.student.first_name or booking.student.username
-
     elif student is not None:
         bookings = Booking.objects.filter(
             student=student,
             date__range=(start_date, end_date)
         ).select_related("teacher__user").order_by("start_time")
-
-        for booking in bookings:
-            booking.display_name = booking.teacher.user.first_name or booking.teacher.user.username
 
     else:
         raise ValueError("Must provide either teacher or student.")

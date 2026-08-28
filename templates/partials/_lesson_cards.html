@@ -17,11 +17,19 @@
                 <span class="lesson-card-time">
                     {{ booking.start_time|time:"H:i" }} – {{ booking.end_time|time:"H:i" }}
                 </span>
-                <span class="lesson-card-teacher">{{ booking.display_name }}</span>
+                {% if user.teacher_profile %}
+                <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
+                {% else %}
+                <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
+                {% endif %}
                 <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
             </div>
             <div class="lesson-card-avatar">
-                {% user_avatar booking.display_user 48 %}
+                {% if user.teacher_profile %}
+                {% user_avatar booking.student_display_user 48 %}
+                {% else %}
+                {% user_avatar booking.teacher_display_user 48 %}
+                {% endif %}
             </div>
         </div>
         {% endfor %}
