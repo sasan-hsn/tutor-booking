@@ -38,9 +38,36 @@
                 {{ booking.get_status_display }}
             </span>
         </div>
+        {% if booking.completion_note %}
+        <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Note</span>
+            <span class="lesson-detail-value">{{ booking.completion_note }}</span>
+        </div>
+        {% endif %}
     </div>
 
-    {% if booking.status in cancellable_statuses %}
+    {% if booking.is_awaiting_resolution %}
+    {% if user.teacher_profile %}
+    <div class="lesson-detail-resolution">
+        <p class="text-muted small mb-2">This lesson has ended. Did it take place?</p>
+        <textarea class="form-control mb-2" id="completionNoteInput" rows="2" placeholder="Optional note..."></textarea>
+        <div class="lesson-resolution-actions">
+            <button type="button" class="btn-resolution btn-resolution-not-held" id="markNotHeldBtn"
+                data-not-held-url="{% url 'booking:mark_lesson_not_held' booking_id=booking.id %}">
+                Not Held
+            </button>
+            <button type="button" class="btn-resolution btn-resolution-complete" id="completeLessonBtn"
+                data-complete-url="{% url 'booking:complete_lesson' booking_id=booking.id %}">
+                Mark Completed
+            </button>
+        </div>
+    </div>
+    {% else %}
+    <div class="lesson-detail-notice">
+        This lesson has ended and is awaiting your teacher's confirmation.
+    </div>
+    {% endif %}
+    {% elif booking.status in cancellable_statuses %}
     <div class="lesson-detail-actions">
         <button type="button" class="btn-danger-outline" id="cancelLessonBtn"
             data-cancel-url="{% url 'booking:cancel_lesson' booking_id=booking.id %}">

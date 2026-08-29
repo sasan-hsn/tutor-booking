@@ -7,7 +7,8 @@
     </button>
     <div class="lesson-cards-scroll" id="lessonCardsScroll">
         {% for booking in upcoming_bookings %}
-        <div class="lesson-card">
+        <div class="lesson-card{% if booking.is_awaiting_resolution %} lesson-card-needs-action{% endif %}"
+            data-booking-id="{{ booking.id }}">
             <div class="lesson-card-date">
                 <span class="lesson-card-month">{{ booking.date|date:"M" }}</span>
                 <span class="lesson-card-day">{{ booking.date|date:"d" }}</span>
@@ -22,7 +23,11 @@
                 {% else %}
                 <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
                 {% endif %}
+                {% if booking.is_awaiting_resolution %}
+                <span class="badge-needs-action">Needs Action</span>
+                {% else %}
                 <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
+                {% endif %}
             </div>
             <div class="lesson-card-avatar">
                 {% if user.teacher_profile %}

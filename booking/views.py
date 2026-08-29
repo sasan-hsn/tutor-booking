@@ -212,18 +212,11 @@ def book_slot(request):
 
 @teacher_required
 def teacher_dashboard(request):
-    now = timezone.localtime()
-
     upcoming_bookings = (
         Booking.objects
         .filter(
             teacher__user=request.user,
             status=Booking.Status.CONFIRMED,
-            date__gte=now.date(),
-        )
-        .exclude(
-            date=now.date(),
-            start_time__lt=now.time(),
         )
         .select_related('student')
         .order_by('date', 'start_time')[:10]
@@ -566,6 +559,50 @@ def cancel_lesson(request, booking_id):
         teacher=teacher,
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
     )
+
+    if booking.is_awaiting_resolution:
+        return JsonResponse({"error": "This lesson has already passed and needs resolution, not cancellation."}, status=400)
+
+    booking.status = Booking.Status.CANCELLED
+    booking.save()
+
+    return JsonResponse({"success": True})
+
+
+@teacher_required
+@require_POST
+def complete_lesson(request, booking_id):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        teacher=teacher,
+        status=Booking.Status.CONFIRMED,
+    )
+
+    if not booking.is_awaiting_resolution:
+        return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
+
+    booking.status = Booking.Status.COMPLETED
+    booking.completion_note = request.POST.get('note', '').strip()
+    booking.save()
+
+    return JsonResponse({"success": True})
+
+
+@teacher_required
+@require_POST
+def mark_lesson_not_held(request, booking_id):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        teacher=teacher,
+        status=Booking.Status.CONFIRMED,
+    )
+
+    if not booking.is_awaiting_resolution:
+        return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
 
     booking.status = Booking.Status.CANCELLED
     booking.save()
