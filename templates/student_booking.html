@@ -20,8 +20,12 @@
 </div>
 
 
-<div class="day-picker" id="dayPicker" data-teacher-name="{{ teacher.user.get_full_name }}"
-    data-teacher-initial="{{ teacher.user.first_name|first|upper }}">
+<div class="day-picker" id="dayPicker"
+    data-teacher-name="{{ teacher.user.get_full_name|default:teacher.user.username }}"
+    data-teacher-initial="{{ teacher.user.first_name|first|upper }}"
+    data-teacher-avatar-url="{{ teacher_profile_picture|default:'' }}"
+    data-teacher-avatar-color="{{ teacher_avatar_color }}"
+    data-lesson-type-display="{{ lesson_type_display }}">
     {% include "partials/_day_picker_columns.html" %}
 </div>
 
@@ -30,7 +34,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="d-flex align-items-center gap-2">
-                    <span class="avatar-initial" id="modalTeacherAvatar"></span>
+                    <span id="modalTeacherAvatar"></span>
                     <div>
                         <div class="fw-bold" id="modalTeacherName"></div>
                         <span class="badge-lesson-type" id="modalLessonTypeBadge"></span>
