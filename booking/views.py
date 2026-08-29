@@ -14,6 +14,8 @@ from accounts.decorators import student_required, teacher_required
 from booking.models import Booking, RegularAvailability, WeeklyOverride
 from portfolio.models import TeacherProfile
 from accounts.models import StudentProfile
+from accounts.avatar_utils import get_avatar_color
+
 
 from .services import (
     get_availability_windows,
@@ -85,6 +87,10 @@ def student_booking(request):
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
 
+    teacher_profile_picture = None
+    if teacher.profile_picture:
+        teacher_profile_picture = teacher.profile_picture.url
+
     context = {
         'week_data': week_data,
         'week_start': week_start,
@@ -94,6 +100,9 @@ def student_booking(request):
         'today': today,
         'teacher': teacher,
         'lesson_type': lesson_type,
+        'lesson_type_display': dict(Booking.LessonType.choices)[lesson_type],
+        'teacher_avatar_color': get_avatar_color(teacher.user.id),
+        'teacher_profile_picture': teacher_profile_picture,
     }
     return render(request, 'student_booking.html', context)
 

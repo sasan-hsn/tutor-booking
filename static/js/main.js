@@ -105,13 +105,25 @@ function initBookingModal() {
 
     const teacherName = dayPicker.dataset.teacherName;
     const teacherInitial = dayPicker.dataset.teacherInitial;
+    const teacherAvatarUrl = dayPicker.dataset.teacherAvatarUrl;
+    const teacherAvatarColor = dayPicker.dataset.teacherAvatarColor;
+    const lessonTypeDisplay = dayPicker.dataset.lessonTypeDisplay;
 
     document.addEventListener('click', (e) => {
         const slotBtn = e.target.closest('.slot-open');
         if (!slotBtn) return;
 
-        document.getElementById('modalTeacherAvatar').textContent = teacherInitial;
+        const avatarContainer = document.getElementById('modalTeacherAvatar').parentElement;
+        let avatarHtml;
+        if (teacherAvatarUrl) {
+            avatarHtml = `<img src="${teacherAvatarUrl}" alt="Avatar" class="rounded-circle" id="modalTeacherAvatar" style="width: 40px; height: 40px; object-fit: cover;">`;
+        } else {
+            avatarHtml = `<div class="rounded-circle d-flex align-items-center justify-content-center text-white" id="modalTeacherAvatar" style="width: 40px; height: 40px; background-color: ${teacherAvatarColor}; font-weight: 600;">${teacherInitial}</div>`;
+        }
+        document.getElementById('modalTeacherAvatar').outerHTML = avatarHtml;
+
         document.getElementById('modalTeacherName').textContent = teacherName;
+        document.getElementById('modalLessonTypeBadge').textContent = lessonTypeDisplay;
         document.getElementById('modalLessonDate').textContent = slotBtn.dataset.weekday;
         document.getElementById('modalLessonTime').textContent =
             `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
