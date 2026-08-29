@@ -71,9 +71,10 @@ function initWeekNav() {
     const prevBtn = document.getElementById('weekPrevBtn');
     const nextBtn = document.getElementById('weekNextBtn');
     const label = document.getElementById('weekRangeLabel');
+    const weekAjaxUrl = dayPicker.dataset.weekAjaxUrl;
 
     async function loadWeek(weekStart) {
-        const url = `${window.bookingWeekAjaxUrl}?week_start=${weekStart}`;
+        const url = `${weekAjaxUrl}?week_start=${weekStart}`;
         const response = await fetch(url);
         if (!response.ok) return;
         const data = await response.json();
@@ -108,6 +109,7 @@ function initBookingModal() {
     const teacherAvatarUrl = dayPicker.dataset.teacherAvatarUrl;
     const teacherAvatarColor = dayPicker.dataset.teacherAvatarColor;
     const lessonTypeDisplay = dayPicker.dataset.lessonTypeDisplay;
+    const bookSlotUrl = dayPicker.dataset.bookSlotUrl;
 
     document.addEventListener('click', (e) => {
         const slotBtn = e.target.closest('.slot-open');
@@ -145,7 +147,7 @@ function initBookingModal() {
         confirmBtn.textContent = 'Booking...';
 
         try {
-            const response = await csrfFetch(window.bookSlotUrl, {
+            const response = await csrfFetch(bookSlotUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `date=${encodeURIComponent(dateVal)}&start_time=${encodeURIComponent(startVal)}`,
