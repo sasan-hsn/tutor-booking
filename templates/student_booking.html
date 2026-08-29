@@ -24,8 +24,9 @@
     data-teacher-name="{{ teacher.user.get_full_name|default:teacher.user.username }}"
     data-teacher-initial="{{ teacher.user.first_name|first|upper }}"
     data-teacher-avatar-url="{{ teacher_profile_picture|default:'' }}"
-    data-teacher-avatar-color="{{ teacher_avatar_color }}"
-    data-lesson-type-display="{{ lesson_type_display }}">
+    data-teacher-avatar-color="{{ teacher_avatar_color }}" data-lesson-type-display="{{ lesson_type_display }}"
+    data-week-ajax-url="{% url 'booking:student_booking_week_ajax' %}"
+    data-book-slot-url="{% url 'booking:book_slot' %}">
     {% include "partials/_day_picker_columns.html" %}
 </div>
 
@@ -65,11 +66,4 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    window.bookingWeekAjaxUrl = "{% url 'booking:student_booking_week_ajax' %}";
-    window.bookSlotUrl = "{% url 'booking:book_slot' %}";
-</script>
 {% endblock %}
