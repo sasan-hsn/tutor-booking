@@ -24,6 +24,37 @@ function csrfFetch(url, options = {}) {
     return fetch(url, options);
 }
 
+function initLessonCardDetailModal() {
+    const modalEl = document.getElementById('lessonDetailModal');
+    const scrollEl = document.getElementById('lessonCardsScroll');
+    if (!modalEl || !scrollEl) return;
+
+    const modalBody = document.getElementById('lessonDetailModalBody');
+    const urlTemplate = modalEl.dataset.url;
+    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    scrollEl.addEventListener('click', function (e) {
+        const card = e.target.closest('.lesson-card');
+        if (!card) return;
+
+        const bookingId = card.dataset.bookingId;
+        const url = urlTemplate.replace('/0/', `/${bookingId}/`);
+
+        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        modalInstance.show();
+
+        fetch(url)
+            .then((response) => response.text())
+            .then((html) => { modalBody.innerHTML = html; })
+            .catch(() => {
+                modalBody.innerHTML =
+                    '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+            });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initLessonCardDetailModal);
+
 
 function initLessonCardsScroll() {
     const scrollEl = document.getElementById('lessonCardsScroll');
@@ -62,6 +93,192 @@ function initLessonCardsScroll() {
 
 
 document.addEventListener('DOMContentLoaded', initLessonCardsScroll);
+
+
+function initCancelLesson() {
+    const modalBody = document.getElementById("lessonDetailModalBody");
+    if (!modalBody) return;
+
+    let hasChanges = false;
+
+    modalBody.addEventListener("click", async function (e) {
+        const btn = e.target.closest("#cancelLessonBtn");
+        if (!btn) return;
+
+        if (!confirm("Are you sure you want to cancel this lesson?")) return;
+
+        const url = btn.dataset.cancelUrl;
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, { method: "POST" });
+
+            if (!response.ok) {
+                alert("Something went wrong. Please try again.");
+                btn.disabled = false;
+                return;
+            }
+
+            hasChanges = true;
+            const modalEl = document.getElementById("lessonDetailModal");
+            bootstrap.Modal.getInstance(modalEl).hide();
+        } catch (err) {
+            alert("Network error. Please try again.");
+            btn.disabled = false;
+        }
+    });
+
+    const modalEl = document.getElementById("lessonDetailModal");
+    modalEl.addEventListener("hidden.bs.modal", function () {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+function initRequestCancellation() {
+    const modalBody = document.getElementById("lessonDetailModalBody");
+    if (!modalBody) return;
+
+    let hasChanges = false;
+
+    modalBody.addEventListener("click", async function (e) {
+        const btn = e.target.closest("#requestCancellationBtn");
+        if (!btn) return;
+
+        if (!confirm("Request cancellation for this lesson? Your teacher will need to approve it.")) return;
+
+        const url = btn.dataset.requestUrl;
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, { method: "POST" });
+
+            if (!response.ok) {
+                alert("Something went wrong. Please try again.");
+                btn.disabled = false;
+                return;
+            }
+
+            hasChanges = true;
+            const modalEl = document.getElementById("lessonDetailModal");
+            bootstrap.Modal.getInstance(modalEl).hide();
+        } catch (err) {
+            alert("Network error. Please try again.");
+            btn.disabled = false;
+        }
+    });
+
+    const modalEl = document.getElementById("lessonDetailModal");
+    modalEl.addEventListener("hidden.bs.modal", function () {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+
+function initCompleteLesson() {
+    const modalBody = document.getElementById("lessonDetailModalBody");
+    if (!modalBody) return;
+
+    let hasChanges = false;
+
+    modalBody.addEventListener("click", async function (e) {
+        const btn = e.target.closest("#completeLessonBtn");
+        if (!btn) return;
+
+        const noteInput = document.getElementById("completionNoteInput");
+        const note = noteInput ? noteInput.value : "";
+
+        if (!confirm("Mark this lesson as completed?")) return;
+
+        const url = btn.dataset.completeUrl;
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `note=${encodeURIComponent(note)}`,
+            });
+
+            if (!response.ok) {
+                alert("Something went wrong. Please try again.");
+                btn.disabled = false;
+                return;
+            }
+
+            hasChanges = true;
+            const modalEl = document.getElementById("lessonDetailModal");
+            bootstrap.Modal.getInstance(modalEl).hide();
+        } catch (err) {
+            alert("Network error. Please try again.");
+            btn.disabled = false;
+        }
+    });
+
+    const modalEl = document.getElementById("lessonDetailModal");
+    modalEl.addEventListener("hidden.bs.modal", function () {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+function initMarkNotHeld() {
+    const modalBody = document.getElementById("lessonDetailModalBody");
+    if (!modalBody) return;
+
+    let hasChanges = false;
+
+    modalBody.addEventListener("click", async function (e) {
+        const btn = e.target.closest("#markNotHeldBtn");
+        if (!btn) return;
+
+        if (!confirm("Mark this lesson as not held? This will cancel the booking.")) return;
+
+        const url = btn.dataset.notHeldUrl;
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, { method: "POST" });
+
+            if (!response.ok) {
+                alert("Something went wrong. Please try again.");
+                btn.disabled = false;
+                return;
+            }
+
+            hasChanges = true;
+            const modalEl = document.getElementById("lessonDetailModal");
+            bootstrap.Modal.getInstance(modalEl).hide();
+        } catch (err) {
+            alert("Network error. Please try again.");
+            btn.disabled = false;
+        }
+    });
+
+    const modalEl = document.getElementById("lessonDetailModal");
+    modalEl.addEventListener("hidden.bs.modal", function () {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    initCancelLesson();
+    initRequestCancellation();
+    initCompleteLesson();
+    initMarkNotHeld();
+});
+
 
 
 function initWeekNav() {
@@ -888,93 +1105,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function initCancelLesson() {
-        const modalBody = document.getElementById("lessonDetailModalBody");
-        if (!modalBody) return;
-
-        let hasChanges = false;
-
-        modalBody.addEventListener("click", async function (e) {
-            const btn = e.target.closest("#cancelLessonBtn");
-            if (!btn) return;
-
-            if (!confirm("Are you sure you want to cancel this lesson?")) return;
-
-            const url = btn.dataset.cancelUrl;
-
-            btn.disabled = true;
-
-            try {
-                const response = await csrfFetch(url, { method: "POST" });
-
-                if (!response.ok) {
-                    alert("Something went wrong. Please try again.");
-                    btn.disabled = false;
-                    return;
-                }
-
-                hasChanges = true;
-                const modalEl = document.getElementById("lessonDetailModal");
-                bootstrap.Modal.getInstance(modalEl).hide();
-            } catch (err) {
-                alert("Network error. Please try again.");
-                btn.disabled = false;
-            }
-        });
-
-        const modalEl = document.getElementById("lessonDetailModal");
-        modalEl.addEventListener("hidden.bs.modal", function () {
-            if (hasChanges) {
-                window.location.reload();
-            }
-        });
-    }
-
-    function initRequestCancellation() {
-        const modalBody = document.getElementById("lessonDetailModalBody");
-        if (!modalBody) return;
-
-        let hasChanges = false;
-
-        modalBody.addEventListener("click", async function (e) {
-            const btn = e.target.closest("#requestCancellationBtn");
-            if (!btn) return;
-
-            if (!confirm("Request cancellation for this lesson? Your teacher will need to approve it.")) return;
-
-            const url = btn.dataset.requestUrl;
-
-            btn.disabled = true;
-
-            try {
-                const response = await csrfFetch(url, { method: "POST" });
-
-                if (!response.ok) {
-                    alert("Something went wrong. Please try again.");
-                    btn.disabled = false;
-                    return;
-                }
-
-                hasChanges = true;
-                const modalEl = document.getElementById("lessonDetailModal");
-                bootstrap.Modal.getInstance(modalEl).hide();
-            } catch (err) {
-                alert("Network error. Please try again.");
-                btn.disabled = false;
-            }
-        });
-
-        const modalEl = document.getElementById("lessonDetailModal");
-        modalEl.addEventListener("hidden.bs.modal", function () {
-            if (hasChanges) {
-                window.location.reload();
-            }
-        });
-    }
-
     /* ---------- Init ---------- */
     applyFilters();
     initLessonDetailModal();
-    initCancelLesson();
-    initRequestCancellation();
 });

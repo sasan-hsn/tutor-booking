@@ -1,3 +1,5 @@
+from datetime import datetime
+from django.utils import timezone
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -160,6 +162,7 @@ class Booking(models.Model):
     lesson_type = models.CharField(max_length=10, choices=LessonType.choices, default=LessonType.REGULAR)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     cancellation_requested = models.BooleanField(default=False)
+    completion_note = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -223,6 +226,14 @@ class Booking(models.Model):
     def teacher_display_user(self):
         return self.teacher.user
 
+    @property
+    def is_awaiting_resolution(self):
+        lesson_end_datetime = timezone.make_aware(
+            datetime.combine(self.date, self.end_time)
+        )
+        return self.status == self.Status.CONFIRMED and lesson_end_datetime < timezone.now()
+
+    
     def __str__(self):
         return (
             f'Booking #{self.id} | {self.student} |'

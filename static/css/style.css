@@ -631,6 +631,7 @@ h6,
     align-items: center;
     gap: 1rem;
     transition: box-shadow 0.2s ease;
+    cursor: pointer;
 }
 
 .lesson-card:hover {
@@ -700,6 +701,63 @@ h6,
 
 .lesson-card-avatar {
     flex-shrink: 0;
+}
+
+.lesson-card-needs-action {
+    border: 1px solid var(--accent-amber);
+    box-shadow: 0 0 0 1px rgba(219, 138, 82, 0.15);
+}
+
+.badge-needs-action {
+    display: inline-block;
+    width: fit-content;
+    background-color: rgba(219, 138, 82, 0.15);
+    color: var(--accent-amber-hover);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--radius-full);
+}
+
+.lesson-resolution-actions {
+    display: flex;
+    gap: 0.6rem;
+}
+
+.btn-resolution {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.btn-resolution-not-held {
+    background: transparent;
+    border: 1px solid #E4463C;
+    color: #E4463C;
+}
+
+.btn-resolution-not-held:hover:not(:disabled) {
+    background-color: #E4463C;
+    color: #fff;
+}
+
+.btn-resolution-complete {
+    background-color: var(--primary-blue);
+    border: none;
+    color: #fff;
+}
+
+.btn-resolution-complete:hover:not(:disabled) {
+    background-color: var(--primary-blue-hover);
+}
+
+.btn-resolution:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .empty-state {
@@ -1912,6 +1970,11 @@ h6,
     color: var(--accent-amber-hover);
     font-size: 0.85rem;
     text-align: center;
+}
+
+.lesson-detail-resolution textarea {
+    resize: vertical;
+    min-height: 60px;
 }
 
 .lesson-detail-status-dot {
