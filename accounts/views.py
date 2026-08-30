@@ -57,13 +57,13 @@ def profile_settings(request):
     profile = getattr(request.user, 'teacher_profile', None) or getattr(request.user, 'student_profile', None)
 
     if request.method == 'POST':
-        form = ProfileSettingsForm(request.POST, request.FILES, profile=profile)
+        form = ProfileSettingsForm(request.POST, request.FILES, profile=profile, user=request.user)
         if form.is_valid():
             form.save()
-            messages.success(request, 'Profile picture updated.')
+            messages.success(request, 'Profile updated.')
             return redirect('accounts:profile_settings')
     else:
-        form = ProfileSettingsForm(profile=profile)
+        form = ProfileSettingsForm(profile=profile, user=request.user)
 
     return render(request, 'accounts/profile_settings.html', {
         'form': form,

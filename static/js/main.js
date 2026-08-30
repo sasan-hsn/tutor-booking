@@ -24,6 +24,23 @@ function csrfFetch(url, options = {}) {
     return fetch(url, options);
 }
 
+
+
+function initSignupTimezoneDetection() {
+    const tzSelect = document.querySelector('#signupForm select[name="timezone"]');
+    if (!tzSelect) return;
+
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const hasOption = [...tzSelect.options].some(opt => opt.value === detected);
+    if (hasOption) {
+        tzSelect.value = detected;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', initSignupTimezoneDetection);
+
+
+
 function initLessonCardDetailModal() {
     const modalEl = document.getElementById('lessonDetailModal');
     const scrollEl = document.getElementById('lessonCardsScroll');
