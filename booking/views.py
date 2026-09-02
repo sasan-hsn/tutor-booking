@@ -93,6 +93,7 @@ def student_booking(request):
         'lesson_type_display': dict(Booking.LessonType.choices)[lesson_type],
         'teacher_avatar_color': get_avatar_color(teacher.user.id),
         'teacher_profile_picture': teacher_profile_picture,
+        'viewer_timezone': request.user.timezone,
     }
     return render(request, 'student_booking.html', context)
 
@@ -130,6 +131,7 @@ def student_booking_week_ajax(request):
         'prev_week_start': prev_week_start.isoformat(),
         'next_week_start': (week_start + timedelta(days=7)).isoformat(),
         'can_go_prev': can_go_prev,
+        'viewer_timezone': request.user.timezone,
     })
 
 
