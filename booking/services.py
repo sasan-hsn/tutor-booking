@@ -1,4 +1,5 @@
 import calendar
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 from datetime import datetime, timedelta, date, time
 from django.utils import timezone
@@ -30,8 +31,6 @@ def get_availability_windows(teacher, date_val):
     return [(r.start_time, r.end_time) for r in regular_rules]
 
 
-from zoneinfo import ZoneInfo
-
 def get_available_start_times(teacher, date_val, duration_minutes):
     """Returns a sorted list of bookable start times (timezone-aware
     datetime objects) on date_val (interpreted in the teacher's own
@@ -43,9 +42,8 @@ def get_available_start_times(teacher, date_val, duration_minutes):
 
     teacher_tz = ZoneInfo(teacher.user.timezone)
     duration = timedelta(minutes=duration_minutes)
+    now = timezone.now()
 
-    # Convert each naive (start_time, end_time) window into a real,
-    # unambiguous instant — anchored to date_val AS SEEN BY THE TEACHER.
     aware_windows = [
         (
             datetime.combine(date_val, w_start, tzinfo=teacher_tz),
@@ -74,13 +72,14 @@ def get_available_start_times(teacher, date_val, duration_minutes):
         while current_dt + duration <= window_end:
             candidate_end = current_dt + duration
 
-            overlaps = any(
-                current_dt < b_end and candidate_end > b_start
-                for b_start, b_end in booked_ranges
-            )
+            if current_dt > now:
+                overlaps = any(
+                    current_dt < b_end and candidate_end > b_start
+                    for b_start, b_end in booked_ranges
+                )
 
-            if not overlaps:
-                available_times.append(current_dt)
+                if not overlaps:
+                    available_times.append(current_dt)
 
             current_dt += step
 
