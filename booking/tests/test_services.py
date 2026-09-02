@@ -1,10 +1,11 @@
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timedelta
+from django.utils import timezone
 from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from portfolio.models import TeacherProfile
-from booking.models import RegularAvailability, WeeklyOverride
+from booking.models import RegularAvailability, WeeklyOverride, Booking
 from booking.services import get_availability_windows, get_available_start_times
 
 User = get_user_model()
@@ -119,4 +120,50 @@ class AvailabilityWindowsServiceTest(TestCase):
         # 10:00 would end at 11:00 -> overlaps booking (10:30-11:30) -> excluded
         # 10:30 exactly matches booking -> excluded
         # 11:00 would end at 12:00 -> overlaps booking (ends 11:30) -> excluded
+        self.assertEqual(start_times, [])
+
+
+    def test_available_start_times_excludes_past_slots(self):
+        """Start times earlier than 'now' must never be returned, even
+        when they fall inside an otherwise-open availability window."""
+        now = timezone.localtime(timezone.now(), self.tz)
+        today = now.date()
+
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=today.weekday(),
+            start_time=(now - timedelta(hours=2)).time().replace(second=0, microsecond=0),
+            end_time=(now + timedelta(hours=2)).time().replace(second=0, microsecond=0),
+        )
+
+        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+
+        self.assertTrue(all(st > now for st in start_times))
+        # sanity check: some future slots should still be offered
+        self.assertTrue(len(start_times) > 0)
+
+    def test_completed_past_booking_does_not_reopen_its_slot(self):
+        """A COMPLETED booking's original slot is in the past, so it must
+        stay excluded — regardless of COMPLETED not being in the
+        'occupied' status filter used for overlap checks."""
+        yesterday = (timezone.localtime(timezone.now(), self.tz) - timedelta(days=1)).date()
+
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=yesterday.weekday(),
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+
+        student = User.objects.create_user(username='student_completed', password='password123')
+        Booking.objects.create(
+            student=student,
+            teacher=self.teacher,
+            start_at=datetime.combine(yesterday, time(10, 0), tzinfo=self.tz),
+            end_at=datetime.combine(yesterday, time(11, 0), tzinfo=self.tz),
+            status=Booking.Status.COMPLETED,
+        )
+
+        start_times = get_available_start_times(self.teacher, yesterday, duration_minutes=60)
+
         self.assertEqual(start_times, [])
