@@ -62,9 +62,6 @@
             {% if booking.review.comment %}
             <p class="review-display-comment">{{ booking.review.comment }}</p>
             {% endif %}
-            {% if not booking.review.is_approved %}
-            <p class="review-pending-note">Pending approval — not yet shown publicly.</p>
-            {% endif %}
         </div>
         {% elif review_form %}
         <div class="review-form-wrapper">

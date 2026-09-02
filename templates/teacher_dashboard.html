@@ -11,9 +11,13 @@
             <span class="badge-count">{{ lesson_requests_count }}</span>
             {% endif %}
         </button>
-        <a href="{% url 'booking:student_management' %}" class="btn-minimal">
-            <i class="bi bi-people"></i> Student Management
-        </a>
+        <button class="btn-minimal position-relative" type="button" data-bs-toggle="modal"
+            data-bs-target="#pendingReviewsModal">
+            <i class="bi bi-star"></i> Pending Reviews
+            {% if pending_reviews_count %}
+            <span class="badge-count">{{ pending_reviews_count }}</span>
+            {% endif %}
+        </button>
     </div>
 </div>
 
@@ -45,6 +49,19 @@
             </div>
             <div class="modal-body" id="lessonRequestsModalBody">
             </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pendingReviewsModal" data-url="{% url 'booking:teacher_pending_reviews' %}"
+    data-respond-url="{% url 'booking:approve_review' review_id=0 %}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Pending Reviews</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="pendingReviewsModalBody"></div>
         </div>
     </div>
 </div>

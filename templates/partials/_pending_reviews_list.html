@@ -1,0 +1,34 @@
+{% load avatar_tags %}
+
+{% if pending_reviews %}
+<div class="request-list">
+    {% for review in pending_reviews %}
+    <div class="request-item" data-review-id="{{ review.id }}">
+        <div class="request-avatar">
+            {% user_avatar review.student 44 %}
+        </div>
+        <div class="request-info">
+            <span class="request-name">{{ review.student.get_full_name|default:review.student.username }}</span>
+            <div class="review-stars">
+                {% for i in "12345" %}
+                <i class="bi {% if forloop.counter <= review.rating %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                {% endfor %}
+            </div>
+            {% if review.comment %}
+            <span class="request-datetime">{{ review.comment }}</span>
+            {% endif %}
+        </div>
+        <div class="request-actions">
+            <button type="button" class="btn-decline" data-review-id="{{ review.id }}"
+                data-reject-url="{% url 'booking:reject_review' review_id=review.id %}">Reject</button>
+            <button type="button" class="btn-accept" data-review-id="{{ review.id }}"
+                data-approve-url="{% url 'booking:approve_review' review_id=review.id %}">Approve</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>No pending reviews.</p>
+</div>
+{% endif %}

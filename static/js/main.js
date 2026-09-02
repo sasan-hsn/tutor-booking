@@ -1166,3 +1166,97 @@ function initReviewForm() {
 }
 
 document.addEventListener('DOMContentLoaded', initReviewForm);
+
+
+
+/* ==========================================================================
+   Teacher Review Approval
+   ========================================================================== */
+
+function initPendingReviewsModal() {
+    const modalEl = document.getElementById('pendingReviewsModal');
+    if (!modalEl) return;
+
+    const modalBody = document.getElementById('pendingReviewsModalBody');
+    const url = modalEl.dataset.url;
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        fetch(url)
+            .then(response => response.text())
+            .then(html => { modalBody.innerHTML = html; })
+            .catch(() => {
+                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+            });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initPendingReviewsModal);
+
+
+function initPendingReviewsActions() {
+    const modalEl = document.getElementById('pendingReviewsModal');
+    if (!modalEl) return;
+
+    const modalBody = document.getElementById('pendingReviewsModalBody');
+    let hasChanges = false;
+
+    modalBody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.btn-accept, .btn-decline');
+        if (!btn) return;
+
+        const isReject = btn.classList.contains('btn-decline');
+        if (isReject && !confirm('Are you sure you want to reject and delete this review?')) {
+            return;
+        }
+
+        const url = isReject ? btn.dataset.rejectUrl : btn.dataset.approveUrl;
+        const item = btn.closest('.request-item');
+
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(url, {
+                method: 'POST',
+            });
+
+            if (!response.ok) {
+                alert('Something went wrong. Please try again.');
+                btn.disabled = false;
+                return;
+            }
+
+            item.remove();
+            hasChanges = true;
+
+            // Update badge count
+            const badge = document.querySelector('button[data-bs-target="#pendingReviewsModal"] .badge-count');
+            if (badge) {
+                const newCount = parseInt(badge.textContent, 10) - 1;
+                if (newCount > 0) {
+                    badge.textContent = newCount;
+                } else {
+                    badge.remove();
+                }
+            }
+
+            // If no more items in modal, show empty state
+            const remainingItems = modalBody.querySelectorAll('.request-item');
+            if (remainingItems.length === 0) {
+                modalBody.innerHTML = '<div class="empty-state"><p>No pending reviews.</p></div>';
+            }
+
+        } catch (err) {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        if (hasChanges) {
+            window.location.reload();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initPendingReviewsActions);
