@@ -1,4 +1,5 @@
-from datetime import date, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from accounts.models import User
@@ -16,9 +17,9 @@ class BookingModelTests(TestCase):
             username='teststudent', password='test123', role=User.Role.STUDENT
         )
 
-        self.booking_date = date(2026, 9, 25)
-        self.start_time = time(10, 0)
-        self.end_time = time(11, 0)
+        tz = ZoneInfo(self.teacher_user.timezone)
+        self.start_at = datetime(2026, 9, 25, 10, 0, tzinfo=tz)
+        self.end_at = datetime(2026, 9, 25, 11, 0, tzinfo=tz)
 
     # 1. Valid booking creation
     def test_valid_booking_creation(self):
@@ -26,9 +27,8 @@ class BookingModelTests(TestCase):
         booking = Booking(
             student=self.student_user,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
             lesson_type=Booking.LessonType.REGULAR,
             status=Booking.Status.PENDING,
         )
@@ -42,9 +42,8 @@ class BookingModelTests(TestCase):
         booking = Booking(
             student=self.teacher_user,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
             lesson_type=Booking.LessonType.REGULAR,
             status=Booking.Status.PENDING,
         )
@@ -57,9 +56,8 @@ class BookingModelTests(TestCase):
         booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
         )
 
         booking.status = Booking.Status.CANCELLED
@@ -74,9 +72,8 @@ class BookingModelTests(TestCase):
         Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
         )
 
         another_student = User.objects.create_user(
@@ -85,9 +82,8 @@ class BookingModelTests(TestCase):
         second_booking = Booking(
             student=another_student,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
         )
         with self.assertRaises(ValidationError):
             second_booking.save()
@@ -98,9 +94,8 @@ class BookingModelTests(TestCase):
         first_booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
         )
         first_booking.status = Booking.Status.CANCELLED
         first_booking.save()
@@ -111,9 +106,8 @@ class BookingModelTests(TestCase):
         second_booking = Booking(
             student=another_student,
             teacher=self.teacher,
-            date=self.booking_date,
-            start_time=self.start_time,
-            end_time=self.end_time,
+            start_at=self.start_at,
+            end_at=self.end_at,
         )
         second_booking.save()  # should NOT raise
 

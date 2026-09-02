@@ -30,8 +30,8 @@
                         <span>Upcoming: {{ student.upcoming_count }}</span>
                     </div>
                 </td>
-                <td>{{ student.previous_date|date:"M d, Y"|default:"—" }}</td>
-                <td>{{ student.next_date|date:"M d, Y"|default:"—" }}</td>
+                <td>{{ student.previous_booking.teacher_local_start|date:"M d, Y"|default:"—" }}</td>
+                <td>{{ student.next_booking.teacher_local_start|date:"M d, Y"|default:"—" }}</td>
             </tr>
             {% endfor %}
         </tbody>

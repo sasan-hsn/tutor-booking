@@ -349,14 +349,12 @@ function initBookingModal() {
         const slotBtn = e.target.closest('.slot-open');
         if (!slotBtn) return;
 
-        const avatarContainer = document.getElementById('modalTeacherAvatar').parentElement;
-        let avatarHtml;
+        const avatarEl = document.getElementById('modalTeacherAvatar');
         if (teacherAvatarUrl) {
-            avatarHtml = `<img src="${teacherAvatarUrl}" alt="Avatar" class="rounded-circle" id="modalTeacherAvatar" style="width: 40px; height: 40px; object-fit: cover;">`;
+            avatarEl.outerHTML = `<img src="${teacherAvatarUrl}" alt="Avatar" class="rounded-circle" id="modalTeacherAvatar" style="width: 40px; height: 40px; object-fit: cover;">`;
         } else {
-            avatarHtml = `<div class="rounded-circle d-flex align-items-center justify-content-center text-white" id="modalTeacherAvatar" style="width: 40px; height: 40px; background-color: ${teacherAvatarColor}; font-weight: 600;">${teacherInitial}</div>`;
+            avatarEl.outerHTML = `<div class="rounded-circle d-flex align-items-center justify-content-center text-white" id="modalTeacherAvatar" style="width: 40px; height: 40px; background-color: ${teacherAvatarColor}; font-weight: 600;">${teacherInitial}</div>`;
         }
-        document.getElementById('modalTeacherAvatar').outerHTML = avatarHtml;
 
         document.getElementById('modalTeacherName').textContent = teacherName;
         document.getElementById('modalLessonTypeBadge').textContent = lessonTypeDisplay;
@@ -364,8 +362,7 @@ function initBookingModal() {
         document.getElementById('modalLessonTime').textContent =
             `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
 
-        confirmBtn.dataset.date = slotBtn.dataset.date;
-        confirmBtn.dataset.start = slotBtn.dataset.start;
+        confirmBtn.dataset.startAt = slotBtn.dataset.startAt;
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Next';
 
@@ -373,9 +370,8 @@ function initBookingModal() {
     });
 
     confirmBtn.addEventListener('click', async () => {
-        const dateVal = confirmBtn.dataset.date;
-        const startVal = confirmBtn.dataset.start;
-        if (!dateVal || !startVal) return;
+        const startAtVal = confirmBtn.dataset.startAt;
+        if (!startAtVal) return;
 
         confirmBtn.disabled = true;
         confirmBtn.textContent = 'Booking...';
@@ -384,7 +380,7 @@ function initBookingModal() {
             const response = await csrfFetch(bookSlotUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `date=${encodeURIComponent(dateVal)}&start_time=${encodeURIComponent(startVal)}`,
+                body: `start_at=${encodeURIComponent(startAtVal)}`,
             });
 
             const data = await response.json();

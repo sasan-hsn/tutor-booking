@@ -1,4 +1,5 @@
-from datetime import date, time
+from datetime import date, time, datetime
+from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -20,6 +21,7 @@ class AvailabilityWindowsServiceTest(TestCase):
         )
         # 2026-09-07 is a Monday (weekday = 0)
         self.target_monday = date(2026, 9, 7)
+        self.tz = ZoneInfo(self.user.timezone)
 
     def test_windows_from_regular_availability(self):
         """RegularAvailability applies when there's no override for that date."""
@@ -85,7 +87,12 @@ class AvailabilityWindowsServiceTest(TestCase):
 
         # With a 60-min lesson in a 10:00-12:00 window and 30-min steps,
         # valid starts are 10:00, 10:30, 11:00 (11:00+60min=12:00 fits exactly)
-        self.assertEqual(start_times, [time(10, 0), time(10, 30), time(11, 0)])
+        expected = [
+            datetime(2026, 9, 7, 10, 0, tzinfo=self.tz),
+            datetime(2026, 9, 7, 10, 30, tzinfo=self.tz),
+            datetime(2026, 9, 7, 11, 0, tzinfo=self.tz),
+        ]
+        self.assertEqual(start_times, expected)
 
     def test_available_start_times_excludes_booked_overlaps(self):
         """An existing booking removes any start time that would overlap it."""
@@ -102,9 +109,8 @@ class AvailabilityWindowsServiceTest(TestCase):
         Booking.objects.create(
             student=student,
             teacher=self.teacher,
-            date=self.target_monday,
-            start_time=time(10, 30),
-            end_time=time(11, 30),
+            start_at=datetime(2026, 9, 7, 10, 30, tzinfo=self.tz),
+            end_at=datetime(2026, 9, 7, 11, 30, tzinfo=self.tz),
             status=Booking.Status.CONFIRMED,
         )
 

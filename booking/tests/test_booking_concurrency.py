@@ -1,8 +1,9 @@
 import threading
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from django.test import TransactionTestCase, Client
 from django.urls import reverse
 from django.db import connection
-from datetime import date, time
 from accounts.models import User
 from booking.models import RegularAvailability, Booking
 
@@ -22,7 +23,8 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
         )
 
         # 2026-09-28 is a Monday
-        self.booking_date = date(2026, 9, 28)
+        self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
+        self.slot_start_at = datetime(2026, 9, 28, 10, 0, tzinfo=self.teacher_tz)
 
         RegularAvailability.objects.create(
             teacher=self.teacher,
@@ -41,8 +43,7 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             client = Client()
             client.login(username=username, password='test123')
             response = client.post(self.book_url, {
-                'date': self.booking_date.isoformat(),
-                'start_time': '10:00',
+                'start_at': self.slot_start_at.isoformat(),
             })
             status_codes.append(response.status_code)
             connection.close()
@@ -60,7 +61,7 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
         self.assertEqual(
             Booking.objects.filter(
                 teacher=self.teacher,
-                date=self.booking_date,
+                start_at=self.slot_start_at,
                 status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
             ).count(),
             1,

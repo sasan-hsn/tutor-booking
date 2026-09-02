@@ -32,7 +32,13 @@
                 {% for booking in day.bookings %}
                 <div class="calendar-booking-row" data-status="{{ booking.status }}" data-booking-id="{{ booking.id }}"
                     data-student-id="{{ booking.student.id }}">
-                    <span class="calendar-booking-time">{{ booking.start_time|time:"H:i" }}</span>
+                    <span class="calendar-booking-time">
+                        {% if user.teacher_profile %}
+                        {{ booking.teacher_local_start|time:"H:i" }}
+                        {% else %}
+                        {{ booking.student_local_start|time:"H:i" }}
+                        {% endif %}
+                    </span>
                     <span class="calendar-booking-student">
                         {% if user.teacher_profile %}
                         {{ booking.student_display_name }}

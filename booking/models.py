@@ -1,3 +1,4 @@
+from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -226,6 +227,22 @@ class Booking(models.Model):
     @property
     def is_awaiting_resolution(self):
         return self.status == self.Status.CONFIRMED and self.end_at < timezone.now()
+
+    @property
+    def student_local_start(self):
+        return timezone.localtime(self.start_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+
+    @property
+    def teacher_local_start(self):
+        return timezone.localtime(self.start_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
+
+    @property
+    def student_local_end(self):
+        return timezone.localtime(self.end_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+
+    @property
+    def teacher_local_end(self):
+        return timezone.localtime(self.end_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
 
     
     def __str__(self):

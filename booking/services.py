@@ -199,3 +199,35 @@ def get_calendar_navigation(request, today):
         "next_year": next_year,
         "next_month": next_month,
     }
+
+
+def get_week_data(teacher, student_tz, week_days, duration_minutes):
+    """For each day in week_days (dates in the student's local calendar),
+    returns available slots as dicts with an aware `start_at` (for
+    booking) and student-local `local_start_time`/`local_end_time` (for
+    display). Handles timezone-offset spillover by checking the
+    teacher's day before/after each requested day.
+    """
+    week_data = []
+    for day in week_days:
+        candidate_slots = []
+        for teacher_day in (day - timedelta(days=1), day, day + timedelta(days=1)):
+            candidate_slots.extend(get_available_start_times(teacher, teacher_day, duration_minutes))
+
+        day_slots = []
+        for slot_start in sorted(set(candidate_slots)):
+            local_start = timezone.localtime(slot_start, student_tz)
+            if local_start.date() != day:
+                continue
+            local_end = timezone.localtime(
+                slot_start + timedelta(minutes=duration_minutes), student_tz
+            )
+            day_slots.append({
+                'start_at': slot_start,
+                'local_start_time': local_start.time(),
+                'local_end_time': local_end.time(),
+            })
+
+        week_data.append({'day': day, 'slots': day_slots})
+
+    return week_data
