@@ -213,9 +213,15 @@ def teacher_dashboard(request):
         teacher__user=request.user,
     ).count()
 
+    pending_reviews_count = Review.objects.filter(
+        booking__teacher__user=request.user,
+        is_approved=False,
+    ).count()
+
     return render(request, 'teacher_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
-        'lesson_requests_count': lesson_requests_count
+        'lesson_requests_count': lesson_requests_count,
+        'pending_reviews_count': pending_reviews_count,
     })
 
 
@@ -716,3 +722,42 @@ def submit_review(request, booking_id):
     review.save()
 
     return JsonResponse({'success': True})
+
+
+@teacher_required
+def teacher_pending_reviews(request):
+    pending_reviews = Review.objects.filter(
+        booking__teacher__user=request.user,
+        is_approved=False,
+    ).select_related('student', 'booking').order_by('-created_at')
+
+    return render(request, 'partials/_pending_reviews_list.html', {
+        'pending_reviews': pending_reviews,
+    })
+
+
+@teacher_required
+@require_POST
+def approve_review(request, review_id):
+    review = get_object_or_404(
+        Review,
+        pk=review_id,
+        booking__teacher__user=request.user,
+    )
+    review.is_approved = True
+    review.save()
+
+    return JsonResponse({'success': True})
+
+
+@teacher_required
+@require_POST
+def reject_review(request, review_id):
+    review = get_object_or_404(
+        Review,
+        pk=review_id,
+        booking__teacher__user=request.user,
+    )
+    review.delete()
+
+    return JsonResponse({'success': True})    

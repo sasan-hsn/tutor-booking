@@ -28,4 +28,7 @@ urlpatterns = [
     path("student/lesson/<int:booking_id>/", views.lesson_detail_student, name="lesson_detail_student"),
     path("student/lesson/<int:booking_id>/request-cancellation/", views.request_cancellation, name="request_cancellation"),
     path('lessons/<int:booking_id>/review/', views.submit_review, name='submit_review'),
+    path('reviews/', views.teacher_pending_reviews, name='teacher_pending_reviews'),
+    path('reviews/<int:review_id>/approve/', views.approve_review, name='approve_review'),
+    path('reviews/<int:review_id>/reject/', views.reject_review, name='reject_review'),
  ]
