@@ -1,4 +1,4 @@
-from datetime import datetime
+from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -156,9 +156,8 @@ class Booking(models.Model):
 
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings')
     teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE, related_name='bookings')
-    date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
     lesson_type = models.CharField(max_length=10, choices=LessonType.choices, default=LessonType.REGULAR)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     cancellation_requested = models.BooleanField(default=False)
@@ -173,7 +172,7 @@ class Booking(models.Model):
         verbose_name_plural = 'Bookings'
         constraints = [
             models.UniqueConstraint(
-                fields=['teacher', 'date', 'start_time'],
+                fields=['teacher', 'start_at'],
                 condition=models.Q(status__in=['pending', 'confirmed']),
                 name='unique_active_teacher_datetime_booking',
             )
@@ -183,21 +182,20 @@ class Booking(models.Model):
         super().clean()
 
         # 1. Basic time sanity check
-        if self.start_time and self.end_time and self.start_time >= self.end_time:
-            raise ValidationError({'end_time': 'End time must be after start time.'})
+        if self.start_at and self.end_at and self.start_at >= self.end_at:
+            raise ValidationError({'end_at': 'End time must be after start time.'})
 
         # 2. Prevent a teacher from booking their own availability
         if self.teacher_id and self.student_id and self.teacher.user_id == self.student_id:
             raise ValidationError({'student': 'A teacher cannot book their own availability.'})
 
         # 3. Prevent overlapping active bookings for the same teacher
-        if self.teacher_id and self.date and self.start_time and self.end_time:
+        if self.teacher_id and self.start_at and self.end_at:
             overlapping = Booking.objects.filter(
                 teacher=self.teacher,
-                date=self.date,
                 status__in=[self.Status.PENDING, self.Status.CONFIRMED],
-                start_time__lt=self.end_time,
-                end_time__gt=self.start_time,
+                start_at__lt=self.end_at,
+                end_at__gt=self.start_at,
             )
             if self.pk:
                 overlapping = overlapping.exclude(pk=self.pk)
@@ -228,10 +226,23 @@ class Booking(models.Model):
 
     @property
     def is_awaiting_resolution(self):
-        lesson_end_datetime = timezone.make_aware(
-            datetime.combine(self.date, self.end_time)
-        )
-        return self.status == self.Status.CONFIRMED and lesson_end_datetime < timezone.now()
+        return self.status == self.Status.CONFIRMED and self.end_at < timezone.now()
+
+    @property
+    def student_local_start(self):
+        return timezone.localtime(self.start_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+
+    @property
+    def teacher_local_start(self):
+        return timezone.localtime(self.start_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
+
+    @property
+    def student_local_end(self):
+        return timezone.localtime(self.end_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+
+    @property
+    def teacher_local_end(self):
+        return timezone.localtime(self.end_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
 
     
     def __str__(self):

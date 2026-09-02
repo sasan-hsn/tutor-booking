@@ -10,14 +10,26 @@
         <div class="lesson-card{% if booking.is_awaiting_resolution %} lesson-card-needs-action{% endif %}"
             data-booking-id="{{ booking.id }}">
             <div class="lesson-card-date">
-                <span class="lesson-card-month">{{ booking.date|date:"M" }}</span>
-                <span class="lesson-card-day">{{ booking.date|date:"d" }}</span>
-                <span class="lesson-card-weekday">{{ booking.date|date:"D" }}</span>
+                {% if user.teacher_profile %}
+                <span class="lesson-card-month">{{ booking.teacher_local_start|date:"M" }}</span>
+                <span class="lesson-card-day">{{ booking.teacher_local_start|date:"d" }}</span>
+                <span class="lesson-card-weekday">{{ booking.teacher_local_start|date:"D" }}</span>
+                {% else %}
+                <span class="lesson-card-month">{{ booking.student_local_start|date:"M" }}</span>
+                <span class="lesson-card-day">{{ booking.student_local_start|date:"d" }}</span>
+                <span class="lesson-card-weekday">{{ booking.student_local_start|date:"D" }}</span>
+                {% endif %}
             </div>
             <div class="lesson-card-body">
+                {% if user.teacher_profile %}
                 <span class="lesson-card-time">
-                    {{ booking.start_time|time:"H:i" }} – {{ booking.end_time|time:"H:i" }}
+                    {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
                 </span>
+                {% else %}
+                <span class="lesson-card-time">
+                    {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
+                </span>
+                {% endif %}
                 {% if user.teacher_profile %}
                 <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
                 {% else %}

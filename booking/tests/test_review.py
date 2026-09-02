@@ -1,4 +1,5 @@
-from datetime import date, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from accounts.models import User
@@ -13,12 +14,12 @@ class ReviewModelTests(TestCase):
 
         self.student_user = User.objects.create_user(username='teststudent', password='test123', role=User.Role.STUDENT)
 
+        tz = ZoneInfo(self.teacher_user.timezone)
         self.booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            date=date(2026, 6, 15),
-            start_time=time(14, 0),
-            end_time=time(15, 0),
+            start_at=datetime(2026, 6, 15, 14, 0, tzinfo=tz),
+            end_at=datetime(2026, 6, 15, 15, 0, tzinfo=tz),
             status=Booking.Status.COMPLETED,
         )
 
@@ -38,12 +39,12 @@ class ReviewModelTests(TestCase):
     # 2. Review requires completed booking
     def test_review_requires_completed_booking(self):
         """Test that a review can only be created for a completed booking."""
+        tz = ZoneInfo(self.teacher_user.timezone)
         pending_booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            date=date(2026, 6, 16),
-            start_time=time(10, 0),
-            end_time=time(11, 0),
+            start_at=datetime(2026, 6, 16, 10, 0, tzinfo=tz),
+            end_at=datetime(2026, 6, 16, 11, 0, tzinfo=tz),
             status=Booking.Status.PENDING,
         )
 

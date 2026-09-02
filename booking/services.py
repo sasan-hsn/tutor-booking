@@ -1,6 +1,6 @@
 import calendar
 from collections import defaultdict
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from django.utils import timezone
 
 from .models import RegularAvailability, WeeklyOverride, Booking
@@ -30,38 +30,48 @@ def get_availability_windows(teacher, date_val):
     return [(r.start_time, r.end_time) for r in regular_rules]
 
 
+from zoneinfo import ZoneInfo
+
 def get_available_start_times(teacher, date_val, duration_minutes):
-    """Returns a sorted list of bookable start times (datetime.time objects)
-    on date_val for a lesson of the given duration, respecting availability
-    windows and existing active bookings.
+    """Returns a sorted list of bookable start times (timezone-aware
+    datetime objects) on date_val (interpreted in the teacher's own
+    timezone) for a lesson of the given duration.
     """
     windows = get_availability_windows(teacher, date_val)
     if not windows:
         return []
 
+    teacher_tz = ZoneInfo(teacher.user.timezone)
     duration = timedelta(minutes=duration_minutes)
+
+    # Convert each naive (start_time, end_time) window into a real,
+    # unambiguous instant — anchored to date_val AS SEEN BY THE TEACHER.
+    aware_windows = [
+        (
+            datetime.combine(date_val, w_start, tzinfo=teacher_tz),
+            datetime.combine(date_val, w_end, tzinfo=teacher_tz),
+        )
+        for w_start, w_end in windows
+    ]
+
+    day_range_start = min(w[0] for w in aware_windows)
+    day_range_end = max(w[1] for w in aware_windows)
 
     existing_bookings = Booking.objects.filter(
         teacher=teacher,
-        date=date_val,
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
+        start_at__lt=day_range_end,
+        end_at__gt=day_range_start,
     )
-    booked_ranges = [
-        (
-            datetime.combine(date_val, b.start_time),
-            datetime.combine(date_val, b.end_time),
-        )
-        for b in existing_bookings
-    ]
+    booked_ranges = [(b.start_at, b.end_at) for b in existing_bookings]
 
     available_times = []
     step = timedelta(minutes=30)
 
-    for window_start, window_end in windows:
-        current_dt = datetime.combine(date_val, window_start)
-        window_end_dt = datetime.combine(date_val, window_end)
+    for window_start, window_end in aware_windows:
+        current_dt = window_start
 
-        while current_dt + duration <= window_end_dt:
+        while current_dt + duration <= window_end:
             candidate_end = current_dt + duration
 
             overlaps = any(
@@ -70,7 +80,7 @@ def get_available_start_times(teacher, date_val, duration_minutes):
             )
 
             if not overlaps:
-                available_times.append(current_dt.time())
+                available_times.append(current_dt)
 
             current_dt += step
 
@@ -99,32 +109,45 @@ def get_calendar_grid(year, month, *, teacher=None, student=None):
     active month flags, and associated booking records.
     """
 
+    if teacher is not None:
+        viewer_tz = ZoneInfo(teacher.user.timezone)
+    elif student is not None:
+        viewer_tz = ZoneInfo(student.timezone)
+    else:
+        raise ValueError("Must provide either teacher or student.")
+
     _, last_day = calendar.monthrange(year, month)
-    start_date = date(year, month, 1)
-    end_date = date(year, month, last_day)
+    month_start_local = date(year, month, 1)
+    month_end_local = date(year, month, last_day)
+
+    # Convert the local calendar month boundaries into aware UTC instants,
+    # so the DB query correctly captures every booking that falls within
+    # this month AS SEEN BY THE VIEWER (not as seen in UTC).
+    range_start = datetime.combine(month_start_local, time.min, tzinfo=viewer_tz)
+    range_end = datetime.combine(month_end_local, time.max, tzinfo=viewer_tz)
 
     if teacher is not None:
         bookings = Booking.objects.filter(
             teacher=teacher,
-            date__range=(start_date, end_date)
-        ).select_related("student").order_by("start_time")
-
-    elif student is not None:
-        bookings = Booking.objects.filter(
-            student=student,
-            date__range=(start_date, end_date)
-        ).select_related("teacher__user").order_by("start_time")
+            start_at__lt=range_end,
+            end_at__gt=range_start,
+        ).select_related("student").order_by("start_at")
 
     else:
-        raise ValueError("Must provide either teacher or student.")
+        bookings = Booking.objects.filter(
+            student=student,
+            start_at__lt=range_end,
+            end_at__gt=range_start,
+        ).select_related("teacher__user").order_by("start_at")
 
     bookings_by_date = defaultdict(list)
     for booking in bookings:
-        bookings_by_date[booking.date].append(booking)
+        local_date = timezone.localtime(booking.start_at, viewer_tz).date()
+        bookings_by_date[local_date].append(booking)
 
     cal = calendar.Calendar(firstweekday=6)
     month_matrix = cal.monthdatescalendar(year, month)
-    today = timezone.localdate()
+    today = timezone.localtime(timezone.now(), viewer_tz).date()
 
     calendar_grid = []
     for week in month_matrix:
@@ -176,3 +199,35 @@ def get_calendar_navigation(request, today):
         "next_year": next_year,
         "next_month": next_month,
     }
+
+
+def get_week_data(teacher, student_tz, week_days, duration_minutes):
+    """For each day in week_days (dates in the student's local calendar),
+    returns available slots as dicts with an aware `start_at` (for
+    booking) and student-local `local_start_time`/`local_end_time` (for
+    display). Handles timezone-offset spillover by checking the
+    teacher's day before/after each requested day.
+    """
+    week_data = []
+    for day in week_days:
+        candidate_slots = []
+        for teacher_day in (day - timedelta(days=1), day, day + timedelta(days=1)):
+            candidate_slots.extend(get_available_start_times(teacher, teacher_day, duration_minutes))
+
+        day_slots = []
+        for slot_start in sorted(set(candidate_slots)):
+            local_start = timezone.localtime(slot_start, student_tz)
+            if local_start.date() != day:
+                continue
+            local_end = timezone.localtime(
+                slot_start + timedelta(minutes=duration_minutes), student_tz
+            )
+            day_slots.append({
+                'start_at': slot_start,
+                'local_start_time': local_start.time(),
+                'local_end_time': local_end.time(),
+            })
+
+        week_data.append({'day': day, 'slots': day_slots})
+
+    return week_data

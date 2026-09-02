@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -22,7 +23,8 @@ from .services import (
     get_available_start_times,
     get_lesson_type_and_price,
     get_calendar_grid,
-    get_calendar_navigation
+    get_calendar_navigation,
+    get_week_data,
 )
 
 
@@ -36,14 +38,10 @@ def student_dashboard(request):
         .filter(
             student=request.user,
             status=Booking.Status.CONFIRMED,
-            date__gte=now.date(),
-        )
-        .exclude(
-            date=now.date(),
-            start_time__lt=now.time(),
+            start_at__gte=timezone.now(),
         )
         .select_related('teacher', 'teacher__user')
-        .order_by('date', 'start_time')[:10]
+        .order_by('start_at')[:10]
     )
 
     return render(request, 'student_dashboard.html', {
@@ -54,7 +52,9 @@ def student_dashboard(request):
 
 @student_required
 def student_booking(request):
-    today = timezone.localdate()
+    student_tz = ZoneInfo(request.user.timezone)
+    today = timezone.localtime(timezone.now(), student_tz).date()
+
     week_start_param = request.GET.get('week_start')
     if week_start_param:
         try:
@@ -72,17 +72,7 @@ def student_booking(request):
 
     lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
 
-    week_data = []
-    for day in week_days:
-        start_times = get_available_start_times(teacher, day, duration_minutes)
-        day_slots = [
-            {
-                'start_time': t,
-                'end_time': (datetime.combine(day, t) + timedelta(minutes=duration_minutes)).time(),
-            }
-            for t in start_times
-        ]
-        week_data.append({'day': day, 'slots': day_slots})
+    week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
@@ -103,6 +93,7 @@ def student_booking(request):
         'lesson_type_display': dict(Booking.LessonType.choices)[lesson_type],
         'teacher_avatar_color': get_avatar_color(teacher.user.id),
         'teacher_profile_picture': teacher_profile_picture,
+        'viewer_timezone': request.user.timezone,
     }
     return render(request, 'student_booking.html', context)
 
@@ -110,7 +101,9 @@ def student_booking(request):
 
 @student_required
 def student_booking_week_ajax(request):
-    today = timezone.localdate()
+    student_tz = ZoneInfo(request.user.timezone)
+    today = timezone.localtime(timezone.now(), student_tz).date()
+
     week_start_param = request.GET.get('week_start')
     try:
         week_start = date.fromisoformat(week_start_param)
@@ -125,17 +118,7 @@ def student_booking_week_ajax(request):
 
     lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
 
-    week_data = []
-    for day in week_days:
-        start_times = get_available_start_times(teacher, day, duration_minutes)
-        day_slots = [
-            {
-                'start_time': t,
-                'end_time': (datetime.combine(day, t) + timedelta(minutes=duration_minutes)).time(),
-            }
-            for t in start_times
-        ]
-        week_data.append({'day': day, 'slots': day_slots})
+    week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
@@ -148,6 +131,7 @@ def student_booking_week_ajax(request):
         'prev_week_start': prev_week_start.isoformat(),
         'next_week_start': (week_start + timedelta(days=7)).isoformat(),
         'can_go_prev': can_go_prev,
+        'viewer_timezone': request.user.timezone,
     })
 
 
@@ -155,17 +139,17 @@ def student_booking_week_ajax(request):
 @student_required
 @require_POST
 def book_slot(request):
-    date_str = request.POST.get('date')
-    start_time_str = request.POST.get('start_time')
+    start_at_str = request.POST.get('start_at')
 
-    if not date_str or not start_time_str:
-        return JsonResponse({'error': 'date and start_time are required.'}, status=400)
+    if not start_at_str:
+        return JsonResponse({'error': 'start_at is required.'}, status=400)
 
     try:
-        date_val = date.fromisoformat(date_str)
-        start_time_val = datetime.strptime(start_time_str, '%H:%M').time()
+        start_at_val = datetime.fromisoformat(start_at_str)
+        if timezone.is_naive(start_at_val):
+            return JsonResponse({'error': 'Invalid start_at format.'}, status=400)
     except ValueError:
-        return JsonResponse({'error': 'Invalid date or time format.'}, status=400)
+        return JsonResponse({'error': 'Invalid start_at format.'}, status=400)
 
     teacher = TeacherProfile.objects.first()
 
@@ -177,21 +161,23 @@ def book_slot(request):
             teacher = TeacherProfile.objects.select_for_update().get(pk=teacher.pk)
 
             lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
-            available_starts = get_available_start_times(teacher, date_val, duration_minutes)
 
-            if start_time_val not in available_starts:
+            # Re-derive available starts for the teacher's local day(s)
+            # that could contain this instant, and confirm it's still open.
+            teacher_tz = ZoneInfo(teacher.user.timezone)
+            teacher_local_date = timezone.localtime(start_at_val, teacher_tz).date()
+            available_starts = get_available_start_times(teacher, teacher_local_date, duration_minutes)
+
+            if start_at_val not in available_starts:
                 return JsonResponse({'error': 'This time is no longer available.'}, status=409)
 
-            end_time_val = (
-                datetime.combine(date_val, start_time_val) + timedelta(minutes=duration_minutes)
-            ).time()
+            end_at_val = start_at_val + timedelta(minutes=duration_minutes)
 
             booking = Booking.objects.create(
                 student=request.user,
                 teacher=teacher,
-                date=date_val,
-                start_time=start_time_val,
-                end_time=end_time_val,
+                start_at=start_at_val,
+                end_at=end_at_val,
                 lesson_type=lesson_type,
                 price=price,
             )
@@ -219,7 +205,7 @@ def teacher_dashboard(request):
             status=Booking.Status.CONFIRMED,
         )
         .select_related('student')
-        .order_by('date', 'start_time')[:10]
+        .order_by('start_at')[:10]
     )
 
     lesson_requests_count = Booking.objects.filter(
@@ -235,13 +221,18 @@ def teacher_dashboard(request):
 
 @teacher_required
 def teacher_lesson_requests(request):
+    viewer_tz = ZoneInfo(request.user.timezone)
+
     lesson_requests = Booking.objects.filter(
         Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
         teacher__user=request.user,
-    ).select_related('student').order_by('date', 'start_time')
+    ).select_related('student').order_by('start_at')
 
     for booking in lesson_requests:
-        booking.time_range = f'{booking.start_time:%H:%M}–{booking.end_time:%H:%M}'
+        local_start = timezone.localtime(booking.start_at, viewer_tz)
+        local_end = timezone.localtime(booking.end_at, viewer_tz)
+        booking.local_date = local_start.date()
+        booking.time_range = f'{local_start:%H:%M}–{local_end:%H:%M}'
         booking.is_cancellation = booking.cancellation_requested
 
     return render(request, 'partials/_lesson_requests_list.html', {
@@ -286,9 +277,7 @@ def student_management(request):
         bookings__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
     ).distinct()
 
-    now = timezone.localtime()
-    today = now.date()
-    current_time = now.time()
+    now = timezone.now()
 
     for student in students:
         student_bookings = Booking.objects.filter(
@@ -300,31 +289,27 @@ def student_management(request):
             status=Booking.Status.COMPLETED,
         ).count() + student_bookings.filter(
             status=Booking.Status.CONFIRMED,
-        ).filter(
-            Q(date__lt=today) | Q(date=today, start_time__lt=current_time)
+            start_at__lt=now,
         ).count()
 
         student.upcoming_count = student_bookings.filter(
             status=Booking.Status.CONFIRMED,
-        ).filter(
-            Q(date__gt=today) | Q(date=today, start_time__gte=current_time)
+            start_at__gte=now,
         ).count()
 
         last_lesson = student_bookings.filter(
             status__in=[Booking.Status.COMPLETED, Booking.Status.CONFIRMED],
-        ).filter(
-            Q(date__lt=today) | Q(date=today, start_time__lt=current_time)
-        ).order_by('-date', '-start_time').first()
+            start_at__lt=now,
+        ).order_by('-start_at').first()
 
-        student.previous_date = last_lesson.date if last_lesson else None
+        student.previous_booking = last_lesson
 
         next_lesson = student_bookings.filter(
             status=Booking.Status.CONFIRMED,
-        ).filter(
-            Q(date__gt=today) | Q(date=today, start_time__gte=current_time)
-        ).order_by('date', 'start_time').first()
+            start_at__gte=now,
+        ).order_by('start_at').first()
 
-        student.next_date = next_lesson.date if next_lesson else None
+        student.next_booking = next_lesson
 
         student.display_name = student.get_full_name() or student.username
 
@@ -482,7 +467,7 @@ def teacher_weekly_override_delete(request, override_id):
 @teacher_required
 def teacher_calendar(request):
     teacher = get_object_or_404(TeacherProfile, user=request.user)
-    today = timezone.localdate()
+    today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
 
     nav = get_calendar_navigation(request, today)
 
@@ -512,7 +497,7 @@ def teacher_calendar(request):
 @teacher_required
 def teacher_calendar_ajax(request):
     teacher = get_object_or_404(TeacherProfile, user=request.user)
-    today = timezone.localdate()
+    today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
 
     nav = get_calendar_navigation(request, today)
 
@@ -541,10 +526,15 @@ def lesson_detail(request, booking_id):
         teacher=teacher,
     )
 
+    viewer_tz = ZoneInfo(request.user.timezone)
+    local_start = timezone.localtime(booking.start_at, viewer_tz)
+    local_end = timezone.localtime(booking.end_at, viewer_tz)
+
     context = {
         "booking": booking,
         "cancellable_statuses": [Booking.Status.CONFIRMED],
-        "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",    }
+        "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
+    }
 
     return render(request, "partials/_lesson_detail_modal.html", context)
 
@@ -613,7 +603,7 @@ def mark_lesson_not_held(request, booking_id):
 
 @student_required
 def student_calendar(request):
-    today = timezone.localdate()
+    today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
     nav = get_calendar_navigation(request, today)
 
     calendar_grid = get_calendar_grid(
@@ -633,7 +623,7 @@ def student_calendar(request):
 
 @student_required
 def student_calendar_ajax(request):
-    today = timezone.localdate()
+    today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
     nav = get_calendar_navigation(request, today)
 
     calendar_grid = get_calendar_grid(
@@ -659,6 +649,10 @@ def lesson_detail_student(request, booking_id):
         student=request.user,
     )
 
+    viewer_tz = ZoneInfo(request.user.timezone)
+    local_start = timezone.localtime(booking.start_at, viewer_tz)
+    local_end = timezone.localtime(booking.end_at, viewer_tz)
+
     can_request_cancellation = (
         booking.status == Booking.Status.CONFIRMED
         and not booking.cancellation_requested
@@ -668,7 +662,7 @@ def lesson_detail_student(request, booking_id):
         "booking": booking,
         "cancellable_statuses": [],
         "can_request_cancellation": can_request_cancellation,
-        "date_time_label": f"{booking.date.strftime('%a, %b')} {booking.date.day}, {booking.date.year} · {booking.start_time.strftime('%H:%M')}–{booking.end_time.strftime('%H:%M')}",
+        "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
     }
 
     return render(request, "partials/_lesson_detail_modal.html", context)

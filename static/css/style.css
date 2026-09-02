@@ -856,8 +856,27 @@ h6,
 
 
 
+/* ===== Booking: Time Zone ===== */
+.timezone-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background-color: var(--primary-blue-light);
+    padding: 0.6rem 1rem;
+    border-radius: var(--radius-md);
+}
 
+.timezone-note a {
+    color: var(--primary-blue);
+    font-weight: 600;
+    text-decoration: none;
+}
 
+.timezone-note a:hover {
+    text-decoration: underline;
+}
 
 /* ===== Booking: Week Navigation ===== */
 

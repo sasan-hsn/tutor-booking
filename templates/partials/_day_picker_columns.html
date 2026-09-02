@@ -7,10 +7,10 @@
 
     <div class="day-column-slots">
         {% for slot in day_info.slots %}
-        <button type="button" class="slot-pill slot-open" data-date="{{ day_info.day|date:'Y-m-d' }}"
-            data-weekday="{{ day_info.day|date:'D, M d' }}" data-start="{{ slot.start_time|time:'H:i' }}"
-            data-end="{{ slot.end_time|time:'H:i' }}">
-            {{ slot.start_time|time:"H:i" }}
+        <button type="button" class="slot-pill slot-open" data-weekday="{{ day_info.day|date:'D, M d' }}"
+            data-start-at="{{ slot.start_at.isoformat }}" data-start="{{ slot.local_start_time|time:'H:i' }}"
+            data-end="{{ slot.local_end_time|time:'H:i' }}">
+            {{ slot.local_start_time|time:"H:i" }}
         </button>
         {% empty %}
         <span class="day-column-no-slots">—</span>

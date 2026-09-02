@@ -1,6 +1,13 @@
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.conf import settings
+from zoneinfo import available_timezones
+
+
+def validate_timezone(value):
+    if value not in available_timezones():
+        raise ValidationError(f'{value} is not a valid timezone.')
 
 
 class User(AbstractUser):
@@ -8,7 +15,8 @@ class User(AbstractUser):
         TEACHER = "teacher", "Teacher"
         STUDENT = "student", "Student"
 
-    role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)    
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
+    timezone = models.CharField(max_length=64, default='UTC', validators=[validate_timezone])    
 
 
 class StudentProfile(models.Model):
