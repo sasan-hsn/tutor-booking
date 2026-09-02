@@ -46,6 +46,46 @@
         {% endif %}
     </div>
 
+    {% if booking.status == 'completed' %}
+    <div class="lesson-detail-review">
+        {% if booking.review %}
+        <div class="review-display">
+            <p class="review-display-label">
+                {% if user.teacher_profile %}Student's Review{% else %}Your Review{% endif %}
+            </p>
+            <div class="review-stars">
+                {% for i in "12345" %}
+                <i
+                    class="bi {% if forloop.counter <= booking.review.rating %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                {% endfor %}
+            </div>
+            {% if booking.review.comment %}
+            <p class="review-display-comment">{{ booking.review.comment }}</p>
+            {% endif %}
+            {% if not booking.review.is_approved %}
+            <p class="review-pending-note">Pending approval — not yet shown publicly.</p>
+            {% endif %}
+        </div>
+        {% elif review_form %}
+        <div class="review-form-wrapper">
+            <p class="review-form-label">How was this lesson?</p>
+            <form method="post" action="{% url 'booking:submit_review' booking_id=booking.id %}" id="reviewForm">
+                {% csrf_token %}
+                <div class="review-rating-input">
+                    {% for radio in review_form.rating %}
+                    {{ radio.tag }}
+                    <label for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                    {% endfor %}
+                </div>
+                {{ review_form.comment }}
+                <button type="submit" class="btn-accent w-100 mt-2">Submit Review</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+
     {% if booking.is_awaiting_resolution %}
     {% if user.teacher_profile %}
     <div class="lesson-detail-resolution">

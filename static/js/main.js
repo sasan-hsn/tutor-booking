@@ -1122,3 +1122,47 @@ document.addEventListener("DOMContentLoaded", function () {
     applyFilters();
     initLessonDetailModal();
 });
+
+
+
+function initReviewForm() {
+    const modalBody = document.getElementById('lessonDetailModalBody');
+    if (!modalBody) return;
+
+    modalBody.addEventListener('submit', async function (e) {
+        const form = e.target.closest('#reviewForm');
+        if (!form) return;
+        e.preventDefault();
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+
+        try {
+            const response = await csrfFetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error || 'Something went wrong. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Review';
+                return;
+            }
+
+            const modalEl = document.getElementById('lessonDetailModal');
+            bootstrap.Modal.getInstance(modalEl).hide();
+            window.location.reload();
+
+        } catch (err) {
+            alert('Network error. Please try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Review';
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initReviewForm);
