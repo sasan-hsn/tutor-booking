@@ -2048,3 +2048,56 @@ h6,
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.lesson-detail-review {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-soft);
+}
+
+.review-display-label,
+.review-form-label {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.review-stars {
+    color: var(--accent-amber);
+    margin-bottom: 0.5rem;
+}
+
+.review-display-comment {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.review-pending-note {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.review-rating-input {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.review-rating-input input[type="radio"] {
+    display: none;
+}
+
+.review-rating-input label {
+    cursor: pointer;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    font-weight: 600;
+}
+
+.review-rating-input input[type="radio"]:checked+label {
+    background-color: var(--accent-amber);
+    color: #fff;
+    border-color: var(--accent-amber);
+}

@@ -12,11 +12,11 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.decorators import student_required, teacher_required
-from booking.models import Booking, RegularAvailability, WeeklyOverride
+from .models import Booking, RegularAvailability, WeeklyOverride, Review
 from portfolio.models import TeacherProfile
 from accounts.models import StudentProfile
 from accounts.avatar_utils import get_avatar_color
-
+from .forms import ReviewForm
 
 from .services import (
     get_availability_windows,
@@ -657,12 +657,16 @@ def lesson_detail_student(request, booking_id):
         booking.status == Booking.Status.CONFIRMED
         and not booking.cancellation_requested
     )
+    review_form = None
+    if booking.status == Booking.Status.COMPLETED and not hasattr(booking, 'review'):
+        review_form = ReviewForm()
 
     context = {
         "booking": booking,
         "cancellable_statuses": [],
         "can_request_cancellation": can_request_cancellation,
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
+        "review_form": review_form,
     }
 
     return render(request, "partials/_lesson_detail_modal.html", context)
@@ -684,3 +688,31 @@ def request_cancellation(request, booking_id):
     booking.save()
 
     return JsonResponse({"success": True})
+
+
+
+
+
+@student_required
+@require_POST
+def submit_review(request, booking_id):
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        student=request.user,
+        status=Booking.Status.COMPLETED,
+    )
+
+    if hasattr(booking, 'review'):
+        return JsonResponse({'error': 'This lesson already has a review.'}, status=400)
+
+    form = ReviewForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'error': form.errors.as_json()}, status=400)
+
+    review = form.save(commit=False)
+    review.student = request.user
+    review.booking = booking
+    review.save()
+
+    return JsonResponse({'success': True})
