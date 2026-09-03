@@ -43,9 +43,19 @@ def student_dashboard(request):
         .select_related('teacher', 'teacher__user')
         .order_by('start_at')[:10]
     )
+    past_bookings = (
+        Booking.objects
+        .filter(
+            student=request.user,
+            status=Booking.Status.COMPLETED,
+        )
+        .select_related('teacher', 'teacher__user', 'review')
+        .order_by('-end_at')[:10]
+    )
 
     return render(request, 'student_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
+        'past_bookings': past_bookings,
     })
 
 
