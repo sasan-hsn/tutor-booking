@@ -122,10 +122,12 @@ class AvailabilityWindowsServiceTest(TestCase):
         # 11:00 would end at 12:00 -> overlaps booking (ends 11:30) -> excluded
         self.assertEqual(start_times, [])
 
-
     def test_available_start_times_excludes_past_slots(self):
         """Start times earlier than 'now' must never be returned, even
         when they fall inside an otherwise-open availability window."""
+        self.teacher.instant_tutoring_enabled = True
+        self.teacher.save()
+
         now = timezone.localtime(timezone.now(), self.tz)
         today = now.date()
 
@@ -139,7 +141,6 @@ class AvailabilityWindowsServiceTest(TestCase):
         start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
 
         self.assertTrue(all(st > now for st in start_times))
-        # sanity check: some future slots should still be offered
         self.assertTrue(len(start_times) > 0)
 
     def test_completed_past_booking_does_not_reopen_its_slot(self):
@@ -167,3 +168,70 @@ class AvailabilityWindowsServiceTest(TestCase):
         start_times = get_available_start_times(self.teacher, yesterday, duration_minutes=60)
 
         self.assertEqual(start_times, [])
+
+
+    def test_instant_tutoring_disabled_hides_entire_current_day(self):
+        """When instant_tutoring_enabled is False, no slots are offered
+        for the teacher's current calendar day at all — not even future
+        ones."""
+        now = timezone.localtime(timezone.now(), self.tz)
+        today = now.date()
+
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=today.weekday(),
+            start_time=time(0, 0),
+            end_time=time(23, 59),
+        )
+
+        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+
+        self.assertEqual(start_times, [])
+
+    def test_instant_tutoring_enabled_respects_buffer(self):
+        """When instant_tutoring_enabled is True, same-day slots inside
+        the 1-hour buffer are excluded, but slots beyond the buffer are
+        offered."""
+        self.teacher.instant_tutoring_enabled = True
+        self.teacher.save()
+
+        now = timezone.localtime(timezone.now(), self.tz)
+        today = now.date()
+
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=today.weekday(),
+            start_time=time(0, 0),
+            end_time=time(23, 59),
+        )
+
+        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+
+        buffer_cutoff = now + timedelta(hours=1)
+        self.assertTrue(all(st > buffer_cutoff for st in start_times))
+
+        # sanity check: at least one slot far enough in the future should
+        # still be offered (guards against the whole day being wrongly
+        # excluded)
+        self.assertTrue(len(start_times) > 0)
+
+    def test_instant_tutoring_disabled_does_not_affect_future_days(self):
+        """The current-day restriction only applies to today — future
+        days behave exactly as before, regardless of the toggle."""
+        tomorrow = (timezone.localtime(timezone.now(), self.tz) + timedelta(days=1)).date()
+
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=tomorrow.weekday(),
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+
+        start_times = get_available_start_times(self.teacher, tomorrow, duration_minutes=60)
+
+        expected = [
+            datetime.combine(tomorrow, time(10, 0), tzinfo=self.tz),
+            datetime.combine(tomorrow, time(10, 30), tzinfo=self.tz),
+            datetime.combine(tomorrow, time(11, 0), tzinfo=self.tz),
+        ]
+        self.assertEqual(start_times, expected)        

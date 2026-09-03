@@ -31,11 +31,10 @@ def get_availability_windows(teacher, date_val):
     return [(r.start_time, r.end_time) for r in regular_rules]
 
 
+
+INSTANT_TUTORING_BUFFER = timedelta(hours=1)
+
 def get_available_start_times(teacher, date_val, duration_minutes):
-    """Returns a sorted list of bookable start times (timezone-aware
-    datetime objects) on date_val (interpreted in the teacher's own
-    timezone) for a lesson of the given duration.
-    """
     windows = get_availability_windows(teacher, date_val)
     if not windows:
         return []
@@ -43,6 +42,15 @@ def get_available_start_times(teacher, date_val, duration_minutes):
     teacher_tz = ZoneInfo(teacher.user.timezone)
     duration = timedelta(minutes=duration_minutes)
     now = timezone.now()
+    teacher_today = timezone.localtime(now, teacher_tz).date()
+
+    if date_val == teacher_today:
+        if not teacher.instant_tutoring_enabled:
+            # Same-day bookings are closed entirely.
+            return []
+        threshold = now + INSTANT_TUTORING_BUFFER
+    else:
+        threshold = now
 
     aware_windows = [
         (
@@ -72,7 +80,7 @@ def get_available_start_times(teacher, date_val, duration_minutes):
         while current_dt + duration <= window_end:
             candidate_end = current_dt + duration
 
-            if current_dt > now:
+            if current_dt > threshold:
                 overlaps = any(
                     current_dt < b_end and candidate_end > b_start
                     for b_start, b_end in booked_ranges
