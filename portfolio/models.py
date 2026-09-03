@@ -18,6 +18,7 @@ class TeacherProfile(models.Model):
     offers_trial = models.BooleanField(default=True)
     trial_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     trial_duration_minutes = models.PositiveSmallIntegerField(default=25)
+    instant_tutoring_enabled = models.BooleanField(default=False, help_text="Allow students to book same-day lessons (subject to a 1-hour buffer).")
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
