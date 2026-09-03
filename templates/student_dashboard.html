@@ -1,7 +1,7 @@
 {% extends "dashboard_base.html" %}
 
 {% block page_content %}
-<h2 class="mb-3">My Lessons</h2>
+<h2 class="mb-3">Upcoming Lessons</h2>
 
 <div class="lessons-row">
     <div class="lessons-actions">
@@ -14,6 +14,13 @@
     </div>
 
     {% include 'partials/_lesson_cards.html' %}
+</div>
+
+<div class="past-lessons-section">
+    <h2 class="mb-3">Past Lessons <i class="bi bi-clock-history text-muted"></i></h2>
+    <div class="lessons-row">
+        {% include 'partials/_past_lesson_cards.html' %}
+    </div>
 </div>
 
 <div class="modal fade" id="lessonDetailModal" data-url="{% url 'booking:lesson_detail_student' booking_id=0 %}"

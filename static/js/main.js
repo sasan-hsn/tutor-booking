@@ -43,30 +43,32 @@ document.addEventListener('DOMContentLoaded', initSignupTimezoneDetection);
 
 function initLessonCardDetailModal() {
     const modalEl = document.getElementById('lessonDetailModal');
-    const scrollEl = document.getElementById('lessonCardsScroll');
-    if (!modalEl || !scrollEl) return;
+    const scrollEls = document.querySelectorAll('.lesson-cards-scroll');
+    if (!modalEl || scrollEls.length === 0) return;
 
     const modalBody = document.getElementById('lessonDetailModalBody');
     const urlTemplate = modalEl.dataset.url;
     const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-    scrollEl.addEventListener('click', function (e) {
-        const card = e.target.closest('.lesson-card');
-        if (!card) return;
+    scrollEls.forEach((scrollEl) => {
+        scrollEl.addEventListener('click', function (e) {
+            const card = e.target.closest('.lesson-card');
+            if (!card) return;
 
-        const bookingId = card.dataset.bookingId;
-        const url = urlTemplate.replace('/0/', `/${bookingId}/`);
+            const bookingId = card.dataset.bookingId;
+            const url = urlTemplate.replace('/0/', `/${bookingId}/`);
 
-        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
-        modalInstance.show();
+            modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+            modalInstance.show();
 
-        fetch(url)
-            .then((response) => response.text())
-            .then((html) => { modalBody.innerHTML = html; })
-            .catch(() => {
-                modalBody.innerHTML =
-                    '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
-            });
+            fetch(url)
+                .then((response) => response.text())
+                .then((html) => { modalBody.innerHTML = html; })
+                .catch(() => {
+                    modalBody.innerHTML =
+                        '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+                });
+        });
     });
 }
 
@@ -74,38 +76,39 @@ document.addEventListener('DOMContentLoaded', initLessonCardDetailModal);
 
 
 function initLessonCardsScroll() {
-    const scrollEl = document.getElementById('lessonCardsScroll');
-    if (!scrollEl) return;
+    const scrollEls = document.querySelectorAll('.lesson-cards-scroll');
 
-    const wrapper = scrollEl.closest('.lesson-cards-wrapper');
-    const leftArrow = wrapper.querySelector('.scroll-arrow-left');
-    const rightArrow = wrapper.querySelector('.scroll-arrow-right');
-    const scrollAmount = 320; // roughly one card width + gap
+    scrollEls.forEach((scrollEl) => {
+        const wrapper = scrollEl.closest('.lesson-cards-wrapper');
+        const leftArrow = wrapper.querySelector('.scroll-arrow-left');
+        const rightArrow = wrapper.querySelector('.scroll-arrow-right');
+        const scrollAmount = 320;
 
-    function updateArrows() {
-        leftArrow.classList.toggle('is-hidden', scrollEl.scrollLeft <= 0);
-        rightArrow.classList.toggle(
-            'is-hidden',
-            scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1
-        );
-    }
+        function updateArrows() {
+            leftArrow.classList.toggle('is-hidden', scrollEl.scrollLeft <= 0);
+            rightArrow.classList.toggle(
+                'is-hidden',
+                scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1
+            );
+        }
 
-    leftArrow.addEventListener('click', () => {
-        scrollEl.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+        leftArrow.addEventListener('click', () => {
+            scrollEl.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+        });
+
+        rightArrow.addEventListener('click', () => {
+            scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+        });
+
+        scrollEl.addEventListener('scroll', updateArrows);
+        window.addEventListener('resize', updateArrows);
+        scrollEl.addEventListener('wheel', (e) => {
+            if (e.deltaY === 0) return;
+            e.preventDefault();
+            scrollEl.scrollBy({ left: e.deltaY, behavior: 'smooth' });
+        });
+        updateArrows();
     });
-
-    rightArrow.addEventListener('click', () => {
-        scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    });
-
-    scrollEl.addEventListener('scroll', updateArrows);
-    window.addEventListener('resize', updateArrows);
-    scrollEl.addEventListener('wheel', (e) => {
-        if (e.deltaY === 0) return;
-        e.preventDefault();
-        scrollEl.scrollBy({ left: e.deltaY, behavior: 'smooth' });
-    });
-    updateArrows();
 }
 
 

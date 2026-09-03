@@ -2160,3 +2160,26 @@ h6,
 #reviewForm button[type="submit"]:hover {
     filter: brightness(0.95);
 }
+
+
+.badge-leave-review {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-md, 8px);
+    background-color: var(--accent-amber);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+
+.past-lessons-section {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-soft);
+}
+
+.past-lessons-section h2 i {
+    margin-right: 0.4rem;
+    font-size: 0.85em;
+}
