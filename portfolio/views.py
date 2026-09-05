@@ -10,9 +10,6 @@ def landing_page(request):
         is_approved=True,
         booking__teacher=teacher).select_related('student')[:6] if teacher else Review.objects.none()
 
-    for review in reviews:
-        review.star_range = [True] * review.rating + [False] * (5 - review.rating)
-
     context = {
         'teacher': teacher,
         'certificates': certificates,

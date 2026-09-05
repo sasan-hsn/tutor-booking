@@ -287,5 +287,10 @@ class Review(models.Model):
         self.full_clean()  
         super().save(*args, **kwargs)        
 
+
+    @property
+    def star_range(self):
+        return [True] * self.rating + [False] * (5 - self.rating)
+
     def __str__(self):
         return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'        
