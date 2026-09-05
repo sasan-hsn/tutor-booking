@@ -399,7 +399,17 @@ def teacher_regular_schedule_delete(request, availability_id):
 @teacher_required
 def teacher_weekly_override(request):
     today = timezone.localdate()
-    week_start = today - timedelta(days=today.weekday())
+    default_week_start = today - timedelta(days=today.weekday())
+
+    week_start_param = request.GET.get('week_start')
+    if week_start_param:
+        try:
+            week_start = date.fromisoformat(week_start_param)
+        except ValueError:
+            week_start = default_week_start
+    else:
+        week_start = default_week_start
+
     week_days = [week_start + timedelta(days=i) for i in range(7)]
 
     teacher_profile = request.user.teacher_profile
@@ -418,22 +428,34 @@ def teacher_weekly_override(request):
         is_available=True,
     ).order_by('date', 'start_time')
 
-    schedule = {}
+    days = {}
     for day in week_days:
-        schedule[day.isoformat()] = {
+        days[day.isoformat()] = {
             'is_past': day < today,
             'regular_ranges': regular_by_day.get(day.weekday(), []),
             'override_ranges': [],
         }
 
     for override in overrides:
-        schedule[override.date.isoformat()]['override_ranges'].append({
+        days[override.date.isoformat()]['override_ranges'].append({
             'id': override.id,
             'start': override.start_time.strftime('%H:%M'),
             'end': override.end_time.strftime('%H:%M'),
         })
 
-    return JsonResponse(schedule)
+    week_end = week_days[-1]
+    if week_start.month == week_end.month:
+        week_label = f"{week_start.strftime('%b')} {week_start.day}\u2013{week_end.day}, {week_end.year}"
+    else:
+        week_label = f"{week_start.strftime('%b')} {week_start.day} \u2013 {week_end.strftime('%b')} {week_end.day}, {week_end.year}"
+
+    return JsonResponse({
+        'week_start': week_start.isoformat(),
+        'week_label': week_label,
+        'prev_week_start': (week_start - timedelta(days=7)).isoformat(),
+        'next_week_start': (week_start + timedelta(days=7)).isoformat(),
+        'days': days,
+    })
 
 
 
