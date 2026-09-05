@@ -225,6 +225,10 @@ class Booking(models.Model):
         return self.teacher.user
 
     @property
+    def is_live(self):
+        return self.status == self.Status.CONFIRMED and self.start_at <= timezone.now() < self.end_at
+
+    @property
     def is_awaiting_resolution(self):
         return self.status == self.Status.CONFIRMED and self.end_at < timezone.now()
 

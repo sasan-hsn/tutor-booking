@@ -38,7 +38,7 @@ def student_dashboard(request):
         .filter(
             student=request.user,
             status=Booking.Status.CONFIRMED,
-            start_at__gte=timezone.now(),
+            end_at__gte=timezone.now(),
         )
         .select_related('teacher', 'teacher__user')
         .order_by('start_at')[:10]

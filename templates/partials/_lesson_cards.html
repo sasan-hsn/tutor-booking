@@ -35,7 +35,11 @@
                 {% else %}
                 <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
                 {% endif %}
-                {% if booking.is_awaiting_resolution %}
+                {% if booking.is_live %}
+                <span class="badge-live">
+                    <span class="badge-live-dot"></span> Live Now
+                </span>
+                {% elif booking.is_awaiting_resolution %}
                 <span class="badge-needs-action">Needs Action</span>
                 {% else %}
                 <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
