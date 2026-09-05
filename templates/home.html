@@ -1,4 +1,5 @@
 {% extends 'landing_base.html' %}
+{% block meta_description %}{{ hero_subtext }}{% endblock %}
 {% load static %}
 {% load avatar_tags %}
 
@@ -21,7 +22,7 @@ Portfolio{% endif %}
                 <!-- Headline: fixed two-tone text (not from DB) -->
                 <h1 class="hero-title mb-4">
                     Learn English<br>
-                    <span class="highlight">with Marry</span>
+                    <span class="highlight">with Mary</span>
                 </h1>
 
                 <!-- Subtext: now pulled from teacher.headline field -->
@@ -88,7 +89,7 @@ Portfolio{% endif %}
 </section>
 
 
-<!-- 4. Certificates Section -->
+<!-- 3. Certificates Section -->
 <section class="section-padding border-top">
     <div class="container max-w-5xl px-4">
 
@@ -148,22 +149,24 @@ Portfolio{% endif %}
 </section>
 
 
-<!-- Testimonials Section -->
+<!-- 4. Testimonials Section -->
 <section id="testimonials" class="section-padding border-top">
     <div class="container max-w-5xl px-4">
         <h2 class="section-title">What Students Say</h2>
 
-        <div class="row g-4">
-            {% for review in reviews %}
-            <div class="col-md-4">
-                <div class="glass-card h-100 p-4">
+        {% if reviews %}
+        <div class="lesson-cards-wrapper">
+            <button type="button" class="scroll-arrow scroll-arrow-left" aria-label="Scroll left">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <div class="lesson-cards-scroll" id="testimonialCardsScroll">
+                {% for review in reviews %}
+                <div class="glass-card testimonial-card p-4">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="d-flex align-items-center gap-2">
                             {% user_avatar review.student 40 %}
-                            <p class="mb-0 fw-bold">{{ review.student.get_full_name|default:review.student.username }}
-                            </p>
+                            <p class="mb-0 fw-bold">{{ review.student.get_full_name|default:review.student.username }}</p>
                         </div>
-
                         <div>
                             {% for filled in review.star_range %}
                             {% if filled %}
@@ -174,14 +177,17 @@ Portfolio{% endif %}
                             {% endfor %}
                         </div>
                     </div>
-
                     <p class="mb-0">{{ review.comment }}</p>
                 </div>
+                {% endfor %}
             </div>
-            {% empty %}
-            <p class="text-muted">No reviews yet.</p>
-            {% endfor %}
+            <button type="button" class="scroll-arrow scroll-arrow-right" aria-label="Scroll right">
+                <i class="bi bi-chevron-right"></i>
+            </button>
         </div>
+        {% else %}
+        <p class="text-muted">No reviews yet.</p>
+        {% endif %}
     </div>
 </section>
 

@@ -21,4 +21,5 @@ def user_avatar(user, size=40):
         "initial": initial,
         "color": color,
         "size": size,
+        "display_name": display_name,
     }

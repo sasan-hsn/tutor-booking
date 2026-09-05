@@ -8,14 +8,14 @@
     <!-- Sidebar (desktop: fixed, mobile: off-canvas) -->
     <aside class="dashboard-sidebar offcanvas-md offcanvas-start" tabindex="-1" id="sidebarOffcanvas">
         <div class="offcanvas-header d-md-none">
-            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">English with Marry</a>
+            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">English with Mary</a>
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sidebarOffcanvas"
                 aria-label="Close"></button>
         </div>
 
         <div class="offcanvas-body d-flex flex-column">
             <a class="navbar-brand m-0 d-none d-md-block mb-4" href="{% url 'portfolio:landing_page' %}">English with
-                Marry</a>
+                Mary</a>
 
             <nav class="sidebar-nav flex-grow-1">
                 {% if user.teacher_profile %}
