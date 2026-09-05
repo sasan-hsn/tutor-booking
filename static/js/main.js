@@ -781,24 +781,40 @@ function initOverrideScheduleModal() {
     const startSelect = document.getElementById('overrideDayEditStartSelect');
     const endSelect = document.getElementById('overrideDayEditEndSelect');
 
+    const prevBtn = document.getElementById('overrideWeekPrevBtn');
+    const nextBtn = document.getElementById('overrideWeekNextBtn');
+    const weekLabel = document.getElementById('overrideWeekRangeLabel');
+
     let scheduleData = {};
     let currentDate = null;
 
-    modalEl.addEventListener('show.bs.modal', function () {
+    function loadWeek(weekStart) {
         grid.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
         dayEditPanel.classList.add('d-none');
         grid.classList.remove('d-none');
 
-        fetch(url)
+        const fetchUrl = weekStart ? `${url}?week_start=${weekStart}` : url;
+
+        fetch(fetchUrl)
             .then(response => response.json())
             .then(data => {
-                scheduleData = data;
-                renderOverrideScheduleGrid(data);
+                scheduleData = data.days;
+                weekLabel.textContent = data.week_label;
+                prevBtn.dataset.weekStart = data.prev_week_start;
+                nextBtn.dataset.weekStart = data.next_week_start;
+                renderOverrideScheduleGrid(scheduleData);
             })
             .catch(() => {
                 grid.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
             });
+    }
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        loadWeek(null);
     });
+
+    prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
+    nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
 
     grid.addEventListener('click', (e) => {
         const column = e.target.closest('.schedule-day-column');
