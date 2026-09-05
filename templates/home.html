@@ -32,8 +32,7 @@ Portfolio{% endif %}
                 <!-- CTA -->
                 <div>
                     {% if user.is_authenticated and user.role == 'teacher' %}
-                    <!-- TODO: #25 replace with booking:teacher_dashboard URL when built -->
-                    <a href="#" class="btn-accent shadow-sm">
+                    <a href="{% url 'booking:teacher_dashboard' %}" class="btn-accent shadow-sm">
                         Go to Dashboard <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% elif user.is_authenticated %}
@@ -217,8 +216,7 @@ Portfolio{% endif %}
                     </ul>
 
                     {% if user.is_authenticated and user.role == 'teacher' %}
-                    <!-- TODO: #25 replace with booking:teacher_dashboard URL when built -->
-                    <a href="#" class="btn-accent shadow-sm">
+                    <a href="{% url 'booking:teacher_dashboard' %}" class="btn-accent shadow-sm">
                         Go to Dashboard <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% elif user.is_authenticated %}
