@@ -38,11 +38,42 @@
     </main>
 
     <!-- Footer -->
-    <footer class="border-top py-4 mt-auto" style="border-color: var(--border-color) !important;">
-        <div
-            class="container max-w-5xl px-4 d-flex flex-column flex-md-row align-items-center justify-content-between gap-2">
-            <span class="font-serif text-sm fw-semibold">English with Marry</span>
-            <span class="text-xs text-muted" style="font-size: 0.75rem;">© 2026 · All rights reserved</span>
+    <footer class="site-footer border-top py-5 mt-auto" id="contact" style="border-color: var(--border-color) !important;">
+        <div class="container max-w-5xl px-4">
+            <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-4 mb-4">
+                <div class="text-center text-md-start">
+                    <span class="font-serif fw-semibold d-block">English with Marry</span>
+                </div>
+
+                {% if teacher %}
+                <div class="d-flex align-items-center gap-3">
+                    {% if teacher.contact_email %}
+                    <a href="mailto:{{ teacher.contact_email }}" class="footer-social-icon" aria-label="Email">
+                        <i class="bi bi-envelope-fill"></i>
+                    </a>
+                    {% endif %}
+                    {% if teacher.whatsapp_number %}
+                    <a href="{{ whatsapp_link }}" target="_blank" rel="noopener" class="footer-social-icon" aria-label="WhatsApp">
+                        <i class="bi bi-whatsapp"></i>
+                    </a>
+                    {% endif %}
+                    {% if teacher.telegram_username %}
+                    <a href="https://t.me/{{ teacher.telegram_username }}" target="_blank" rel="noopener" class="footer-social-icon" aria-label="Telegram">
+                        <i class="bi bi-telegram"></i>
+                    </a>
+                    {% endif %}
+                    {% if teacher.instagram_username %}
+                    <a href="https://instagram.com/{{ teacher.instagram_username }}" target="_blank" rel="noopener" class="footer-social-icon" aria-label="Instagram">
+                        <i class="bi bi-instagram"></i>
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="text-center pt-4 border-top" style="border-color: var(--border-color) !important;">
+                <span class="text-xs text-muted" style="font-size: 0.75rem;">© 2026 English with Marry · All rights reserved</span>
+            </div>
         </div>
     </footer>
 </div>
