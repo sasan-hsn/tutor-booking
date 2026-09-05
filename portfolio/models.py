@@ -20,6 +20,10 @@ class TeacherProfile(models.Model):
     trial_duration_minutes = models.PositiveSmallIntegerField(default=25)
     instant_tutoring_enabled = models.BooleanField(default=False, help_text="Allow students to book same-day lessons (subject to a 1-hour buffer).")
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
+    contact_email = models.EmailField(blank=True, default='')
+    whatsapp_number = models.CharField(max_length=20, blank=True, default='')
+    telegram_username = models.CharField(max_length=64, blank=True, default='')
+    instagram_username = models.CharField(max_length=64, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

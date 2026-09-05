@@ -294,6 +294,26 @@ h6,
     box-shadow: var(--shadow-lg);
 }
 
+/* Contact Section */
+.contact-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 999px;
+    background-color: #fff;
+    border: 1.5px solid var(--border-soft);
+    color: var(--text-main);
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.contact-pill:hover {
+    border-color: var(--primary-blue);
+    color: var(--primary-blue);
+    transform: translateY(-2px);
+}
 
 
 /* Pricing Card Special */
@@ -447,6 +467,26 @@ h6,
     justify-content: center;
     margin-bottom: 0.75rem;
 }
+
+.footer-social-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--text-main);
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.footer-social-icon:hover {
+    background-color: var(--primary-blue);
+    color: #fff;
+    transform: translateY(-2px);
+}
+
 
 
 /* ===== Dashboard Layout ===== */
