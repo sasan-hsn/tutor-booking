@@ -1,6 +1,24 @@
 {% extends "dashboard_base.html" %}
 
 {% block page_content %}
+
+{% if not teacher.account_complete or not teacher.portfolio_complete or not teacher.booking_complete %}
+<div class="profile-checklist-banner mb-4">
+    <p class="fw-bold mb-2">Complete your profile</p>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'portfolio:teacher_settings_account' %}" class="checklist-item {% if teacher.account_complete %}checklist-done{% endif %}">
+            <i class="bi {% if teacher.account_complete %}bi-check-circle-fill{% else %}bi-circle{% endif %}"></i> Account
+        </a>
+        <a href="{% url 'portfolio:teacher_settings_portfolio' %}" class="checklist-item {% if teacher.portfolio_complete %}checklist-done{% endif %}">
+            <i class="bi {% if teacher.portfolio_complete %}bi-check-circle-fill{% else %}bi-circle{% endif %}"></i> Portfolio
+        </a>
+        <a href="{% url 'portfolio:teacher_settings_booking' %}" class="checklist-item {% if teacher.booking_complete %}checklist-done{% endif %}">
+            <i class="bi {% if teacher.booking_complete %}bi-check-circle-fill{% else %}bi-circle{% endif %}"></i> Booking
+        </a>
+    </div>
+</div>
+{% endif %}
+
 <div class="lessons-header">
     <h2 class="mb-0">My Lessons</h2>
     <div class="lessons-actions-inline">

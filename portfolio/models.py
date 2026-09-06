@@ -27,6 +27,25 @@ class TeacherProfile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def account_complete(self):
+        return bool(self.user.first_name and self.user.last_name)
+
+    @property
+    def portfolio_complete(self):
+        has_contact = bool(
+            self.contact_email or self.whatsapp_number or
+            self.telegram_username or self.instagram_username
+        )
+        return bool(
+            self.headline and self.bio and self.teaching_philosophy
+            and self.intro_video_url and has_contact
+        )
+
+    @property
+    def booking_complete(self):
+        return self.lesson_price > 0
+
     def __str__(self):
         return f"Teacher Profile: {self.user}"
 

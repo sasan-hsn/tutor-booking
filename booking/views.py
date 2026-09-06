@@ -208,6 +208,8 @@ def book_slot(request):
 
 @teacher_required
 def teacher_dashboard(request):
+    teacher = request.user.teacher_profile
+    
     upcoming_bookings = (
         Booking.objects
         .filter(
@@ -229,6 +231,7 @@ def teacher_dashboard(request):
     ).count()
 
     return render(request, 'teacher_dashboard.html', {
+        'teacher': teacher,
         'upcoming_bookings': upcoming_bookings,
         'lesson_requests_count': lesson_requests_count,
         'pending_reviews_count': pending_reviews_count,
