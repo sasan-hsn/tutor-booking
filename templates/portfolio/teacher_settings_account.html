@@ -1,11 +1,12 @@
 {% extends "dashboard_base.html" %}
-{% load avatar_tags %}
 
 {% block page_content %}
-<h2 class="mb-4">Profile Settings</h2>
+<h2 class="mb-4">Teacher Settings</h2>
 
-<div class="d-flex align-items-center gap-3 mb-4">
-    {% user_avatar user 80 %}
+<div class="d-flex gap-2 mb-4">
+    <a href="{% url 'portfolio:teacher_settings_account' %}" class="settings-nav-link active">Account</a>
+    <a href="{% url 'portfolio:teacher_settings_portfolio' %}" class="settings-nav-link">Portfolio</a>
+    <a href="{% url 'portfolio:teacher_settings_booking' %}" class="settings-nav-link">Booking</a>
 </div>
 
 {% if messages %}

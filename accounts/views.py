@@ -6,7 +6,7 @@ from django.contrib.auth import login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
-from .forms import StudentSignUpForm, ProfileSettingsForm, StyledAuthenticationForm, TeacherSignUpForm
+from .forms import StudentSignUpForm, StudentProfileSettingsForm , StyledAuthenticationForm, TeacherSignUpForm
 from .models import User
 
 
@@ -54,16 +54,19 @@ def user_logout(request):
 
 @login_required
 def profile_settings(request):
-    profile = getattr(request.user, 'teacher_profile', None) or getattr(request.user, 'student_profile', None)
+    if request.user.role == User.Role.TEACHER:
+        return redirect('portfolio:teacher_settings_account')
+
+    profile = getattr(request.user, 'student_profile', None)
 
     if request.method == 'POST':
-        form = ProfileSettingsForm(request.POST, request.FILES, profile=profile, user=request.user)
+        form = StudentProfileSettingsForm(request.POST, request.FILES, profile=profile, user=request.user)
         if form.is_valid():
             form.save()
             messages.success(request, 'Profile updated.')
             return redirect('accounts:profile_settings')
     else:
-        form = ProfileSettingsForm(profile=profile, user=request.user)
+        form = StudentProfileSettingsForm(profile=profile, user=request.user)
 
     return render(request, 'accounts/profile_settings.html', {
         'form': form,

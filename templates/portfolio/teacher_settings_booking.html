@@ -1,0 +1,38 @@
+{% extends "dashboard_base.html" %}
+
+{% block page_content %}
+<h2 class="mb-4">Teacher Settings</h2>
+
+<div class="d-flex gap-2 mb-4">
+    <a href="{% url 'portfolio:teacher_settings_account' %}" class="settings-nav-link">Account</a>
+    <a href="{% url 'portfolio:teacher_settings_portfolio' %}" class="settings-nav-link">Portfolio</a>
+    <a href="{% url 'portfolio:teacher_settings_booking' %}" class="settings-nav-link active">Booking</a>
+</div>
+
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="mb-3">
+        {% if field.field.widget.input_type == 'checkbox' %}
+        <div class="form-check form-switch">
+            {{ field }}
+            <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        </div>
+        {% else %}
+        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% endif %}
+        {% if field.errors %}
+        <div class="text-danger small mt-1">{{ field.errors }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+{% endblock %}
