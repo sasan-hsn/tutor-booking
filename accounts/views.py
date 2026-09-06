@@ -6,7 +6,7 @@ from django.contrib.auth import login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
-from .forms import StudentSignUpForm, ProfileSettingsForm, StyledAuthenticationForm
+from .forms import StudentSignUpForm, ProfileSettingsForm, StyledAuthenticationForm, TeacherSignUpForm
 from .models import User
 
 
@@ -68,3 +68,15 @@ def profile_settings(request):
     return render(request, 'accounts/profile_settings.html', {
         'form': form,
     })
+
+
+def teacher_signup(request):
+    if request.method == 'POST':
+        form = TeacherSignUpForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)  
+            return redirect('booking:teacher_dashboard')
+    else:
+        form = TeacherSignUpForm()  
+    return render(request, 'accounts/teacher_signup.html', {'form': form})

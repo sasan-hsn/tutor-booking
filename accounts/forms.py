@@ -1,6 +1,7 @@
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django import forms
 from .models import User
+from portfolio.models import TeacherProfile
 from .utils import get_timezone_choices
 
 
@@ -102,3 +103,30 @@ class ProfileSettingsForm(forms.Form):
             self.profile.telegram_username = self.cleaned_data['telegram_username']
             self.profile.instagram_username = self.cleaned_data['instagram_username']
             self.profile.save()
+
+
+
+
+class TeacherSignUpForm(UserCreationForm):
+    email = forms.EmailField(required=True)
+    timezone = forms.ChoiceField(choices=[], required=False)
+
+    class Meta(UserCreationForm.Meta):
+        model = User
+        fields = ('username', 'email')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['timezone'].choices = [(tz, tz) for tz in get_timezone_choices()]
+        for field in self.fields.values():
+            field.widget.attrs.update({'class': 'form-control'})
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.role = User.Role.TEACHER
+        tz = self.cleaned_data.get('timezone')
+        if tz:
+            instance.timezone = tz
+        if commit:
+            instance.save()
+        return instance            
