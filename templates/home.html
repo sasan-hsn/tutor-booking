@@ -245,7 +245,10 @@ Portfolio{% endif %}
 <!-- Empty state: no teacher profile created yet -->
 <div class="container max-w-5xl px-4 py-5 text-center">
     <h2>Teacher Profile Coming Soon</h2>
-    <p class="text-muted">No teacher profile is currently available.</p>
+    <p class="text-muted mb-4">No teacher profile is currently available.</p>
+    <a href="{% url 'accounts:teacher_signup' %}" class="btn-accent shadow-sm">
+        Are you a teacher? Sign up here
+    </a>
 </div>
 {% endif %}
 {% endblock %}
