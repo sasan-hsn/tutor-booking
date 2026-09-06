@@ -4,8 +4,7 @@
 {% load avatar_tags %}
 
 {% block title %}
-{% if teacher %}{{ teacher.user.get_full_name|default:teacher.user.username }} - Tutor Portfolio{% else %}Home - Tutor
-Portfolio{% endif %}
+{% if teacher %}English with {{ teacher.display_name }} - Tutor Portfolio{% else %}Home - Tutor Portfolio{% endif %}
 {% endblock %}
 
 {% block page_content %}
@@ -22,7 +21,7 @@ Portfolio{% endif %}
                 <!-- Headline: fixed two-tone text (not from DB) -->
                 <h1 class="hero-title mb-4">
                     Learn English<br>
-                    <span class="highlight">with Mary</span>
+                    <span class="highlight">with {{ teacher.display_name }}</span>
                 </h1>
 
                 <!-- Subtext: now pulled from teacher.headline field -->
@@ -53,7 +52,7 @@ Portfolio{% endif %}
             <div class="col-md-6">
                 <div class="hero-image-wrapper">
                     <img src="{% static 'images/hero-piture.png' %}"
-                        alt="{{ teacher.user.get_full_name|default:'Teacher' }}, English tutor" class="hero-image">
+                        alt="{{ teacher.display_name }}, English tutor" class="hero-image">
                 </div>
             </div>
 

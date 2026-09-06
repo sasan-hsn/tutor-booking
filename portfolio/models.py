@@ -28,6 +28,10 @@ class TeacherProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     @property
+    def display_name(self):
+        return self.user.username.capitalize()
+
+    @property
     def account_complete(self):
         return bool(self.user.first_name and self.user.last_name)
 
