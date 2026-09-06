@@ -71,7 +71,11 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li>
+                            {% if user.teacher_profile %}
+                            <a class="dropdown-item" href="{% url 'portfolio:teacher_settings_account' %}">Settings</a>
+                            {% else %}
                             <a class="dropdown-item" href="{% url 'accounts:profile_settings' %}">Profile Settings</a>
+                            {% endif %}
                         </li>
                         <li>
                             <form method="post" action="{% url 'accounts:logout' %}" class="px-3 py-1">

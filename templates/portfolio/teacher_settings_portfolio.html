@@ -1,0 +1,59 @@
+{% extends "dashboard_base.html" %}
+
+{% block page_content %}
+<h2 class="mb-4">Teacher Settings</h2>
+
+<div class="d-flex gap-2 mb-4">
+    <a href="{% url 'portfolio:teacher_settings_account' %}" class="settings-nav-link">Account</a>
+    <a href="{% url 'portfolio:teacher_settings_portfolio' %}" class="settings-nav-link active">Portfolio</a>
+    <a href="{% url 'portfolio:teacher_settings_booking' %}" class="settings-nav-link">Booking</a>
+</div>
+
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-success">{{ message }}</div>
+{% endfor %}
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="mb-3">
+        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}
+        <div class="text-danger small mt-1">{{ field.errors }}</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+</form>
+
+<hr class="my-5">
+
+<h4 class="mb-3">Certificates</h4>
+
+<div id="certificatesList" class="d-flex flex-column gap-2 mb-4">
+    {% for cert in certificates %}
+    <div class="existing-range" data-id="{{ cert.id }}">
+        <span>{{ cert.title }} — {{ cert.issued_by }}{% if cert.issue_date %} ({{ cert.issue_date|date:'Y' }}){% endif %}</span>
+        <button type="button" class="remove-range-btn" data-id="{{ cert.id }}">⊗</button>
+    </div>
+    {% empty %}
+    <p class="text-muted" id="noCertificatesMsg">No certificates added yet.</p>
+    {% endfor %}
+</div>
+
+<form id="certificateAddForm" data-add-url="{% url 'portfolio:teacher_certificate_add' %}" data-delete-url="{% url 'portfolio:teacher_certificate_delete' certificate_id=0 %}">
+    {% csrf_token %}
+    {% for field in cert_form %}
+    <div class="mb-2">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn-minimal" id="certificateAddBtn">
+        <i class="bi bi-plus-circle-fill"></i> Add Certificate
+    </button>
+</form>
+{% endblock %}

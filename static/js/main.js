@@ -1279,3 +1279,77 @@ function initPendingReviewsActions() {
 }
 
 document.addEventListener('DOMContentLoaded', initPendingReviewsActions);
+
+
+
+function initCertificateManager() {
+    const addForm = document.getElementById('certificateAddForm');
+    const list = document.getElementById('certificatesList');
+    if (!addForm || !list) return;
+
+    const addUrl = addForm.dataset.addUrl;
+    const deleteUrlTemplate = addForm.dataset.deleteUrl;
+
+    addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('certificateAddBtn');
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(addUrl, {
+                method: 'POST',
+                body: new FormData(addForm),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                btn.disabled = false;
+                return;
+            }
+
+            const noMsg = document.getElementById('noCertificatesMsg');
+            if (noMsg) noMsg.remove();
+
+            const div = document.createElement('div');
+            div.className = 'existing-range';
+            div.dataset.id = data.id;
+            const yearText = data.issue_date ? ` (${data.issue_date.slice(0, 4)})` : '';
+            div.innerHTML = `<span>${data.title} — ${data.issued_by}${yearText}</span>
+                <button type="button" class="remove-range-btn" data-id="${data.id}">⊗</button>`;
+            list.appendChild(div);
+
+            addForm.reset();
+        } catch (err) {
+            alert('Network error. Please try again.');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    list.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.remove-range-btn');
+        if (!btn) return;
+
+        if (!confirm('Remove this certificate?')) return;
+
+        const certId = btn.dataset.id;
+        const url = deleteUrlTemplate.replace('/0/', `/${certId}/`);
+
+        btn.disabled = true;
+        try {
+            const response = await csrfFetch(url, { method: 'POST' });
+            if (!response.ok) {
+                alert('Something went wrong. Please try again.');
+                btn.disabled = false;
+                return;
+            }
+            btn.closest('.existing-range').remove();
+        } catch (err) {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initCertificateManager);
