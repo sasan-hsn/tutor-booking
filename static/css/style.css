@@ -2264,3 +2264,41 @@ h6,
     color: var(--primary-blue);
     border-color: var(--primary-blue);
 }
+
+
+.profile-checklist-banner {
+    background-color: #fff9eb;
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+}
+
+.checklist-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.9rem;
+    border-radius: var(--radius-full);
+    background-color: #fff;
+    border: 1px solid var(--border-soft);
+    color: var(--text-main);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.checklist-item:hover {
+    border-color: #d97706;
+    color: #b45309;
+}
+
+.checklist-item.checklist-done {
+    color: #15803d;
+    border-color: #86efac;
+    background-color: #f0fdf4;
+}
+
+.checklist-item.checklist-done i {
+    color: #16a34a;
+}
