@@ -7,7 +7,15 @@
     <!-- Sticky Navbar -->
     <nav class="navbar navbar-expand-md navbar-custom sticky-top py-3">
         <div class="container max-w-5xl px-4 d-flex align-items-center justify-content-between">
-            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">English with Mary</a>
+            <a class="navbar-brand m-0" href="{% url 'portfolio:landing_page' %}">
+                {% if teacher %}
+                    English with {{ teacher.display_name }}
+                {% elif default_teacher %}
+                    English with {{ default_teacher.display_name }}
+                {% else %}
+                    Tutor Booking
+                {% endif %}
+            </a>
 
             <div class="d-flex align-items-center gap-4">
                 <a class="nav-link-custom d-none d-md-inline" href="{% url 'portfolio:landing_page' %}#about">About</a>
@@ -42,7 +50,15 @@
         <div class="container max-w-5xl px-4">
             <div class="d-flex flex-column flex-md-row align-items-center justify-content-between gap-4 mb-4">
                 <div class="text-center text-md-start">
-                    <span class="font-serif fw-semibold d-block">English with Mary</span>
+                    <span class="font-serif fw-semibold d-block">
+                        {% if teacher %}
+                            English with {{ teacher.display_name }}
+                        {% elif default_teacher %}
+                            English with {{ default_teacher.display_name }}
+                        {% else %}
+                            Tutor Booking
+                        {% endif %}
+                    </span>
                 </div>
 
                 {% if teacher %}
@@ -71,8 +87,17 @@
                 {% endif %}
             </div>
 
+            <!-- Copyright -->
             <div class="text-center pt-4 border-top" style="border-color: var(--border-color) !important;">
-                <span class="text-xs text-muted" style="font-size: 0.75rem;">© 2026 English with Mary · All rights reserved</span>
+                <span class="text-xs text-muted" style="font-size: 0.75rem;">
+                    © {% now "Y" %} {% if teacher %}
+                        English with {{ teacher.display_name }}
+                    {% elif default_teacher %}
+                        English with {{ default_teacher.display_name }}
+                    {% else %}
+                        Tutor Booking
+                    {% endif %} · All rights reserved
+                </span>
             </div>
         </div>
     </footer>
