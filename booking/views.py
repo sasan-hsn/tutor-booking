@@ -11,28 +11,24 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import student_required, teacher_required
-from .models import Booking, RegularAvailability, WeeklyOverride, Review
-from portfolio.models import TeacherProfile
-from accounts.models import StudentProfile
 from accounts.avatar_utils import get_avatar_color
-from .forms import ReviewForm
+from accounts.decorators import student_required, teacher_required
+from accounts.models import StudentProfile
+from portfolio.models import TeacherProfile
 
+from .forms import ReviewForm
+from .models import Booking, RegularAvailability, Review, WeeklyOverride
 from .services import (
-    get_availability_windows,
     get_available_start_times,
-    get_lesson_type_and_price,
     get_calendar_grid,
     get_calendar_navigation,
+    get_lesson_type_and_price,
     get_week_data,
 )
 
 
-
 @student_required
 def student_dashboard(request):
-    now = timezone.localtime()
-
     upcoming_bookings = (
         Booking.objects
         .filter(
@@ -53,11 +49,10 @@ def student_dashboard(request):
         .order_by('-end_at')[:10]
     )
 
-    return render(request, 'student_dashboard.html', {
+    return render(request, 'booking/student_dashboard.html', {
         'upcoming_bookings': upcoming_bookings,
         'past_bookings': past_bookings,
     })
-
 
 
 @student_required
@@ -78,18 +73,15 @@ def student_booking(request):
         week_start = today
 
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-    teacher = TeacherProfile.objects.first()
+    teacher = TeacherProfile.objects.select_related('user').first()
 
     lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
-
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
 
-    teacher_profile_picture = None
-    if teacher.profile_picture:
-        teacher_profile_picture = teacher.profile_picture.url
+    teacher_profile_picture = teacher.profile_picture.url if (teacher and teacher.profile_picture) else None
 
     context = {
         'week_data': week_data,
@@ -101,12 +93,11 @@ def student_booking(request):
         'teacher': teacher,
         'lesson_type': lesson_type,
         'lesson_type_display': dict(Booking.LessonType.choices)[lesson_type],
-        'teacher_avatar_color': get_avatar_color(teacher.user.id),
+        'teacher_avatar_color': get_avatar_color(teacher.user.id) if teacher else '#4F7A62',
         'teacher_profile_picture': teacher_profile_picture,
         'viewer_timezone': request.user.timezone,
     }
-    return render(request, 'student_booking.html', context)
-
+    return render(request, 'booking/student_booking.html', context)
 
 
 @student_required
@@ -124,10 +115,9 @@ def student_booking_week_ajax(request):
         week_start = today
 
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-    teacher = TeacherProfile.objects.first()
+    teacher = TeacherProfile.objects.select_related('user').first()
 
     lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
-
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
@@ -145,12 +135,10 @@ def student_booking_week_ajax(request):
     })
 
 
-
 @student_required
 @require_POST
 def book_slot(request):
     start_at_str = request.POST.get('start_at')
-
     if not start_at_str:
         return JsonResponse({'error': 'start_at is required.'}, status=400)
 
@@ -161,19 +149,23 @@ def book_slot(request):
     except ValueError:
         return JsonResponse({'error': 'Invalid start_at format.'}, status=400)
 
-    teacher = TeacherProfile.objects.first()
+    teacher = TeacherProfile.objects.select_related('user').first()
+    if not teacher:
+        return JsonResponse({'error': 'No active teacher found.'}, status=404)
 
     if teacher.user == request.user:
         return JsonResponse({'error': 'You cannot book your own availability.'}, status=400)
 
     try:
         with transaction.atomic():
-            teacher = TeacherProfile.objects.select_for_update().get(pk=teacher.pk)
+            teacher = (
+                TeacherProfile.objects.select_for_update()
+                .select_related('user')
+                .get(pk=teacher.pk)
+            )
 
             lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
 
-            # Re-derive available starts for the teacher's local day(s)
-            # that could contain this instant, and confirm it's still open.
             teacher_tz = ZoneInfo(teacher.user.timezone)
             teacher_local_date = timezone.localtime(start_at_val, teacher_tz).date()
             available_starts = get_available_start_times(teacher, teacher_local_date, duration_minutes)
@@ -205,11 +197,10 @@ def book_slot(request):
     })
 
 
-
 @teacher_required
 def teacher_dashboard(request):
     teacher = request.user.teacher_profile
-    
+
     upcoming_bookings = (
         Booking.objects
         .filter(
@@ -230,7 +221,7 @@ def teacher_dashboard(request):
         is_approved=False,
     ).count()
 
-    return render(request, 'teacher_dashboard.html', {
+    return render(request, 'booking/teacher_dashboard.html', {
         'teacher': teacher,
         'upcoming_bookings': upcoming_bookings,
         'lesson_requests_count': lesson_requests_count,
@@ -242,10 +233,14 @@ def teacher_dashboard(request):
 def teacher_lesson_requests(request):
     viewer_tz = ZoneInfo(request.user.timezone)
 
-    lesson_requests = Booking.objects.filter(
-        Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
-        teacher__user=request.user,
-    ).select_related('student').order_by('start_at')
+    lesson_requests = (
+        Booking.objects.filter(
+            Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
+            teacher__user=request.user,
+        )
+        .select_related('student')
+        .order_by('start_at')
+    )
 
     for booking in lesson_requests:
         local_start = timezone.localtime(booking.start_at, viewer_tz)
@@ -286,57 +281,52 @@ def respond_to_booking(request, booking_id):
     return JsonResponse({'success': True})
 
 
-
 @teacher_required
 def student_management(request):
     User = get_user_model()
-
-    students = User.objects.filter(
-        bookings__teacher__user=request.user,
-        bookings__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
-    ).distinct()
+    students = list(
+        User.objects.filter(
+            bookings__teacher__user=request.user,
+            bookings__status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+        ).distinct()
+    )
 
     now = timezone.now()
 
-    for student in students:
-        student_bookings = Booking.objects.filter(
-            student=student,
+    # Bulk query all relevant bookings for this teacher and these students in 1 query
+    all_bookings = list(
+        Booking.objects.filter(
             teacher__user=request.user,
-        )
+            student__in=students,
+            status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+        ).order_by('start_at')
+    )
 
-        student.completed_count = student_bookings.filter(
-            status=Booking.Status.COMPLETED,
-        ).count() + student_bookings.filter(
-            status=Booking.Status.CONFIRMED,
-            start_at__lt=now,
-        ).count()
+    bookings_by_student = {student.id: [] for student in students}
+    for b in all_bookings:
+        bookings_by_student[b.student_id].append(b)
 
-        student.upcoming_count = student_bookings.filter(
-            status=Booking.Status.CONFIRMED,
-            start_at__gte=now,
-        ).count()
+    for student in students:
+        s_bookings = bookings_by_student.get(student.id, [])
 
-        last_lesson = student_bookings.filter(
-            status__in=[Booking.Status.COMPLETED, Booking.Status.CONFIRMED],
-            start_at__lt=now,
-        ).order_by('-start_at').first()
+        past_bookings = [
+            b for b in s_bookings 
+            if b.status == Booking.Status.COMPLETED or (b.status == Booking.Status.CONFIRMED and b.start_at < now)
+        ]
+        upcoming_bookings = [
+            b for b in s_bookings 
+            if b.status == Booking.Status.CONFIRMED and b.start_at >= now
+        ]
 
-        student.previous_booking = last_lesson
-
-        next_lesson = student_bookings.filter(
-            status=Booking.Status.CONFIRMED,
-            start_at__gte=now,
-        ).order_by('start_at').first()
-
-        student.next_booking = next_lesson
-
+        student.completed_count = len(past_bookings)
+        student.upcoming_count = len(upcoming_bookings)
+        student.previous_booking = past_bookings[-1] if past_bookings else None
+        student.next_booking = upcoming_bookings[0] if upcoming_bookings else None
         student.display_name = student.get_full_name() or student.username
 
-    return render(request, 'teacher_student_management.html', {
+    return render(request, 'booking/teacher_student_management.html', {
         'students': students,
     })
-
-
 
 
 @teacher_required
@@ -346,7 +336,6 @@ def teacher_regular_schedule(request):
     ).order_by('day_of_week', 'start_time')
 
     schedule = {str(day): [] for day in range(7)}
-
     for availability in availabilities:
         schedule[str(availability.day_of_week)].append({
             'id': availability.id,
@@ -357,19 +346,14 @@ def teacher_regular_schedule(request):
     return JsonResponse(schedule)
 
 
-
 @teacher_required
 @require_POST
 def teacher_regular_schedule_add(request):
-    day_of_week = request.POST.get('day_of_week')
-    start_time = request.POST.get('start_time')
-    end_time = request.POST.get('end_time')
-
     availability = RegularAvailability(
         teacher=request.user.teacher_profile,
-        day_of_week=day_of_week,
-        start_time=start_time,
-        end_time=end_time,
+        day_of_week=request.POST.get('day_of_week'),
+        start_time=request.POST.get('start_time'),
+        end_time=request.POST.get('end_time'),
     )
 
     try:
@@ -398,7 +382,6 @@ def teacher_regular_schedule_delete(request, availability_id):
     return JsonResponse({'success': True})
 
 
-
 @teacher_required
 def teacher_weekly_override(request):
     today = timezone.localdate()
@@ -414,7 +397,6 @@ def teacher_weekly_override(request):
         week_start = default_week_start
 
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-
     teacher_profile = request.user.teacher_profile
 
     regular_availabilities = RegularAvailability.objects.filter(teacher=teacher_profile)
@@ -461,19 +443,14 @@ def teacher_weekly_override(request):
     })
 
 
-
 @teacher_required
 @require_POST
 def teacher_weekly_override_add(request):
-    date_str = request.POST.get('date')
-    start_time = request.POST.get('start_time')
-    end_time = request.POST.get('end_time')
-
     override = WeeklyOverride(
         teacher=request.user.teacher_profile,
-        date=date_str,
-        start_time=start_time,
-        end_time=end_time,
+        date=request.POST.get('date'),
+        start_time=request.POST.get('start_time'),
+        end_time=request.POST.get('end_time'),
         is_available=True,
     )
 
@@ -491,7 +468,6 @@ def teacher_weekly_override_add(request):
     })
 
 
-
 @teacher_required
 @require_POST
 def teacher_weekly_override_delete(request, override_id):
@@ -504,12 +480,10 @@ def teacher_weekly_override_delete(request, override_id):
     return JsonResponse({'success': True})
 
 
-
 @teacher_required
 def teacher_calendar(request):
     teacher = get_object_or_404(TeacherProfile, user=request.user)
     today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
-
     nav = get_calendar_navigation(request, today)
 
     calendar_grid = get_calendar_grid(
@@ -531,15 +505,13 @@ def teacher_calendar(request):
         "ajax_url_name": "booking:teacher_calendar_ajax",
         **nav,
     }
-
-    return render(request, "calendar.html", context)
+    return render(request, "booking/teacher_calendar.html", context)
 
 
 @teacher_required
 def teacher_calendar_ajax(request):
     teacher = get_object_or_404(TeacherProfile, user=request.user)
     today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()
-
     nav = get_calendar_navigation(request, today)
 
     calendar_grid = get_calendar_grid(
@@ -553,9 +525,7 @@ def teacher_calendar_ajax(request):
         "ajax_url_name": "booking:teacher_calendar_ajax",
         **nav,
     }
-
     return render(request, "partials/_calendar_grid.html", context)
-
 
 
 @teacher_required
@@ -576,7 +546,6 @@ def lesson_detail(request, booking_id):
         "cancellable_statuses": [Booking.Status.CONFIRMED],
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
     }
-
     return render(request, "partials/_lesson_detail_modal.html", context)
 
 
@@ -596,7 +565,6 @@ def cancel_lesson(request, booking_id):
 
     booking.status = Booking.Status.CANCELLED
     booking.save()
-
     return JsonResponse({"success": True})
 
 
@@ -617,7 +585,6 @@ def complete_lesson(request, booking_id):
     booking.status = Booking.Status.COMPLETED
     booking.completion_note = request.POST.get('note', '').strip()
     booking.save()
-
     return JsonResponse({"success": True})
 
 
@@ -637,9 +604,7 @@ def mark_lesson_not_held(request, booking_id):
 
     booking.status = Booking.Status.CANCELLED
     booking.save()
-
     return JsonResponse({"success": True})
-
 
 
 @student_required
@@ -658,8 +623,7 @@ def student_calendar(request):
         "ajax_url_name": "booking:student_calendar_ajax",
         **nav,
     }
-
-    return render(request, "student_calendar.html", context)
+    return render(request, "booking/student_calendar.html", context)
 
 
 @student_required
@@ -678,7 +642,6 @@ def student_calendar_ajax(request):
         "ajax_url_name": "booking:student_calendar_ajax",
         **nav,
     }
-
     return render(request, "partials/_calendar_grid.html", context)
 
 
@@ -709,9 +672,7 @@ def lesson_detail_student(request, booking_id):
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
         "review_form": review_form,
     }
-
     return render(request, "partials/_lesson_detail_modal.html", context)
-
 
 
 @student_required
@@ -727,11 +688,7 @@ def request_cancellation(request, booking_id):
 
     booking.cancellation_requested = True
     booking.save()
-
     return JsonResponse({"success": True})
-
-
-
 
 
 @student_required
@@ -749,7 +706,8 @@ def submit_review(request, booking_id):
 
     form = ReviewForm(request.POST)
     if not form.is_valid():
-        return JsonResponse({'error': form.errors.as_json()}, status=400)
+        first_error = next(iter(form.errors.values()))[0]
+        return JsonResponse({'error': first_error}, status=400)
 
     review = form.save(commit=False)
     review.student = request.user
@@ -781,8 +739,7 @@ def approve_review(request, review_id):
     )
     review.is_approved = True
     review.save()
-
-    return JsonResponse({'success': True})
+    return JsonResponse({"success": True})
 
 
 @teacher_required
@@ -794,5 +751,4 @@ def reject_review(request, review_id):
         booking__teacher__user=request.user,
     )
     review.delete()
-
-    return JsonResponse({'success': True})    
+    return JsonResponse({"success": True})

@@ -1,9 +1,10 @@
+from decimal import Decimal
 from zoneinfo import ZoneInfo
-from django.utils import timezone
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models, transaction
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+from django.utils import timezone
 
 
 class RegularAvailability(models.Model):
@@ -16,7 +17,11 @@ class RegularAvailability(models.Model):
         SATURDAY = 5, 'Saturday'
         SUNDAY = 6, 'Sunday'
 
-    teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE,related_name='regular_availabilities')
+    teacher = models.ForeignKey(
+        'portfolio.TeacherProfile',
+        on_delete=models.CASCADE,
+        related_name='regular_availabilities',
+    )
     day_of_week = models.PositiveSmallIntegerField(choices=DayOfWeek.choices)
     start_time = models.TimeField()
     end_time = models.TimeField()
@@ -24,17 +29,12 @@ class RegularAvailability(models.Model):
     class Meta:
         ordering = ['day_of_week', 'start_time']
 
-
     def clean(self):
         super().clean()
 
-        #Validation for logical start and end times
         if self.start_time and self.end_time and self.start_time >= self.end_time:
-            raise ValidationError({
-                'end_time': 'End time must be after start time.'
-            })
+            raise ValidationError({'end_time': 'End time must be after start time.'})
 
-        #Check for overlapping slots on the same day
         overlapping = RegularAvailability.objects.filter(
             teacher=self.teacher,
             day_of_week=self.day_of_week,
@@ -46,18 +46,17 @@ class RegularAvailability(models.Model):
             overlapping = overlapping.exclude(pk=self.pk)
 
         if overlapping.exists():
-            raise ValidationError("This time slot overlaps with an existing availability.")    
+            raise ValidationError("This time slot overlaps with an existing availability.")
 
     def __str__(self):
         return f"{self.get_day_of_week_display()}: {self.start_time} - {self.end_time}"
-
 
 
 class WeeklyOverride(models.Model):
     teacher = models.ForeignKey(
         'portfolio.TeacherProfile',
         on_delete=models.CASCADE,
-        related_name='weekly_overrides'
+        related_name='weekly_overrides',
     )
     date = models.DateField()
     start_time = models.TimeField(null=True, blank=True)
@@ -74,11 +73,9 @@ class WeeklyOverride(models.Model):
         if not self.is_available:
             if self.start_time or self.end_time:
                 raise ValidationError(
-                    'Start and end times must be empty when marking a day as'
-                    ' full-day off.'
+                    'Start and end times must be empty when marking a day as full-day off.'
                 )
 
-            # Ensure no other override (active or inactive) exists for this date
             existing_overrides = WeeklyOverride.objects.filter(
                 teacher=self.teacher, date=self.date
             )
@@ -86,26 +83,18 @@ class WeeklyOverride(models.Model):
                 existing_overrides = existing_overrides.exclude(pk=self.pk)
 
             if existing_overrides.exists():
-                raise ValidationError(
-                    'An override entry already exists for this date.'
-                )
+                raise ValidationError('An override entry already exists for this date.')
 
         # Case 2: Active availability slot (is_available = True)
         else:
             if not self.start_time or not self.end_time:
                 raise ValidationError({
-                    'start_time': (
-                        'Start and end times are required for active'
-                        ' availability slots.'
-                    )
+                    'start_time': 'Start and end times are required for active availability slots.'
                 })
 
             if self.start_time >= self.end_time:
-                raise ValidationError(
-                    {'end_time': 'End time must be after start time.'}
-                )
+                raise ValidationError({'end_time': 'End time must be after start time.'})
 
-            # Prevent active slots if a full-day off override already exists for this date
             off_override = WeeklyOverride.objects.filter(
                 teacher=self.teacher, date=self.date, is_available=False
             )
@@ -114,11 +103,9 @@ class WeeklyOverride(models.Model):
 
             if off_override.exists():
                 raise ValidationError(
-                    'This date is already marked as full-day off. Remove that'
-                    ' entry first.'
+                    'This date is already marked as full-day off. Remove that entry first.'
                 )
 
-            # Check for overlapping active slots on the same date
             overlapping_qs = WeeklyOverride.objects.filter(
                 teacher=self.teacher,
                 date=self.date,
@@ -131,15 +118,12 @@ class WeeklyOverride(models.Model):
 
             if overlapping_qs.exists():
                 raise ValidationError(
-                    'This time slot overlaps with another active availability'
-                    ' slot on the same date.'
+                    'This time slot overlaps with another active availability slot on the same date.'
                 )
 
     def __str__(self):
         status = "Available" if self.is_available else "Unavailable"
         return f"{self.date} ({status}): {self.start_time or ''} - {self.end_time or ''}"
-
-
 
 
 class Booking(models.Model):
@@ -162,7 +146,13 @@ class Booking(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     cancellation_requested = models.BooleanField(default=False)
     completion_note = models.TextField(blank=True, null=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -181,15 +171,12 @@ class Booking(models.Model):
     def clean(self):
         super().clean()
 
-        # 1. Basic time sanity check
         if self.start_at and self.end_at and self.start_at >= self.end_at:
             raise ValidationError({'end_at': 'End time must be after start time.'})
 
-        # 2. Prevent a teacher from booking their own availability
         if self.teacher_id and self.student_id and self.teacher.user_id == self.student_id:
             raise ValidationError({'student': 'A teacher cannot book their own availability.'})
 
-        # 3. Prevent overlapping active bookings for the same teacher
         if self.teacher_id and self.start_at and self.end_at:
             overlapping = Booking.objects.filter(
                 teacher=self.teacher,
@@ -202,7 +189,6 @@ class Booking(models.Model):
 
             if overlapping.exists():
                 raise ValidationError('This time overlaps with another booking for this teacher.')
-
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -248,7 +234,6 @@ class Booking(models.Model):
     def teacher_local_end(self):
         return timezone.localtime(self.end_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
 
-    
     def __str__(self):
         return (
             f'Booking #{self.id} | {self.student} |'
@@ -256,9 +241,8 @@ class Booking(models.Model):
         )
 
 
-
 class Review(models.Model):
-    student = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.CASCADE,related_name='reviews',)
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews')
     booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
     rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField(blank=True, null=True)
@@ -274,23 +258,20 @@ class Review(models.Model):
         super().clean()
 
         if hasattr(self, 'booking') and self.booking:
-            # Ensure the booking is completed before allowing a review
             if self.booking.status != Booking.Status.COMPLETED:
                 raise ValidationError('You can only review completed bookings.')
 
-            # Ensure the student writing the review is the one who made the booking
             if hasattr(self, 'student') and self.student:
                 if self.booking.student != self.student:
                     raise ValidationError('You can only review your own bookings.')
 
     def save(self, *args, **kwargs):
-        self.full_clean()  
-        super().save(*args, **kwargs)        
-
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @property
     def star_range(self):
         return [True] * self.rating + [False] * (5 - self.rating)
 
     def __str__(self):
-        return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'        
+        return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'

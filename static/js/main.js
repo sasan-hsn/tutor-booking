@@ -1,5 +1,8 @@
 
 
+/* --------------------------------------------------------------------------
+   1. CSRF & Network Utilities
+   -------------------------------------------------------------------------- */
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -24,8 +27,9 @@ function csrfFetch(url, options = {}) {
     return fetch(url, options);
 }
 
-
-
+/* --------------------------------------------------------------------------
+   2. Auth & Timezone Utilities
+   -------------------------------------------------------------------------- */
 function initSignupTimezoneDetection() {
     const tzSelect = document.querySelector('#signupForm select[name="timezone"]');
     if (!tzSelect) return;
@@ -37,68 +41,44 @@ function initSignupTimezoneDetection() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', initSignupTimezoneDetection);
-
-
-
-function initLessonCardDetailModal() {
-    const modalEl = document.getElementById('lessonDetailModal');
-    const scrollEls = document.querySelectorAll('.lesson-cards-scroll');
-    if (!modalEl || scrollEls.length === 0) return;
-
-    const modalBody = document.getElementById('lessonDetailModalBody');
-    const urlTemplate = modalEl.dataset.url;
-    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
-
-    scrollEls.forEach((scrollEl) => {
-        scrollEl.addEventListener('click', function (e) {
-            const card = e.target.closest('.lesson-card');
-            if (!card) return;
-
-            const bookingId = card.dataset.bookingId;
-            const url = urlTemplate.replace('/0/', `/${bookingId}/`);
-
-            modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
-            modalInstance.show();
-
-            fetch(url)
-                .then((response) => response.text())
-                .then((html) => { modalBody.innerHTML = html; })
-                .catch(() => {
-                    modalBody.innerHTML =
-                        '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
-                });
-        });
-    });
-}
-
-document.addEventListener('DOMContentLoaded', initLessonCardDetailModal);
-
-
+/* --------------------------------------------------------------------------
+   3. UI Components (Horizontal Scroll & Carousels)
+   -------------------------------------------------------------------------- */
 function initLessonCardsScroll() {
     const scrollEls = document.querySelectorAll('.lesson-cards-scroll');
+    if (scrollEls.length === 0) return;
 
     scrollEls.forEach((scrollEl) => {
         const wrapper = scrollEl.closest('.lesson-cards-wrapper');
+        if (!wrapper) return;
+
         const leftArrow = wrapper.querySelector('.scroll-arrow-left');
         const rightArrow = wrapper.querySelector('.scroll-arrow-right');
         const scrollAmount = 320;
 
         function updateArrows() {
-            leftArrow.classList.toggle('is-hidden', scrollEl.scrollLeft <= 0);
-            rightArrow.classList.toggle(
-                'is-hidden',
-                scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1
-            );
+            if (leftArrow) {
+                leftArrow.classList.toggle('is-hidden', scrollEl.scrollLeft <= 0);
+            }
+            if (rightArrow) {
+                rightArrow.classList.toggle(
+                    'is-hidden',
+                    scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1
+                );
+            }
         }
 
-        leftArrow.addEventListener('click', () => {
-            scrollEl.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
-        });
+        if (leftArrow) {
+            leftArrow.addEventListener('click', () => {
+                scrollEl.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+            });
+        }
 
-        rightArrow.addEventListener('click', () => {
-            scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-        });
+        if (rightArrow) {
+            rightArrow.addEventListener('click', () => {
+                scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+            });
+        }
 
         scrollEl.addEventListener('scroll', updateArrows);
         window.addEventListener('resize', updateArrows);
@@ -107,200 +87,14 @@ function initLessonCardsScroll() {
             e.preventDefault();
             scrollEl.scrollBy({ left: e.deltaY, behavior: 'smooth' });
         });
+
         updateArrows();
     });
 }
 
-
-document.addEventListener('DOMContentLoaded', initLessonCardsScroll);
-
-
-function initCancelLesson() {
-    const modalBody = document.getElementById("lessonDetailModalBody");
-    if (!modalBody) return;
-
-    let hasChanges = false;
-
-    modalBody.addEventListener("click", async function (e) {
-        const btn = e.target.closest("#cancelLessonBtn");
-        if (!btn) return;
-
-        if (!confirm("Are you sure you want to cancel this lesson?")) return;
-
-        const url = btn.dataset.cancelUrl;
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, { method: "POST" });
-
-            if (!response.ok) {
-                alert("Something went wrong. Please try again.");
-                btn.disabled = false;
-                return;
-            }
-
-            hasChanges = true;
-            const modalEl = document.getElementById("lessonDetailModal");
-            bootstrap.Modal.getInstance(modalEl).hide();
-        } catch (err) {
-            alert("Network error. Please try again.");
-            btn.disabled = false;
-        }
-    });
-
-    const modalEl = document.getElementById("lessonDetailModal");
-    modalEl.addEventListener("hidden.bs.modal", function () {
-        if (hasChanges) {
-            window.location.reload();
-        }
-    });
-}
-
-function initRequestCancellation() {
-    const modalBody = document.getElementById("lessonDetailModalBody");
-    if (!modalBody) return;
-
-    let hasChanges = false;
-
-    modalBody.addEventListener("click", async function (e) {
-        const btn = e.target.closest("#requestCancellationBtn");
-        if (!btn) return;
-
-        if (!confirm("Request cancellation for this lesson? Your teacher will need to approve it.")) return;
-
-        const url = btn.dataset.requestUrl;
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, { method: "POST" });
-
-            if (!response.ok) {
-                alert("Something went wrong. Please try again.");
-                btn.disabled = false;
-                return;
-            }
-
-            hasChanges = true;
-            const modalEl = document.getElementById("lessonDetailModal");
-            bootstrap.Modal.getInstance(modalEl).hide();
-        } catch (err) {
-            alert("Network error. Please try again.");
-            btn.disabled = false;
-        }
-    });
-
-    const modalEl = document.getElementById("lessonDetailModal");
-    modalEl.addEventListener("hidden.bs.modal", function () {
-        if (hasChanges) {
-            window.location.reload();
-        }
-    });
-}
-
-
-function initCompleteLesson() {
-    const modalBody = document.getElementById("lessonDetailModalBody");
-    if (!modalBody) return;
-
-    let hasChanges = false;
-
-    modalBody.addEventListener("click", async function (e) {
-        const btn = e.target.closest("#completeLessonBtn");
-        if (!btn) return;
-
-        const noteInput = document.getElementById("completionNoteInput");
-        const note = noteInput ? noteInput.value : "";
-
-        if (!confirm("Mark this lesson as completed?")) return;
-
-        const url = btn.dataset.completeUrl;
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: `note=${encodeURIComponent(note)}`,
-            });
-
-            if (!response.ok) {
-                alert("Something went wrong. Please try again.");
-                btn.disabled = false;
-                return;
-            }
-
-            hasChanges = true;
-            const modalEl = document.getElementById("lessonDetailModal");
-            bootstrap.Modal.getInstance(modalEl).hide();
-        } catch (err) {
-            alert("Network error. Please try again.");
-            btn.disabled = false;
-        }
-    });
-
-    const modalEl = document.getElementById("lessonDetailModal");
-    modalEl.addEventListener("hidden.bs.modal", function () {
-        if (hasChanges) {
-            window.location.reload();
-        }
-    });
-}
-
-function initMarkNotHeld() {
-    const modalBody = document.getElementById("lessonDetailModalBody");
-    if (!modalBody) return;
-
-    let hasChanges = false;
-
-    modalBody.addEventListener("click", async function (e) {
-        const btn = e.target.closest("#markNotHeldBtn");
-        if (!btn) return;
-
-        if (!confirm("Mark this lesson as not held? This will cancel the booking.")) return;
-
-        const url = btn.dataset.notHeldUrl;
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, { method: "POST" });
-
-            if (!response.ok) {
-                alert("Something went wrong. Please try again.");
-                btn.disabled = false;
-                return;
-            }
-
-            hasChanges = true;
-            const modalEl = document.getElementById("lessonDetailModal");
-            bootstrap.Modal.getInstance(modalEl).hide();
-        } catch (err) {
-            alert("Network error. Please try again.");
-            btn.disabled = false;
-        }
-    });
-
-    const modalEl = document.getElementById("lessonDetailModal");
-    modalEl.addEventListener("hidden.bs.modal", function () {
-        if (hasChanges) {
-            window.location.reload();
-        }
-    });
-}
-
-
-document.addEventListener('DOMContentLoaded', function () {
-    initCancelLesson();
-    initRequestCancellation();
-    initCompleteLesson();
-    initMarkNotHeld();
-});
-
-
-
+/* --------------------------------------------------------------------------
+   4. Student Booking Flow
+   -------------------------------------------------------------------------- */
 function initWeekNav() {
     const dayPicker = document.getElementById('dayPicker');
     if (!dayPicker) return;
@@ -312,32 +106,32 @@ function initWeekNav() {
 
     async function loadWeek(weekStart) {
         const url = `${weekAjaxUrl}?week_start=${weekStart}`;
-        const response = await fetch(url);
-        if (!response.ok) return;
-        const data = await response.json();
+        try {
+            const response = await fetch(url);
+            if (!response.ok) return;
+            const data = await response.json();
 
-        dayPicker.innerHTML = data.html;
-        label.textContent = data.week_label;
+            dayPicker.innerHTML = data.html;
+            label.textContent = data.week_label;
 
-        prevBtn.dataset.weekStart = data.prev_week_start;
-        prevBtn.disabled = !data.can_go_prev;
+            prevBtn.dataset.weekStart = data.prev_week_start;
+            prevBtn.disabled = !data.can_go_prev;
 
-        nextBtn.dataset.weekStart = data.next_week_start;
+            nextBtn.dataset.weekStart = data.next_week_start;
+        } catch (err) {
+            console.error('Error loading week slots:', err);
+        }
     }
 
-    prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
-    nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
+    if (prevBtn) prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
+    if (nextBtn) nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
 }
-
-document.addEventListener('DOMContentLoaded', initWeekNav);
-
-
 
 function initBookingModal() {
     const dayPicker = document.getElementById('dayPicker');
-    if (!dayPicker) return;
-
     const modalEl = document.getElementById('confirmBookingModal');
+    if (!dayPicker || !modalEl) return;
+
     const modal = new bootstrap.Modal(modalEl);
     const confirmBtn = document.getElementById('confirmBookingBtn');
 
@@ -353,17 +147,18 @@ function initBookingModal() {
         if (!slotBtn) return;
 
         const avatarEl = document.getElementById('modalTeacherAvatar');
-        if (teacherAvatarUrl) {
-            avatarEl.outerHTML = `<img src="${teacherAvatarUrl}" alt="Avatar" class="rounded-circle" id="modalTeacherAvatar" style="width: 40px; height: 40px; object-fit: cover;">`;
-        } else {
-            avatarEl.outerHTML = `<div class="rounded-circle d-flex align-items-center justify-content-center text-white" id="modalTeacherAvatar" style="width: 40px; height: 40px; background-color: ${teacherAvatarColor}; font-weight: 600;">${teacherInitial}</div>`;
+        if (avatarEl) {
+            if (teacherAvatarUrl) {
+                avatarEl.outerHTML = `<img src="${teacherAvatarUrl}" alt="Avatar" class="rounded-circle" id="modalTeacherAvatar" style="width: 40px; height: 40px; object-fit: cover;">`;
+            } else {
+                avatarEl.outerHTML = `<div class="rounded-circle d-flex align-items-center justify-content-center text-white" id="modalTeacherAvatar" style="width: 40px; height: 40px; background-color: ${teacherAvatarColor}; font-weight: 600;">${teacherInitial}</div>`;
+            }
         }
 
         document.getElementById('modalTeacherName').textContent = teacherName;
         document.getElementById('modalLessonTypeBadge').textContent = lessonTypeDisplay;
         document.getElementById('modalLessonDate').textContent = slotBtn.dataset.weekday;
-        document.getElementById('modalLessonTime').textContent =
-            `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
+        document.getElementById('modalLessonTime').textContent = `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
 
         confirmBtn.dataset.startAt = slotBtn.dataset.startAt;
         confirmBtn.disabled = false;
@@ -397,7 +192,6 @@ function initBookingModal() {
 
             modal.hide();
             window.location.reload();
-
         } catch (err) {
             alert('Network error. Please try again.');
             confirmBtn.disabled = false;
@@ -406,58 +200,171 @@ function initBookingModal() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', initBookingModal);
-
-
-
-function initLessonRequestsModal() {
-    const modalEl = document.getElementById('lessonRequestsModal');
+/* --------------------------------------------------------------------------
+   5. Lesson Detail Modals & Actions
+   -------------------------------------------------------------------------- */
+function initLessonDetailModalManager() {
+    const modalEl = document.getElementById('lessonDetailModal');
     if (!modalEl) return;
 
-    const modalBody = document.getElementById('lessonRequestsModalBody');
-    const url = modalEl.dataset.url;
+    const modalBody = document.getElementById('lessonDetailModalBody');
+    const urlTemplate = modalEl.dataset.url;
+    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    let hasChanges = false;
 
-    modalEl.addEventListener('show.bs.modal', function () {
+    // Open detail from lesson card (Dashboard)
+    document.addEventListener('click', (e) => {
+        const card = e.target.closest('.lesson-card');
+        if (!card) return;
+
+        const bookingId = card.dataset.bookingId;
+        const url = urlTemplate.replace('/0/', `/${bookingId}/`);
+
         modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        modalInstance.show();
+
         fetch(url)
-            .then(response => response.text())
+            .then(res => res.text())
             .then(html => { modalBody.innerHTML = html; })
             .catch(() => {
                 modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
             });
     });
+
+    // Delegate Modal Actions (Cancel, Complete, Not Held, Request Cancellation)
+    modalBody.addEventListener('click', async (e) => {
+        // 1. Cancel lesson (Teacher direct)
+        const cancelBtn = e.target.closest('#cancelLessonBtn');
+        if (cancelBtn) {
+            if (!confirm('Are you sure you want to cancel this lesson?')) return;
+            await handleModalPostAction(cancelBtn, cancelBtn.dataset.cancelUrl);
+            return;
+        }
+
+        // 2. Request cancellation (Student)
+        const reqCancelBtn = e.target.closest('#requestCancellationBtn');
+        if (reqCancelBtn) {
+            if (!confirm('Request cancellation for this lesson? Your teacher will need to approve it.')) return;
+            await handleModalPostAction(reqCancelBtn, reqCancelBtn.dataset.requestUrl);
+            return;
+        }
+
+        // 3. Complete lesson (Teacher)
+        const completeBtn = e.target.closest('#completeLessonBtn');
+        if (completeBtn) {
+            const noteInput = document.getElementById('completionNoteInput');
+            const note = noteInput ? noteInput.value : '';
+            if (!confirm('Mark this lesson as completed?')) return;
+            await handleModalPostAction(completeBtn, completeBtn.dataset.completeUrl, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `note=${encodeURIComponent(note)}`
+            });
+            return;
+        }
+
+        // 4. Mark not held (Teacher)
+        const notHeldBtn = e.target.closest('#markNotHeldBtn');
+        if (notHeldBtn) {
+            if (!confirm('Mark this lesson as not held? This will cancel the booking.')) return;
+            await handleModalPostAction(notHeldBtn, notHeldBtn.dataset.notHeldUrl);
+            return;
+        }
+    });
+
+    async function handleModalPostAction(btn, url, extraOptions = {}) {
+        btn.disabled = true;
+        try {
+            const response = await csrfFetch(url, { method: 'POST', ...extraOptions });
+            if (!response.ok) {
+                alert('Something went wrong. Please try again.');
+                btn.disabled = false;
+                return;
+            }
+            hasChanges = true;
+            modalInstance.hide();
+        } catch (err) {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+        }
+    }
+
+    // Student Review Form Submit
+    modalBody.addEventListener('submit', async (e) => {
+        const form = e.target.closest('#reviewForm');
+        if (!form) return;
+        e.preventDefault();
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+
+        try {
+            const response = await csrfFetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                alert(data.error || 'Something went wrong. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Review';
+                return;
+            }
+
+            modalInstance.hide();
+            window.location.reload();
+        } catch (err) {
+            alert('Network error. Please try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Review';
+        }
+    });
+
+    // Auto-reload on dismissal if changes occurred
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        if (hasChanges) window.location.reload();
+    });
 }
 
-document.addEventListener('DOMContentLoaded', initLessonRequestsModal);
-
-
-function initLessonRequestsActions() {
+/* --------------------------------------------------------------------------
+   6. Teacher Requests Modal & Badges
+   -------------------------------------------------------------------------- */
+function initLessonRequestsManager() {
     const modalEl = document.getElementById('lessonRequestsModal');
     if (!modalEl) return;
 
     const modalBody = document.getElementById('lessonRequestsModalBody');
+    const url = modalEl.dataset.url;
     const respondUrlTemplate = modalEl.dataset.respondUrl;
-
     let hasChanges = false;
+
+    modalEl.addEventListener('show.bs.modal', () => {
+        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        fetch(url)
+            .then(res => res.text())
+            .then(html => { modalBody.innerHTML = html; })
+            .catch(() => {
+                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+            });
+    });
 
     modalBody.addEventListener('click', async (e) => {
         const btn = e.target.closest('.btn-accept, .btn-decline');
         if (!btn) return;
 
         const isDecline = btn.classList.contains('btn-decline');
-        if (isDecline && !confirm('Are you sure you want to decline this lesson request?')) {
-            return;
-        }
+        if (isDecline && !confirm('Are you sure you want to decline this lesson request?')) return;
 
         const bookingId = btn.dataset.bookingId;
         const action = isDecline ? 'decline' : 'accept';
         const item = btn.closest('.request-item');
-        const url = respondUrlTemplate.replace('/0/', `/${bookingId}/`);
+        const reqUrl = respondUrlTemplate.replace('/0/', `/${bookingId}/`);
 
         btn.disabled = true;
 
         try {
-            const response = await csrfFetch(url, {
+            const response = await csrfFetch(reqUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `action=${action}`,
@@ -471,6 +378,7 @@ function initLessonRequestsActions() {
 
             item.remove();
             hasChanges = true;
+
             const badge = document.querySelector('#openLessonRequestsBtn .badge-count');
             if (badge) {
                 const newCount = parseInt(badge.textContent, 10) - 1;
@@ -480,7 +388,6 @@ function initLessonRequestsActions() {
                     badge.remove();
                 }
             }
-
         } catch (err) {
             alert('Network error. Please try again.');
             btn.disabled = false;
@@ -488,16 +395,13 @@ function initLessonRequestsActions() {
     });
 
     modalEl.addEventListener('hidden.bs.modal', () => {
-        if (hasChanges) {
-            window.location.reload();
-        }
+        if (hasChanges) window.location.reload();
     });
 }
 
-document.addEventListener('DOMContentLoaded', initLessonRequestsActions);
-
-
-
+/* --------------------------------------------------------------------------
+   7. Timetable Matrix Utilities & Regular Schedule
+   -------------------------------------------------------------------------- */
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function isHourActive(hour, ranges) {
@@ -521,10 +425,24 @@ function generateTimeColumnHtml() {
     return html;
 }
 
+function generateTimeOptions() {
+    let options = '';
+    for (let hour = 0; hour < 24; hour++) {
+        for (let minute of [0, 30]) {
+            const h = String(hour).padStart(2, '0');
+            const m = String(minute).padStart(2, '0');
+            const value = `${h}:${m}`;
+            options += `<option value="${value}">${value}</option>`;
+        }
+    }
+    return options;
+}
+
 function renderRegularScheduleGrid(data) {
     const grid = document.getElementById('regularScheduleGrid');
-    let html = '<div class="timetable-container">';
+    if (!grid) return;
 
+    let html = '<div class="timetable-container">';
     html += generateTimeColumnHtml();
     html += '<div class="schedule-grid">';
 
@@ -542,7 +460,6 @@ function renderRegularScheduleGrid(data) {
 
             html += `<div class="schedule-hour-cell${activeClass}" data-time="${timeLabel}"></div>`;
         }
-
         html += '</div>';
     }
 
@@ -550,26 +467,16 @@ function renderRegularScheduleGrid(data) {
     grid.innerHTML = html;
 }
 
-function generateTimeOptions() {
-    let options = '';
-    for (let hour = 0; hour < 24; hour++) {
-        for (let minute of [0, 30]) {
-            const h = String(hour).padStart(2, '0');
-            const m = String(minute).padStart(2, '0');
-            const value = `${h}:${m}`;
-            options += `<option value="${value}">${value}</option>`;
-        }
-    }
-    return options;
-}
-
-/* ===== Regular Schedule Modal ===== */
 function initScheduleModal() {
     const modalEl = document.getElementById('scheduleModal');
     if (!modalEl) return;
 
-    document.getElementById('dayEditStartSelect').innerHTML = generateTimeOptions();
-    document.getElementById('dayEditEndSelect').innerHTML = generateTimeOptions();
+    const startSelect = document.getElementById('dayEditStartSelect');
+    const endSelect = document.getElementById('dayEditEndSelect');
+    if (startSelect && endSelect) {
+        startSelect.innerHTML = generateTimeOptions();
+        endSelect.innerHTML = generateTimeOptions();
+    }
 
     const url = modalEl.dataset.url;
     const grid = document.getElementById('regularScheduleGrid');
@@ -579,20 +486,19 @@ function initScheduleModal() {
     const backBtn = document.getElementById('dayEditBackBtn');
     const addUrl = modalEl.dataset.addUrl;
     const addBtn = document.getElementById('dayEditAddBtn');
-    const startSelect = document.getElementById('dayEditStartSelect');
-    const endSelect = document.getElementById('dayEditEndSelect');
     const deleteUrlTemplate = modalEl.dataset.deleteUrl;
 
     let scheduleData = {};
     let currentDay = null;
 
-    modalEl.addEventListener('show.bs.modal', function () {
+    modalEl.addEventListener('show.bs.modal', () => {
+        if (!grid) return;
         grid.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
         dayEditPanel.classList.add('d-none');
         grid.classList.remove('d-none');
 
         fetch(url)
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
                 scheduleData = data;
                 renderRegularScheduleGrid(data);
@@ -602,101 +508,95 @@ function initScheduleModal() {
             });
     });
 
-    grid.addEventListener('click', (e) => {
-        const column = e.target.closest('.schedule-day-column');
-        if (!column) return;
+    if (grid) {
+        grid.addEventListener('click', (e) => {
+            const column = e.target.closest('.schedule-day-column');
+            if (!column) return;
+            currentDay = column.dataset.day;
+            openDayEditPanel(currentDay);
+        });
+    }
 
-        currentDay = column.dataset.day;
-        openDayEditPanel(currentDay);
-    });
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            dayEditPanel.classList.add('d-none');
+            grid.classList.remove('d-none');
+        });
+    }
 
-    backBtn.addEventListener('click', () => {
-        dayEditPanel.classList.add('d-none');
-        grid.classList.remove('d-none');
-    });
+    if (addBtn) {
+        addBtn.addEventListener('click', async () => {
+            const start = startSelect.value;
+            const end = endSelect.value;
+            addBtn.disabled = true;
 
-    addBtn.addEventListener('click', async () => {
-        const start = startSelect.value;
-        const end = endSelect.value;
+            try {
+                const response = await csrfFetch(addUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `day_of_week=${currentDay}&start_time=${start}&end_time=${end}`,
+                });
+                const data = await response.json();
 
-        addBtn.disabled = true;
+                if (!response.ok) {
+                    alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                    addBtn.disabled = false;
+                    return;
+                }
 
-        try {
-            const response = await csrfFetch(addUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `day_of_week=${currentDay}&start_time=${start}&end_time=${end}`,
-            });
+                if (!scheduleData[currentDay]) scheduleData[currentDay] = [];
+                scheduleData[currentDay].push({ id: data.id, start: data.start, end: data.end });
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                renderExistingRanges(currentDay);
+                renderRegularScheduleGrid(scheduleData);
+            } catch (err) {
+                alert('Network error. Please try again.');
+            } finally {
                 addBtn.disabled = false;
-                return;
             }
+        });
+    }
 
-            if (!scheduleData[currentDay]) {
-                scheduleData[currentDay] = [];
-            }
-            scheduleData[currentDay].push({ id: data.id, start: data.start, end: data.end });
+    if (dayEditExistingRanges) {
+        dayEditExistingRanges.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.remove-range-btn');
+            if (!btn) return;
+            if (!confirm('Remove this availability?')) return;
 
-            renderExistingRanges(currentDay);
-            renderRegularScheduleGrid(scheduleData);
+            const availabilityId = btn.dataset.id;
+            const delUrl = deleteUrlTemplate.replace('/0/', `/${availabilityId}/`);
+            btn.disabled = true;
 
-        } catch (err) {
-            alert('Network error. Please try again.');
-        } finally {
-            addBtn.disabled = false;
-        }
-    });
-
-    dayEditExistingRanges.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.remove-range-btn');
-        if (!btn) return;
-
-        if (!confirm('Remove this availability?')) return;
-
-        const availabilityId = btn.dataset.id;
-        const url = deleteUrlTemplate.replace('/0/', `/${availabilityId}/`);
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, { method: 'POST' });
-
-            if (!response.ok) {
-                alert('Something went wrong. Please try again.');
+            try {
+                const response = await csrfFetch(delUrl, { method: 'POST' });
+                if (!response.ok) {
+                    alert('Something went wrong. Please try again.');
+                    btn.disabled = false;
+                    return;
+                }
+                scheduleData[currentDay] = scheduleData[currentDay].filter(r => r.id != availabilityId);
+                renderExistingRanges(currentDay);
+                renderRegularScheduleGrid(scheduleData);
+            } catch (err) {
+                alert('Network error. Please try again.');
                 btn.disabled = false;
-                return;
             }
-
-            scheduleData[currentDay] = scheduleData[currentDay].filter(r => r.id != availabilityId);
-            renderExistingRanges(currentDay);
-            renderRegularScheduleGrid(scheduleData);
-
-        } catch (err) {
-            alert('Network error. Please try again.');
-            btn.disabled = false;
-        }
-    });
+        });
+    }
 
     function openDayEditPanel(day) {
         dayEditTitle.textContent = DAY_LABELS[day];
         renderExistingRanges(day);
-
         grid.classList.add('d-none');
         dayEditPanel.classList.remove('d-none');
     }
 
     function renderExistingRanges(day) {
         const ranges = scheduleData[day] || [];
-
         if (ranges.length === 0) {
             dayEditExistingRanges.innerHTML = '<p class="text-muted small">No availability set for this day.</p>';
             return;
         }
-
         let html = '';
         ranges.forEach(range => {
             html += `
@@ -710,14 +610,14 @@ function initScheduleModal() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', initScheduleModal);
-
-
-
+/* --------------------------------------------------------------------------
+   8. Timetable Matrix: Weekly Overrides
+   -------------------------------------------------------------------------- */
 function renderOverrideScheduleGrid(data) {
     const grid = document.getElementById('overrideScheduleGrid');
-    let html = '<div class="timetable-container">';
+    if (!grid) return;
 
+    let html = '<div class="timetable-container">';
     html += generateTimeColumnHtml();
     html += '<div class="schedule-grid">';
 
@@ -734,15 +634,10 @@ function renderOverrideScheduleGrid(data) {
 
         for (let hour = 0; hour < 24; hour++) {
             let cellClass = '';
-
             if (hasOverrides) {
-                if (isHourActive(hour, dayData.override_ranges)) {
-                    cellClass = ' is-override';
-                }
+                if (isHourActive(hour, dayData.override_ranges)) cellClass = ' is-override';
             } else {
-                if (isHourActive(hour, dayData.regular_ranges)) {
-                    cellClass = ' is-available';
-                }
+                if (isHourActive(hour, dayData.regular_ranges)) cellClass = ' is-available';
             }
 
             const hStart = String(hour).padStart(2, '0') + ':00';
@@ -751,7 +646,6 @@ function renderOverrideScheduleGrid(data) {
 
             html += `<div class="schedule-hour-cell${cellClass}" data-time="${timeLabel}"></div>`;
         }
-
         html += '</div>';
     });
 
@@ -759,14 +653,16 @@ function renderOverrideScheduleGrid(data) {
     grid.innerHTML = html;
 }
 
-
-/* ===== Weekly Override Modal ===== */
 function initOverrideScheduleModal() {
     const modalEl = document.getElementById('scheduleModal');
     if (!modalEl) return;
 
-    document.getElementById('overrideDayEditStartSelect').innerHTML = generateTimeOptions();
-    document.getElementById('overrideDayEditEndSelect').innerHTML = generateTimeOptions();
+    const startSelect = document.getElementById('overrideDayEditStartSelect');
+    const endSelect = document.getElementById('overrideDayEditEndSelect');
+    if (startSelect && endSelect) {
+        startSelect.innerHTML = generateTimeOptions();
+        endSelect.innerHTML = generateTimeOptions();
+    }
 
     const url = modalEl.dataset.overrideUrl;
     const addUrl = modalEl.dataset.overrideAddUrl;
@@ -778,8 +674,6 @@ function initOverrideScheduleModal() {
     const dayEditExistingRanges = document.getElementById('overrideDayEditExistingRanges');
     const backBtn = document.getElementById('overrideDayEditBackBtn');
     const addBtn = document.getElementById('overrideDayEditAddBtn');
-    const startSelect = document.getElementById('overrideDayEditStartSelect');
-    const endSelect = document.getElementById('overrideDayEditEndSelect');
 
     const prevBtn = document.getElementById('overrideWeekPrevBtn');
     const nextBtn = document.getElementById('overrideWeekNextBtn');
@@ -796,7 +690,7 @@ function initOverrideScheduleModal() {
         const fetchUrl = weekStart ? `${url}?week_start=${weekStart}` : url;
 
         fetch(fetchUrl)
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
                 scheduleData = data.days;
                 weekLabel.textContent = data.week_label;
@@ -809,94 +703,88 @@ function initOverrideScheduleModal() {
             });
     }
 
-    modalEl.addEventListener('show.bs.modal', function () {
-        loadWeek(null);
-    });
+    modalEl.addEventListener('show.bs.modal', () => loadWeek(null));
+    if (prevBtn) prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
+    if (nextBtn) nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
 
-    prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
-    nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
+    if (grid) {
+        grid.addEventListener('click', (e) => {
+            const column = e.target.closest('.schedule-day-column');
+            if (!column || column.classList.contains('schedule-day-disabled')) return;
+            currentDate = column.dataset.date;
+            openDayEditPanel(currentDate);
+        });
+    }
 
-    grid.addEventListener('click', (e) => {
-        const column = e.target.closest('.schedule-day-column');
-        if (!column || column.classList.contains('schedule-day-disabled')) return;
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            dayEditPanel.classList.add('d-none');
+            grid.classList.remove('d-none');
+        });
+    }
 
-        currentDate = column.dataset.date;
-        openDayEditPanel(currentDate);
-    });
+    if (addBtn) {
+        addBtn.addEventListener('click', async () => {
+            const start = startSelect.value;
+            const end = endSelect.value;
+            addBtn.disabled = true;
 
-    backBtn.addEventListener('click', () => {
-        dayEditPanel.classList.add('d-none');
-        grid.classList.remove('d-none');
-    });
+            try {
+                const response = await csrfFetch(addUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `date=${currentDate}&start_time=${start}&end_time=${end}`,
+                });
+                const data = await response.json();
 
-    addBtn.addEventListener('click', async () => {
-        const start = startSelect.value;
-        const end = endSelect.value;
+                if (!response.ok) {
+                    alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                    addBtn.disabled = false;
+                    return;
+                }
 
-        addBtn.disabled = true;
-
-        try {
-            const response = await csrfFetch(addUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `date=${currentDate}&start_time=${start}&end_time=${end}`,
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                scheduleData[currentDate].override_ranges.push({ id: data.id, start: data.start, end: data.end });
+                renderExistingOverrideRanges(currentDate);
+                renderOverrideScheduleGrid(scheduleData);
+            } catch (err) {
+                alert('Network error. Please try again.');
+            } finally {
                 addBtn.disabled = false;
-                return;
             }
+        });
+    }
 
-            scheduleData[currentDate].override_ranges.push({ id: data.id, start: data.start, end: data.end });
+    if (dayEditExistingRanges) {
+        dayEditExistingRanges.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.remove-range-btn');
+            if (!btn) return;
+            if (!confirm('Remove this availability?')) return;
 
-            renderExistingOverrideRanges(currentDate);
-            renderOverrideScheduleGrid(scheduleData);
+            const overrideId = btn.dataset.id;
+            const delUrl = deleteUrlTemplate.replace('/0/', `/${overrideId}/`);
+            btn.disabled = true;
 
-        } catch (err) {
-            alert('Network error. Please try again.');
-        } finally {
-            addBtn.disabled = false;
-        }
-    });
-
-    dayEditExistingRanges.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.remove-range-btn');
-        if (!btn) return;
-
-        if (!confirm('Remove this availability?')) return;
-
-        const overrideId = btn.dataset.id;
-        const delUrl = deleteUrlTemplate.replace('/0/', `/${overrideId}/`);
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(delUrl, { method: 'POST' });
-
-            if (!response.ok) {
-                alert('Something went wrong. Please try again.');
+            try {
+                const response = await csrfFetch(delUrl, { method: 'POST' });
+                if (!response.ok) {
+                    alert('Something went wrong. Please try again.');
+                    btn.disabled = false;
+                    return;
+                }
+                scheduleData[currentDate].override_ranges = scheduleData[currentDate].override_ranges.filter(r => r.id != overrideId);
+                renderExistingOverrideRanges(currentDate);
+                renderOverrideScheduleGrid(scheduleData);
+            } catch (err) {
+                alert('Network error. Please try again.');
                 btn.disabled = false;
-                return;
             }
-
-            scheduleData[currentDate].override_ranges = scheduleData[currentDate].override_ranges.filter(r => r.id != overrideId);
-            renderExistingOverrideRanges(currentDate);
-            renderOverrideScheduleGrid(scheduleData);
-
-        } catch (err) {
-            alert('Network error. Please try again.');
-            btn.disabled = false;
-        }
-    });
+        });
+    }
 
     function openDayEditPanel(dateStr) {
         const dateObj = new Date(dateStr + 'T00:00:00');
         dayEditTitle.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
         renderExistingOverrideRanges(dateStr);
-
         grid.classList.add('d-none');
         dayEditPanel.classList.remove('d-none');
     }
@@ -928,159 +816,141 @@ function initOverrideScheduleModal() {
                 html = '<p class="text-muted small">No availability set for this day.</p>';
             }
         }
-
         dayEditExistingRanges.innerHTML = html;
     }
 }
 
-document.addEventListener('DOMContentLoaded', initOverrideScheduleModal);
-
-
-/* ==========================================================================
-   Teacher Calendar (#30, #31)
-   ========================================================================== */
-
-document.addEventListener("DOMContentLoaded", function () {
-    const calendarPage = document.querySelector(".calendar-page");
+/* --------------------------------------------------------------------------
+   9. Teacher / Student Calendar (#30, #31)
+   -------------------------------------------------------------------------- */
+function initCalendarView() {
+    const calendarPage = document.querySelector('.calendar-page');
     if (!calendarPage) return;
 
-    const gridContainer = document.getElementById("calendar-grid-container");
-    const monthLabel = document.querySelector(".week-range-label");
-
+    const gridContainer = document.getElementById('calendar-grid-container');
+    const monthLabel = document.querySelector('.week-range-label');
     const MAX_VISIBLE_PER_DAY = 3;
 
-    /* ---------- Overflow ("+N more") ---------- */
     function updateOverflow() {
-        document.querySelectorAll(".calendar-day").forEach((day) => {
-            const allRows = Array.from(day.querySelectorAll(".calendar-booking-row"));
-            const visibleRows = allRows.filter((row) => !row.classList.contains("filter-hidden"));
+        document.querySelectorAll('.calendar-day').forEach((day) => {
+            const allRows = Array.from(day.querySelectorAll('.calendar-booking-row'));
+            const visibleRows = allRows.filter((row) => !row.classList.contains('filter-hidden'));
 
             visibleRows.forEach((row, index) => {
-                const overflow = index >= MAX_VISIBLE_PER_DAY;
-                row.style.display = overflow ? "none" : "";
+                row.style.display = index >= MAX_VISIBLE_PER_DAY ? 'none' : '';
             });
 
             allRows.forEach((row) => {
-                if (row.classList.contains("filter-hidden")) {
-                    row.style.display = "none";
-                }
+                if (row.classList.contains('filter-hidden')) row.style.display = 'none';
             });
 
-            const moreBtn = day.querySelector(".calendar-more-link");
+            const moreBtn = day.querySelector('.calendar-more-link');
             if (!moreBtn) return;
 
             const hiddenCount = visibleRows.length - MAX_VISIBLE_PER_DAY;
             if (hiddenCount > 0) {
                 moreBtn.textContent = `+${hiddenCount} more`;
-                moreBtn.style.display = "block";
+                moreBtn.style.display = 'block';
             } else {
-                moreBtn.style.display = "none";
+                moreBtn.style.display = 'none';
             }
         });
     }
 
-    /* ---------- Dropdown open/close (Display / Lessons with) ---------- */
     function setupDropdown(buttonId, panelId) {
         const btn = document.getElementById(buttonId);
         const panel = document.getElementById(panelId);
         if (!btn || !panel) return;
 
-        btn.addEventListener("click", function (e) {
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            panel.classList.toggle("open");
+            panel.classList.toggle('open');
         });
 
-        document.addEventListener("click", function (e) {
+        document.addEventListener('click', (e) => {
             if (!panel.contains(e.target) && !btn.contains(e.target)) {
-                panel.classList.remove("open");
+                panel.classList.remove('open');
             }
         });
     }
 
-    setupDropdown("status-filter-btn", "status-filter-panel");
-    setupDropdown("student-filter-btn", "student-filter-panel");
+    setupDropdown('status-filter-btn', 'status-filter-panel');
+    setupDropdown('student-filter-btn', 'student-filter-panel');
 
-    /* ---------- Client-side filtering ---------- */
     function applyFilters() {
         const checkedStatuses = Array.from(
-            document.querySelectorAll(".status-checkbox:checked")
-        ).map((cb) => cb.value);
+            document.querySelectorAll('.status-checkbox:checked')
+        ).map(cb => cb.value);
 
         const checkedStudents = Array.from(
-            document.querySelectorAll(".student-checkbox:checked")
-        ).map((cb) => cb.value);
+            document.querySelectorAll('.student-checkbox:checked')
+        ).map(cb => cb.value);
 
-        document.querySelectorAll(".calendar-booking-row").forEach((row) => {
+        document.querySelectorAll('.calendar-booking-row').forEach((row) => {
             const status = row.dataset.status;
             const studentId = row.dataset.studentId;
-
             const statusOk = checkedStatuses.includes(status);
-            const studentOk =
-                checkedStudents.length === 0 || checkedStudents.includes(studentId);
+            const studentOk = checkedStudents.length === 0 || checkedStudents.includes(studentId);
 
-            row.classList.toggle("filter-hidden", !(statusOk && studentOk));
+            row.classList.toggle('filter-hidden', !(statusOk && studentOk));
         });
 
         updateOverflow();
     }
 
-    document.addEventListener("change", function (e) {
-        if (e.target.matches(".status-checkbox") || e.target.matches(".student-checkbox")) {
+    document.addEventListener('change', (e) => {
+        if (e.target.matches('.status-checkbox') || e.target.matches('.student-checkbox')) {
             applyFilters();
         }
     });
 
-    /* ---------- Student search (inside "Lessons with" dropdown) ---------- */
-    const studentSearch = document.getElementById("student-filter-search");
+    const studentSearch = document.getElementById('student-filter-search');
     if (studentSearch) {
-        studentSearch.addEventListener("input", function () {
+        studentSearch.addEventListener('input', () => {
             const query = studentSearch.value.trim().toLowerCase();
-            document.querySelectorAll(".student-filter-option").forEach((option) => {
+            document.querySelectorAll('.student-filter-option').forEach((option) => {
                 const name = option.textContent.trim().toLowerCase();
-                option.style.display = name.includes(query) ? "" : "none";
+                option.style.display = name.includes(query) ? '' : 'none';
             });
         });
     }
 
-    /* ---------- Month navigation (AJAX) ---------- */
-    function loadMonth(url) {
-        fetch(url)
-            .then((response) => response.text())
-            .then((html) => {
+    // Month Navigation AJAX
+    function loadMonth(navUrl) {
+        fetch(navUrl)
+            .then(res => res.text())
+            .then(html => {
                 gridContainer.innerHTML = html;
-
-                const newGrid = gridContainer.querySelector(".calendar-grid");
+                const newGrid = gridContainer.querySelector('.calendar-grid');
                 if (newGrid && monthLabel) {
                     monthLabel.textContent = newGrid.dataset.monthLabel;
                 }
-
                 applyFilters();
             });
     }
 
-    document.addEventListener("click", function (e) {
-        const navBtn = e.target.closest(".week-nav-arrow");
-        if (navBtn) {
+    document.addEventListener('click', (e) => {
+        const navBtn = e.target.closest('.week-nav-arrow');
+        if (navBtn && navBtn.dataset.url) {
             loadMonth(navBtn.dataset.url);
         }
     });
 
-    /* ---------- "+N more" day popup ---------- */
-    const dayMorePopup = document.getElementById("dayMorePopup");
-    const dayMorePopupHeader = document.getElementById("dayMorePopupHeader");
-    const dayMorePopupList = document.getElementById("dayMorePopupList");
+    // "+N more" Day Popup
+    const dayMorePopup = document.getElementById('dayMorePopup');
+    const dayMorePopupHeader = document.getElementById('dayMorePopupHeader');
+    const dayMorePopupList = document.getElementById('dayMorePopupList');
 
-    function openDayMorePopup(btn, dayCell) {
+    function openDayMorePopup(dayCell) {
         const visibleRows = Array.from(
-            dayCell.querySelectorAll(".calendar-booking-row")
-        ).filter((row) => !row.classList.contains("filter-hidden"));
+            dayCell.querySelectorAll('.calendar-booking-row')
+        ).filter(row => !row.classList.contains('filter-hidden'));
 
-        dayMorePopupHeader.textContent = dayCell.querySelector(".calendar-day-number").textContent;
-
-        dayMorePopupList.innerHTML = "";
-        visibleRows.forEach((row) => {
+        dayMorePopupHeader.textContent = dayCell.querySelector('.calendar-day-number').textContent;
+        dayMorePopupList.innerHTML = '';
+        visibleRows.forEach(row => {
             const clone = row.cloneNode(true);
-            clone.style.display = "";
+            clone.style.display = '';
             dayMorePopupList.appendChild(clone);
         });
 
@@ -1089,199 +959,53 @@ document.addEventListener("DOMContentLoaded", function () {
         dayMorePopup.style.left = `${rect.left}px`;
         dayMorePopup.style.width = `${rect.width}px`;
         dayMorePopup.style.minHeight = `${rect.height}px`;
-        dayMorePopup.classList.add("open");
+        dayMorePopup.classList.add('open');
     }
 
-    document.addEventListener("click", function (e) {
-        const moreBtn = e.target.closest(".calendar-more-link");
+    document.addEventListener('click', (e) => {
+        const moreBtn = e.target.closest('.calendar-more-link');
         if (moreBtn) {
             e.stopPropagation();
-            const dayCell = moreBtn.closest(".calendar-day");
-            openDayMorePopup(moreBtn, dayCell);
+            openDayMorePopup(moreBtn.closest('.calendar-day'));
             return;
         }
-
-        if (!dayMorePopup.contains(e.target)) {
-            dayMorePopup.classList.remove("open");
+        if (dayMorePopup && !dayMorePopup.contains(e.target)) {
+            dayMorePopup.classList.remove('open');
         }
     });
 
-    /* ---------- Lesson detail modal (#31) ---------- */
-    function initLessonDetailModal() {
-        const modalEl = document.getElementById("lessonDetailModal");
-        if (!modalEl) return;
-
-        const modalBody = document.getElementById("lessonDetailModalBody");
+    // Calendar Booking Click (Open modal)
+    const modalEl = document.getElementById('lessonDetailModal');
+    if (modalEl) {
+        const modalBody = document.getElementById('lessonDetailModalBody');
         const urlTemplate = modalEl.dataset.url;
         const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-        document.addEventListener("click", function (e) {
-            const row = e.target.closest(".calendar-booking-row");
+        document.addEventListener('click', (e) => {
+            const row = e.target.closest('.calendar-booking-row');
             if (!row) return;
 
             const bookingId = row.dataset.bookingId;
-            const url = urlTemplate.replace("/0/", `/${bookingId}/`);
+            const detailUrl = urlTemplate.replace('/0/', `/${bookingId}/`);
 
             modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
             modalInstance.show();
 
-            fetch(url)
-                .then((response) => response.text())
-                .then((html) => {
-                    modalBody.innerHTML = html;
-                })
+            fetch(detailUrl)
+                .then(res => res.text())
+                .then(html => { modalBody.innerHTML = html; })
                 .catch(() => {
-                    modalBody.innerHTML =
-                        '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+                    modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
                 });
         });
     }
 
-    /* ---------- Init ---------- */
     applyFilters();
-    initLessonDetailModal();
-});
-
-
-
-function initReviewForm() {
-    const modalBody = document.getElementById('lessonDetailModalBody');
-    if (!modalBody) return;
-
-    modalBody.addEventListener('submit', async function (e) {
-        const form = e.target.closest('#reviewForm');
-        if (!form) return;
-        e.preventDefault();
-
-        const submitBtn = form.querySelector('button[type="submit"]');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Submitting...';
-
-        try {
-            const response = await csrfFetch(form.action, {
-                method: 'POST',
-                body: new FormData(form),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                alert(data.error || 'Something went wrong. Please try again.');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit Review';
-                return;
-            }
-
-            const modalEl = document.getElementById('lessonDetailModal');
-            bootstrap.Modal.getInstance(modalEl).hide();
-            window.location.reload();
-
-        } catch (err) {
-            alert('Network error. Please try again.');
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Submit Review';
-        }
-    });
 }
 
-document.addEventListener('DOMContentLoaded', initReviewForm);
-
-
-
-/* ==========================================================================
-   Teacher Review Approval
-   ========================================================================== */
-
-function initPendingReviewsModal() {
-    const modalEl = document.getElementById('pendingReviewsModal');
-    if (!modalEl) return;
-
-    const modalBody = document.getElementById('pendingReviewsModalBody');
-    const url = modalEl.dataset.url;
-
-    modalEl.addEventListener('show.bs.modal', function () {
-        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
-        fetch(url)
-            .then(response => response.text())
-            .then(html => { modalBody.innerHTML = html; })
-            .catch(() => {
-                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
-            });
-    });
-}
-
-document.addEventListener('DOMContentLoaded', initPendingReviewsModal);
-
-
-function initPendingReviewsActions() {
-    const modalEl = document.getElementById('pendingReviewsModal');
-    if (!modalEl) return;
-
-    const modalBody = document.getElementById('pendingReviewsModalBody');
-    let hasChanges = false;
-
-    modalBody.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.btn-accept, .btn-decline');
-        if (!btn) return;
-
-        const isReject = btn.classList.contains('btn-decline');
-        if (isReject && !confirm('Are you sure you want to reject and delete this review?')) {
-            return;
-        }
-
-        const url = isReject ? btn.dataset.rejectUrl : btn.dataset.approveUrl;
-        const item = btn.closest('.request-item');
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(url, {
-                method: 'POST',
-            });
-
-            if (!response.ok) {
-                alert('Something went wrong. Please try again.');
-                btn.disabled = false;
-                return;
-            }
-
-            item.remove();
-            hasChanges = true;
-
-            // Update badge count
-            const badge = document.querySelector('button[data-bs-target="#pendingReviewsModal"] .badge-count');
-            if (badge) {
-                const newCount = parseInt(badge.textContent, 10) - 1;
-                if (newCount > 0) {
-                    badge.textContent = newCount;
-                } else {
-                    badge.remove();
-                }
-            }
-
-            // If no more items in modal, show empty state
-            const remainingItems = modalBody.querySelectorAll('.request-item');
-            if (remainingItems.length === 0) {
-                modalBody.innerHTML = '<div class="empty-state"><p>No pending reviews.</p></div>';
-            }
-
-        } catch (err) {
-            alert('Network error. Please try again.');
-            btn.disabled = false;
-        }
-    });
-
-    modalEl.addEventListener('hidden.bs.modal', () => {
-        if (hasChanges) {
-            window.location.reload();
-        }
-    });
-}
-
-document.addEventListener('DOMContentLoaded', initPendingReviewsActions);
-
-
-
+/* --------------------------------------------------------------------------
+   10. Teacher Portfolio (Certificate AJAX Manager)
+   -------------------------------------------------------------------------- */
 function initCertificateManager() {
     const addForm = document.getElementById('certificateAddForm');
     const list = document.getElementById('certificatesList');
@@ -1330,13 +1054,12 @@ function initCertificateManager() {
     list.addEventListener('click', async (e) => {
         const btn = e.target.closest('.remove-range-btn');
         if (!btn) return;
-
         if (!confirm('Remove this certificate?')) return;
 
         const certId = btn.dataset.id;
         const url = deleteUrlTemplate.replace('/0/', `/${certId}/`);
-
         btn.disabled = true;
+
         try {
             const response = await csrfFetch(url, { method: 'POST' });
             if (!response.ok) {
@@ -1352,4 +1075,84 @@ function initCertificateManager() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', initCertificateManager);
+function initPendingReviewsManager() {
+    const modalEl = document.getElementById('pendingReviewsModal');
+    if (!modalEl) return;
+
+    const modalBody = document.getElementById('pendingReviewsModalBody');
+    const url = modalEl.dataset.url;
+    let hasChanges = false;
+
+    modalEl.addEventListener('show.bs.modal', () => {
+        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        fetch(url)
+            .then(res => res.text())
+            .then(html => { modalBody.innerHTML = html; })
+            .catch(() => {
+                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+            });
+    });
+
+    modalBody.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.btn-accept, .btn-decline');
+        if (!btn) return;
+
+        const isReject = btn.classList.contains('btn-decline');
+        if (isReject && !confirm('Are you sure you want to reject and delete this review?')) return;
+
+        const reqUrl = isReject ? btn.dataset.rejectUrl : btn.dataset.approveUrl;
+        const item = btn.closest('.request-item');
+        btn.disabled = true;
+
+        try {
+            const response = await csrfFetch(reqUrl, { method: 'POST' });
+            if (!response.ok) {
+                alert('Something went wrong. Please try again.');
+                btn.disabled = false;
+                return;
+            }
+
+            item.remove();
+            hasChanges = true;
+
+            const badge = document.querySelector('button[data-bs-target="#pendingReviewsModal"] .badge-count');
+            if (badge) {
+                const newCount = parseInt(badge.textContent, 10) - 1;
+                if (newCount > 0) {
+                    badge.textContent = newCount;
+                } else {
+                    badge.remove();
+                }
+            }
+
+            const remainingItems = modalBody.querySelectorAll('.request-item');
+            if (remainingItems.length === 0) {
+                modalBody.innerHTML = '<div class="empty-state"><p>No pending reviews.</p></div>';
+            }
+        } catch (err) {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+        }
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        if (hasChanges) window.location.reload();
+    });
+}
+
+/* --------------------------------------------------------------------------
+   11. Single Application Bootstrap
+   -------------------------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', () => {
+    initSignupTimezoneDetection();
+    initLessonCardsScroll();
+    initWeekNav();
+    initBookingModal();
+    initLessonDetailModalManager();
+    initLessonRequestsManager();
+    initScheduleModal();
+    initOverrideScheduleModal();
+    initCalendarView();
+    initCertificateManager();
+    initPendingReviewsManager();
+});

@@ -1,20 +1,38 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from accounts.decorators import teacher_required
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
 from django.contrib import messages
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from accounts.decorators import teacher_required
 from booking.models import Review
-from .models import TeacherProfile, Certificate
-from .forms import TeacherAccountSettingsForm, TeacherPortfolioSettingsForm, CertificateForm, TeacherBookingSettingsForm
+
+from .forms import (
+    CertificateForm,
+    TeacherAccountSettingsForm,
+    TeacherBookingSettingsForm,
+    TeacherPortfolioSettingsForm,
+)
+from .models import Certificate, TeacherProfile
 
 
 def landing_page(request):
-    teacher = TeacherProfile.objects.prefetch_related('certificates').first()
+    teacher = (
+        TeacherProfile.objects.select_related('user')
+        .prefetch_related('certificates')
+        .first()
+    )
     certificates = teacher.certificates.all() if teacher else []
-    hero_subtext = teacher.headline if teacher and teacher.headline else "Unlock your English potential with personalized, engaging lessons tailored to your goals."
-    reviews = Review.objects.filter(
-        is_approved=True,
-        booking__teacher=teacher).select_related('student')[:6] if teacher else Review.objects.none()
+    hero_subtext = (
+        teacher.headline
+        if teacher and teacher.headline
+        else "Unlock your English potential with personalized, engaging lessons tailored to your goals."
+    )
+    reviews = (
+        Review.objects.filter(is_approved=True, booking__teacher=teacher)
+        .select_related('student')[:6]
+        if teacher
+        else Review.objects.none()
+    )
 
     context = {
         'teacher': teacher,
@@ -22,7 +40,7 @@ def landing_page(request):
         'hero_subtext': hero_subtext,
         'reviews': reviews,
     }
-    return render(request, "home.html", context)
+    return render(request, "portfolio/home.html", context)
 
 
 @teacher_required
@@ -77,7 +95,8 @@ def teacher_certificate_add(request):
             'issued_by': cert.issued_by,
             'issue_date': cert.issue_date.isoformat() if cert.issue_date else '',
         })
-    return JsonResponse({'error': form.errors}, status=400)
+    first_error = next(iter(form.errors.values()))[0]
+    return JsonResponse({'error': first_error}, status=400)
 
 
 @teacher_required
@@ -104,4 +123,3 @@ def teacher_settings_booking(request):
         'form': form,
         'active': 'booking',
     })
-

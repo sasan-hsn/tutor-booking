@@ -11,4 +11,5 @@ AVATAR_COLORS = [
 
 
 def get_avatar_color(user_id):
-    return AVATAR_COLORS[user_id % len(AVATAR_COLORS)]
+    safe_id = user_id or 0
+    return AVATAR_COLORS[safe_id % len(AVATAR_COLORS)]
