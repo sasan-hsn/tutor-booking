@@ -35,6 +35,7 @@ class TeacherProfile(models.Model):
         help_text="Allow students to book same-day lessons (subject to a 1-hour buffer).",
     )
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
+    hero_image = models.ImageField(upload_to="hero_images/", blank=True, null=True)
     contact_email = models.EmailField(blank=True, default='')
     whatsapp_number = models.CharField(max_length=20, blank=True, default='')
     telegram_username = models.CharField(max_length=64, blank=True, default='')
@@ -63,6 +64,7 @@ class TeacherProfile(models.Model):
             and self.bio
             and self.teaching_philosophy
             and self.intro_video_url
+            and self.hero_image
             and has_contact
         )
 

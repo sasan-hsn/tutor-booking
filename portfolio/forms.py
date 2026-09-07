@@ -48,10 +48,17 @@ class TeacherAccountSettingsForm(forms.Form):
 
 
 class TeacherPortfolioSettingsForm(forms.ModelForm):
+    hero_image = forms.ImageField(
+        required=False,
+        label='Homepage Cover Photo',
+        help_text='A large photo shown at the top of your public page.',
+        widget=forms.FileInput(attrs={'class': 'form-control'}),
+    )
+        
     class Meta:
         model = TeacherProfile
         fields = [
-            'headline', 'bio', 'teaching_philosophy', 'intro_video_url',
+            'headline', 'bio', 'teaching_philosophy', 'intro_video_url', 'hero_image',
             'contact_email', 'whatsapp_number', 'telegram_username', 'instagram_username',
         ]
         widgets = {
