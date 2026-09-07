@@ -408,6 +408,30 @@ h1, h2, h3, h4, h5, h6,
 .testimonial-card {
     flex: 0 0 calc((100% - 2rem) / 3);
     min-height: 100%;
+    scroll-snap-align: start;
+}
+
+@media (max-width: 991px) {
+    .testimonial-card {
+        flex: 0 0 calc((100% - 1rem) / 2);
+    }
+}
+
+@media (max-width: 576px) {
+    .testimonial-card {
+        flex: 0 0 100%;
+    }
+}
+
+@media (max-width: 576px) {
+    #testimonials .scroll-arrow {
+        display: none !important;
+    }
+    
+    #testimonials .lesson-cards-scroll {
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 /* Certificates */
