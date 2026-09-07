@@ -61,7 +61,7 @@ def teacher_settings_account(request):
 def teacher_settings_portfolio(request):
     teacher = request.user.teacher_profile
     if request.method == 'POST':
-        form = TeacherPortfolioSettingsForm(request.POST, instance=teacher)
+        form = TeacherPortfolioSettingsForm(request.POST, request.FILES, instance=teacher)
         if form.is_valid():
             form.save()
             messages.success(request, 'Portfolio updated.')
