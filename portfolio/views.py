@@ -28,7 +28,12 @@ def landing_page(request):
         else "Unlock your English potential with personalized, engaging lessons tailored to your goals."
     )
     reviews = (
-        Review.objects.filter(is_approved=True, booking__teacher=teacher)
+        Review.objects.filter(
+            is_approved=True,
+            booking__teacher=teacher,
+        )
+        .exclude(comment__isnull=True)
+        .exclude(comment__exact='')
         .select_related('student')[:6]
         if teacher
         else Review.objects.none()
