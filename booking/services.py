@@ -1,40 +1,47 @@
 import calendar
-from zoneinfo import ZoneInfo
 from collections import defaultdict
-from datetime import datetime, timedelta, date, time
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from django.utils import timezone
 
-from .models import RegularAvailability, WeeklyOverride, Booking
+from .models import Booking, RegularAvailability, WeeklyOverride
+
+INSTANT_TUTORING_BUFFER = timedelta(hours=1)
 
 
-def get_availability_windows(teacher, date_val):
-    """Returns a list of (start_time, end_time) tuples representing the
-    teacher's available windows on date_val, applying the #28 "Replacing"
-    rule: if any WeeklyOverride exists for this date, only override windows
-    apply (RegularAvailability is ignored); otherwise RegularAvailability
+def get_availability_windows(teacher, date_val: date):
+    """
+    Returns a list of (start_time, end_time) tuples representing the
+    teacher's available windows on date_val.
+
+    If any WeeklyOverride exists for this date, only override
+    windows apply (RegularAvailability is ignored); otherwise RegularAvailability
     for that weekday applies.
     """
-    overrides = WeeklyOverride.objects.filter(teacher=teacher, date=date_val)
+    # Evaluate overrides in a single database query
+    overrides = list(
+        WeeklyOverride.objects.filter(teacher=teacher, date=date_val).order_by('start_time')
+    )
 
-    if overrides.exists():
-        if overrides.filter(is_available=False).exists():
+    if overrides:
+        # If marked entirely unavailable on that date, return no windows
+        if any(not o.is_available for o in overrides):
             return []
-        return [
-            (o.start_time, o.end_time)
-            for o in overrides.filter(is_available=True)
-        ]
+        return [(o.start_time, o.end_time) for o in overrides if o.is_available]
 
     weekday = date_val.weekday()
     regular_rules = RegularAvailability.objects.filter(
         teacher=teacher, day_of_week=weekday
-    )
+    ).order_by('start_time')
+
     return [(r.start_time, r.end_time) for r in regular_rules]
 
 
-
-INSTANT_TUTORING_BUFFER = timedelta(hours=1)
-
-def get_available_start_times(teacher, date_val, duration_minutes):
+def get_available_start_times(teacher, date_val: date, duration_minutes: int):
+    """
+    Calculates candidate start times on date_val in teacher's local time,
+    accounting for existing bookings, instant tutoring buffer, and slot duration.
+    """
     windows = get_availability_windows(teacher, date_val)
     if not windows:
         return []
@@ -46,7 +53,7 @@ def get_available_start_times(teacher, date_val, duration_minutes):
 
     if date_val == teacher_today:
         if not teacher.instant_tutoring_enabled:
-            # Same-day bookings are closed entirely.
+            # Same-day bookings are closed entirely
             return []
         threshold = now + INSTANT_TUTORING_BUFFER
     else:
@@ -68,8 +75,9 @@ def get_available_start_times(teacher, date_val, duration_minutes):
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
         start_at__lt=day_range_end,
         end_at__gt=day_range_start,
-    )
-    booked_ranges = [(b.start_at, b.end_at) for b in existing_bookings]
+    ).values_list('start_at', 'end_at')
+
+    booked_ranges = list(existing_bookings)
 
     available_times = []
     step = timedelta(minutes=30)
@@ -85,7 +93,6 @@ def get_available_start_times(teacher, date_val, duration_minutes):
                     current_dt < b_end and candidate_end > b_start
                     for b_start, b_end in booked_ranges
                 )
-
                 if not overlaps:
                     available_times.append(current_dt)
 
@@ -95,8 +102,10 @@ def get_available_start_times(teacher, date_val, duration_minutes):
 
 
 def get_lesson_type_and_price(teacher, student):
-    """Returns (lesson_type, price, duration_minutes) for a given
-    student booking with this teacher."""
+    """
+    Returns (lesson_type, price, duration_minutes) for a given student.
+    First-time students receive trial settings if offered by teacher.
+    """
     has_previous_lesson = Booking.objects.filter(
         student=student,
         teacher=teacher,
@@ -108,14 +117,11 @@ def get_lesson_type_and_price(teacher, student):
     return Booking.LessonType.REGULAR, teacher.lesson_price, teacher.lesson_duration_minutes
 
 
-
-def get_calendar_grid(year, month, *, teacher=None, student=None):
-    """Generate a monthly calendar grid (Sun-Sat) with pre-fetched bookings.
-
-    Returns a matrix of weeks, where each day contains date metadata,
-    active month flags, and associated booking records.
+def get_calendar_grid(year: int, month: int, *, teacher=None, student=None):
     """
-
+    Generate a monthly calendar grid (Sun-Sat) with pre-fetched bookings.
+    Captures the entire visible grid span (including visible edge days from adjacent months).
+    """
     if teacher is not None:
         viewer_tz = ZoneInfo(teacher.user.timezone)
     elif student is not None:
@@ -123,37 +129,39 @@ def get_calendar_grid(year, month, *, teacher=None, student=None):
     else:
         raise ValueError("Must provide either teacher or student.")
 
-    _, last_day = calendar.monthrange(year, month)
-    month_start_local = date(year, month, 1)
-    month_end_local = date(year, month, last_day)
+    cal = calendar.Calendar(firstweekday=6)
+    month_matrix = cal.monthdatescalendar(year, month)
 
-    # Convert the local calendar month boundaries into aware UTC instants,
-    # so the DB query correctly captures every booking that falls within
-    # this month AS SEEN BY THE VIEWER (not as seen in UTC).
-    range_start = datetime.combine(month_start_local, time.min, tzinfo=viewer_tz)
-    range_end = datetime.combine(month_end_local, time.max, tzinfo=viewer_tz)
+    # Capture boundaries of the full visible grid (including adjacent month days)
+    grid_start_date = month_matrix[0][0]
+    grid_end_date = month_matrix[-1][-1]
+
+    range_start = datetime.combine(grid_start_date, time.min, tzinfo=viewer_tz)
+    range_end = datetime.combine(grid_end_date, time.max, tzinfo=viewer_tz)
+
+    booking_filter = {
+        'start_at__lt': range_end,
+        'end_at__gt': range_start,
+    }
 
     if teacher is not None:
-        bookings = Booking.objects.filter(
-            teacher=teacher,
-            start_at__lt=range_end,
-            end_at__gt=range_start,
-        ).select_related("student").order_by("start_at")
-
+        bookings = (
+            Booking.objects.filter(teacher=teacher, **booking_filter)
+            .select_related("student")
+            .order_by("start_at")
+        )
     else:
-        bookings = Booking.objects.filter(
-            student=student,
-            start_at__lt=range_end,
-            end_at__gt=range_start,
-        ).select_related("teacher__user").order_by("start_at")
+        bookings = (
+            Booking.objects.filter(student=student, **booking_filter)
+            .select_related("teacher__user")
+            .order_by("start_at")
+        )
 
     bookings_by_date = defaultdict(list)
     for booking in bookings:
         local_date = timezone.localtime(booking.start_at, viewer_tz).date()
         bookings_by_date[local_date].append(booking)
 
-    cal = calendar.Calendar(firstweekday=6)
-    month_matrix = cal.monthdatescalendar(year, month)
     today = timezone.localtime(timezone.now(), viewer_tz).date()
 
     calendar_grid = []
@@ -172,8 +180,8 @@ def get_calendar_grid(year, month, *, teacher=None, student=None):
     return calendar_grid
 
 
-
-def get_calendar_navigation(request, today):
+def get_calendar_navigation(request, today: date):
+    """Parses year and month from GET query parameters and provides next/prev links."""
     try:
         current_year = int(request.GET.get("year", today.year))
         current_month = int(request.GET.get("month", today.month))
@@ -185,10 +193,10 @@ def get_calendar_navigation(request, today):
 
     if current_month == 1:
         prev_month = 12
-        prev_year = current_year -1 
+        prev_year = current_year - 1
     else:
         prev_month = current_month - 1
-        prev_year = current_year 
+        prev_year = current_year
 
     if current_month == 12:
         next_month = 1
@@ -208,27 +216,36 @@ def get_calendar_navigation(request, today):
     }
 
 
-def get_week_data(teacher, student_tz, week_days, duration_minutes):
-    """For each day in week_days (dates in the student's local calendar),
-    returns available slots as dicts with an aware `start_at` (for
-    booking) and student-local `local_start_time`/`local_end_time` (for
-    display). Handles timezone-offset spillover by checking the
-    teacher's day before/after each requested day.
+def get_week_data(teacher, student_tz, week_days, duration_minutes: int):
     """
+    For each day in week_days (dates in the student's local calendar),
+    returns available slots as dicts with an aware `start_at` and
+    student-local display times.
+
+    Optimized: Uses a local memoization cache so teacher days aren't computed
+    redundantly across day boundaries.
+    """
+    slots_cache = {}
+
+    def fetch_slots_for_teacher_day(t_day):
+        if t_day not in slots_cache:
+            slots_cache[t_day] = get_available_start_times(teacher, t_day, duration_minutes)
+        return slots_cache[t_day]
+
+    duration_delta = timedelta(minutes=duration_minutes)
     week_data = []
+
     for day in week_days:
         candidate_slots = []
         for teacher_day in (day - timedelta(days=1), day, day + timedelta(days=1)):
-            candidate_slots.extend(get_available_start_times(teacher, teacher_day, duration_minutes))
+            candidate_slots.extend(fetch_slots_for_teacher_day(teacher_day))
 
         day_slots = []
         for slot_start in sorted(set(candidate_slots)):
             local_start = timezone.localtime(slot_start, student_tz)
             if local_start.date() != day:
                 continue
-            local_end = timezone.localtime(
-                slot_start + timedelta(minutes=duration_minutes), student_tz
-            )
+            local_end = timezone.localtime(slot_start + duration_delta, student_tz)
             day_slots.append({
                 'start_at': slot_start,
                 'local_start_time': local_start.time(),

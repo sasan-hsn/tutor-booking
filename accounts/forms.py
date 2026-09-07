@@ -1,7 +1,7 @@
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django import forms
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+
 from .models import User
-from portfolio.models import TeacherProfile
 from .utils import get_timezone_choices
 
 
@@ -16,8 +16,9 @@ class StudentSignUpForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['timezone'].choices = [(tz, tz) for tz in get_timezone_choices()]
-        for field in self.fields.values():
-            field.widget.attrs.update({'class': 'form-control'})
+        for name, field in self.fields.items():
+            widget_class = 'form-select' if name == 'timezone' else 'form-control'
+            field.widget.attrs.update({'class': widget_class})
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -52,15 +53,13 @@ class StudentProfileSettingsForm(forms.Form):
         self.fields['profile_picture'].widget.attrs.update({'class': 'form-control'})
 
     def save(self):
-        if self.cleaned_data.get('profile_picture'):
+        if self.cleaned_data.get('profile_picture') and self.profile:
             self.profile.profile_picture = self.cleaned_data['profile_picture']
             self.profile.save()
         tz = self.cleaned_data.get('timezone')
         if tz and self.user:
             self.user.timezone = tz
             self.user.save()
-
-
 
 
 class TeacherSignUpForm(UserCreationForm):
@@ -74,8 +73,9 @@ class TeacherSignUpForm(UserCreationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['timezone'].choices = [(tz, tz) for tz in get_timezone_choices()]
-        for field in self.fields.values():
-            field.widget.attrs.update({'class': 'form-control'})
+        for name, field in self.fields.items():
+            widget_class = 'form-select' if name == 'timezone' else 'form-control'
+            field.widget.attrs.update({'class': widget_class})
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -85,4 +85,4 @@ class TeacherSignUpForm(UserCreationForm):
             instance.timezone = tz
         if commit:
             instance.save()
-        return instance            
+        return instance

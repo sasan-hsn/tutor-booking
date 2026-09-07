@@ -1,15 +1,17 @@
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib import messages
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
-from django.shortcuts import render
-from django.contrib.auth import login, logout
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect
-from .forms import StudentSignUpForm, StudentProfileSettingsForm , StyledAuthenticationForm, TeacherSignUpForm
+
+from .forms import (
+    StudentProfileSettingsForm,
+    StudentSignUpForm,
+    StyledAuthenticationForm,
+    TeacherSignUpForm,
+)
 from .models import User
-
-
 
 
 def student_signup(request):
@@ -17,10 +19,10 @@ def student_signup(request):
         form = StudentSignUpForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)  
+            login(request, user)
             return redirect('booking:student_dashboard')
     else:
-        form = StudentSignUpForm()  
+        form = StudentSignUpForm()
     return render(request, 'accounts/student_signup.html', {'form': form})
 
 
@@ -37,9 +39,8 @@ def user_login(request):
                 return redirect(next_url)
 
             if user.role == User.Role.TEACHER:
-                return redirect('booking:teacher_dashboard') 
-            else:
-                return redirect('booking:student_dashboard')
+                return redirect('booking:teacher_dashboard')
+            return redirect('booking:student_dashboard')
     else:
         form = StyledAuthenticationForm()
     return render(request, 'accounts/login.html', {'form': form, 'next': next_url or ''})
@@ -49,7 +50,6 @@ def user_login(request):
 def user_logout(request):
     logout(request)
     return redirect('/')
-
 
 
 @login_required
@@ -78,8 +78,8 @@ def teacher_signup(request):
         form = TeacherSignUpForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)  
+            login(request, user)
             return redirect('booking:teacher_dashboard')
     else:
-        form = TeacherSignUpForm()  
+        form = TeacherSignUpForm()
     return render(request, 'accounts/teacher_signup.html', {'form': form})

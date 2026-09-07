@@ -20,9 +20,14 @@ class AvailabilityWindowsServiceTest(TestCase):
             user=self.user,
             lesson_duration_minutes=60,
         )
-        # 2026-09-07 is a Monday (weekday = 0)
-        self.target_monday = date(2026, 9, 7)
         self.tz = ZoneInfo(self.user.timezone)
+        # Dynamically resolve next Monday (always strictly in the future, at least +7 days if today is Monday).
+        # This prevents test flakiness caused by same-day booking restrictions (instant_tutoring_enabled=False).
+        today = timezone.localtime(timezone.now(), self.tz).date()
+        days_ahead = (0 - today.weekday() + 7) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        self.target_monday = today + timedelta(days=days_ahead)
 
     def test_windows_from_regular_availability(self):
         """RegularAvailability applies when there's no override for that date."""
@@ -89,9 +94,9 @@ class AvailabilityWindowsServiceTest(TestCase):
         # With a 60-min lesson in a 10:00-12:00 window and 30-min steps,
         # valid starts are 10:00, 10:30, 11:00 (11:00+60min=12:00 fits exactly)
         expected = [
-            datetime(2026, 9, 7, 10, 0, tzinfo=self.tz),
-            datetime(2026, 9, 7, 10, 30, tzinfo=self.tz),
-            datetime(2026, 9, 7, 11, 0, tzinfo=self.tz),
+            datetime.combine(self.target_monday, time(10, 0), tzinfo=self.tz),
+            datetime.combine(self.target_monday, time(10, 30), tzinfo=self.tz),
+            datetime.combine(self.target_monday, time(11, 0), tzinfo=self.tz),
         ]
         self.assertEqual(start_times, expected)
 
@@ -110,8 +115,8 @@ class AvailabilityWindowsServiceTest(TestCase):
         Booking.objects.create(
             student=student,
             teacher=self.teacher,
-            start_at=datetime(2026, 9, 7, 10, 30, tzinfo=self.tz),
-            end_at=datetime(2026, 9, 7, 11, 30, tzinfo=self.tz),
+            start_at=datetime.combine(self.target_monday, time(10, 30), tzinfo=self.tz),
+            end_at=datetime.combine(self.target_monday, time(11, 30), tzinfo=self.tz),
             status=Booking.Status.CONFIRMED,
         )
 

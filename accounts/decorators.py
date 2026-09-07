@@ -2,6 +2,8 @@ from functools import wraps
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 
+from .models import User
+
 
 def role_required(role):
     def decorator(view_func):
@@ -15,5 +17,5 @@ def role_required(role):
     return decorator
 
 
-student_required = role_required("student")
-teacher_required = role_required("teacher")
+student_required = role_required(User.Role.STUDENT)
+teacher_required = role_required(User.Role.TEACHER)

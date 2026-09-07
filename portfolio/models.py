@@ -1,24 +1,39 @@
-from django.db import models
-
+from decimal import Decimal
 from django.conf import settings
+from django.core.validators import MinValueValidator
+from django.db import models
 
 
 class TeacherProfile(models.Model):
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
-        related_name='teacher_profile'
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='teacher_profile',
     )
     bio = models.TextField(blank=True, default='')
     teaching_philosophy = models.TextField(blank=True, default='')
     intro_video_url = models.URLField(max_length=500, blank=True, default='')
     headline = models.CharField(max_length=255, blank=True, default='')
-    lesson_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    lesson_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
     lesson_duration_minutes = models.PositiveSmallIntegerField(default=50)
     offers_trial = models.BooleanField(default=True)
-    trial_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    trial_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
     trial_duration_minutes = models.PositiveSmallIntegerField(default=25)
-    instant_tutoring_enabled = models.BooleanField(default=False, help_text="Allow students to book same-day lessons (subject to a 1-hour buffer).")
+    instant_tutoring_enabled = models.BooleanField(
+        default=False,
+        help_text="Allow students to book same-day lessons (subject to a 1-hour buffer).",
+    )
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
     contact_email = models.EmailField(blank=True, default='')
     whatsapp_number = models.CharField(max_length=20, blank=True, default='')
@@ -38,12 +53,17 @@ class TeacherProfile(models.Model):
     @property
     def portfolio_complete(self):
         has_contact = bool(
-            self.contact_email or self.whatsapp_number or
-            self.telegram_username or self.instagram_username
+            self.contact_email
+            or self.whatsapp_number
+            or self.telegram_username
+            or self.instagram_username
         )
         return bool(
-            self.headline and self.bio and self.teaching_philosophy
-            and self.intro_video_url and has_contact
+            self.headline
+            and self.bio
+            and self.teaching_philosophy
+            and self.intro_video_url
+            and has_contact
         )
 
     @property
@@ -51,22 +71,24 @@ class TeacherProfile(models.Model):
         return self.lesson_price > 0
 
     def __str__(self):
-        return f"Teacher Profile: {self.user}"
+        return f"Teacher Profile: {self.display_name}"
 
 
 class Certificate(models.Model):
     teacher = models.ForeignKey(
         TeacherProfile,
         on_delete=models.CASCADE,
-        related_name='certificates'
+        related_name='certificates',
     )
     title = models.CharField(max_length=255)
     issued_by = models.CharField(max_length=255)
     issue_date = models.DateField(null=True, blank=True)
     certificate_number = models.CharField(max_length=100, blank=True, default='')
     credential_url = models.URLField(max_length=500, blank=True, default='')
-
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-issue_date', '-created_at']
+
     def __str__(self):
-        return f"{self.title} - {self.teacher.user}"        
+        return f"{self.title} - {self.teacher.display_name}"
