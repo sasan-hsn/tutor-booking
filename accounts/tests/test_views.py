@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
 from accounts.models import User
-
+from portfolio.models import TeacherProfile
 
 class SignupViewTestCase(TestCase):
     def test_signup_creates_authenticated_student(self):
@@ -79,3 +79,44 @@ class LogoutViewTestCase(TestCase):
         self.assertEqual(response.status_code, 405)
 
         self.assertIn('_auth_user_id', self.client.session)
+
+
+class TeacherSignUpViewTestCase(TestCase):
+    def test_signup_creates_authenticated_teacher_with_exactly_one_profile(self):
+        response = self.client.post(reverse('accounts:teacher_signup'), {
+            'username': 'new_teacher',
+            'email': 'newteacher@example.com',
+            'password1': 'StrongPass123',
+            'password2': 'StrongPass123',
+            'timezone': 'UTC',
+        })
+
+        self.assertEqual(response.status_code, 302)
+
+        user = User.objects.get(username='new_teacher')
+        self.assertEqual(user.role, User.Role.TEACHER)
+
+        # regression test: a signal + a form-level create() once raced
+        # and caused IntegrityError — confirm exactly one profile exists,
+        # not zero and not two
+        self.assertEqual(TeacherProfile.objects.filter(user=user).count(), 1)
+
+        # confirm the user is actually logged in after signup
+        response = self.client.get(reverse('booking:teacher_dashboard'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_signup_ignores_injected_role_field(self):
+        # mirrors the equivalent student test — even if someone tries
+        # to POST role=student through this teacher-signup form, the
+        # view must force role=TEACHER regardless of form input
+        response = self.client.post(reverse('accounts:teacher_signup'), {
+            'username': 'sneaky_teacher',
+            'email': 'sneaky@example.com',
+            'password1': 'StrongPass123',
+            'password2': 'StrongPass123',
+            'timezone': 'UTC',
+            'role': 'student',
+        })
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username='sneaky_teacher')
+        self.assertEqual(user.role, User.Role.TEACHER)        
