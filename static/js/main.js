@@ -520,7 +520,7 @@ function initScheduleModal() {
     if (backBtn) {
         backBtn.addEventListener('click', () => {
             dayEditPanel.classList.add('d-none');
-            grid.classList.remove('d-none');
+            grid.classList.remove('d-none');        
         });
     }
 
@@ -681,6 +681,7 @@ function initOverrideScheduleModal() {
 
     let scheduleData = {};
     let currentDate = null;
+    let currentWeekStart = null;
 
     function loadWeek(weekStart) {
         grid.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
@@ -707,6 +708,13 @@ function initOverrideScheduleModal() {
     if (prevBtn) prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
     if (nextBtn) nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
 
+    const overrideTabBtn = document.getElementById('override-tab');
+    if (overrideTabBtn) {
+        overrideTabBtn.addEventListener('shown.bs.tab', () => {
+            loadWeek(currentWeekStart);
+        });
+    }
+
     if (grid) {
         grid.addEventListener('click', (e) => {
             const column = e.target.closest('.schedule-day-column');
@@ -720,6 +728,11 @@ function initOverrideScheduleModal() {
         backBtn.addEventListener('click', () => {
             dayEditPanel.classList.add('d-none');
             grid.classList.remove('d-none');
+
+            if (prevBtn) prevBtn.classList.remove('d-none');
+            if (nextBtn) nextBtn.classList.remove('d-none');
+            if (weekLabel) weekLabel.classList.remove('d-none');
+
         });
     }
 
@@ -787,6 +800,10 @@ function initOverrideScheduleModal() {
         renderExistingOverrideRanges(dateStr);
         grid.classList.add('d-none');
         dayEditPanel.classList.remove('d-none');
+
+        if (prevBtn) prevBtn.classList.add('d-none');
+        if (nextBtn) nextBtn.classList.add('d-none');
+        if (weekLabel) weekLabel.classList.add('d-none');
     }
 
     function renderExistingOverrideRanges(dateStr) {
