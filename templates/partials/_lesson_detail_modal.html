@@ -39,9 +39,9 @@
             </span>
         </div>
         {% if booking.completion_note %}
-        <div class="lesson-detail-row">
-            <span class="lesson-detail-label">Note</span>
-            <span class="lesson-detail-value">{{ booking.completion_note }}</span>
+        <div class="lesson-detail-note">
+            <p class="lesson-detail-note-label">Teacher's Note</p>
+            <p class="lesson-detail-note-text">{{ booking.completion_note }}</p>
         </div>
         {% endif %}
     </div>

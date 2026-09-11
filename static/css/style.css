@@ -1283,6 +1283,28 @@ h1, h2, h3, h4, h5, h6,
     text-align: center;
 }
 
+.lesson-detail-note {
+    margin-top: 1rem;
+    padding: 0.75rem 0.9rem;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+}
+
+.lesson-detail-note-label {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+}
+
+.lesson-detail-note-text {
+    font-size: 0.9rem;
+    color: var(--text-main);
+    margin-bottom: 0;
+    white-space: pre-wrap;
+}
+
 .lesson-detail-resolution textarea {
     resize: vertical;
     min-height: 60px;
