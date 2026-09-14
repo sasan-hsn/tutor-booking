@@ -17,6 +17,10 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
 
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if origin
+]
+
 
 # Application definition
 
@@ -118,7 +122,7 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
-
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media files (user-uploaded content)
 MEDIA_URL = "media/"
