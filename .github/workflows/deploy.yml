@@ -19,6 +19,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/app
-            git pull origin main
-            docker compose -f docker-compose.prod.yml up -d --build
+                  set -e
+                  cd ~/app
+                  git fetch origin main
+                  git reset --hard origin/main
+                  docker compose -f docker-compose.prod.yml up -d --build
