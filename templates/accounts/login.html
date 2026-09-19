@@ -12,7 +12,12 @@
 
             {% for field in form %}
             <div class="mb-3">
-                <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                <div class="d-flex justify-content-between align-items-center">
+                    <label for="{{ field.id_for_label }}" class="form-label mb-1">{{ field.label }}</label>
+                    {% if field.name == 'password' %}
+                    <a href="{% url 'accounts:password_reset' %}" class="small text-primary-brand text-decoration-none">Forgot password?</a>
+                    {% endif %}
+                </div>
                 {{ field }}
                 {% if field.errors %}
                 <div class="text-danger small mt-1">{{ field.errors }}</div>

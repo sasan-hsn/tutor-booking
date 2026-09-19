@@ -1,5 +1,10 @@
-from django.test import TestCase
+from django.contrib.auth.tokens import default_token_generator
+from django.core import mail
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+
 from accounts.models import User
 from portfolio.models import TeacherProfile
 
@@ -119,4 +124,115 @@ class TeacherSignUpViewTestCase(TestCase):
         })
         self.assertEqual(response.status_code, 302)
         user = User.objects.get(username='sneaky_teacher')
-        self.assertEqual(user.role, User.Role.TEACHER)        
+        self.assertEqual(user.role, User.Role.TEACHER)
+
+
+class PasswordResetTestCase(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='resetuser',
+            email='resetuser@example.com',
+            password='OldPassword123!',
+            role=User.Role.STUDENT,
+        )
+        self.inactive_user = User.objects.create_user(
+            username='inactiveuser',
+            email='inactive@example.com',
+            password='OldPassword123!',
+            is_active=False,
+            role=User.Role.STUDENT,
+        )
+
+    def test_login_page_has_forgot_password_link(self):
+        response = self.client.get(reverse('accounts:login'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('accounts:password_reset'))
+        self.assertContains(response, 'Forgot password?')
+
+    def test_password_reset_request_valid_email_sends_email_and_redirects(self):
+        response = self.client.post(reverse('accounts:password_reset'), {
+            'email': 'resetuser@example.com',
+        })
+        self.assertRedirects(response, reverse('accounts:password_reset_done'))
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['resetuser@example.com'])
+        self.assertIn('Password reset for English with Mary', email.subject)
+        self.assertIn('24 hours', email.body)
+        # Verify HTML alternative was also generated with the brand and link
+        self.assertEqual(len(email.alternatives), 1)
+        self.assertIn('24 hours', email.alternatives[0][0])
+        # Check reset URL structure in the email body
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        self.assertIn(f'/accounts/reset/{uid}/', email.body)
+
+    def test_password_reset_request_nonexistent_email_sends_no_email_and_redirects(self):
+        response = self.client.post(reverse('accounts:password_reset'), {
+            'email': 'nonexistent@example.com',
+        })
+        self.assertRedirects(response, reverse('accounts:password_reset_done'))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_password_reset_request_inactive_user_sends_no_email(self):
+        response = self.client.post(reverse('accounts:password_reset'), {
+            'email': 'inactive@example.com',
+        })
+        self.assertRedirects(response, reverse('accounts:password_reset_done'))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_password_reset_confirm_valid_token_changes_password(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        reset_url = reverse('accounts:password_reset_confirm', kwargs={'uidb64': uid, 'token': token})
+
+        # GET form (follows Referer-mitigation redirect to /reset/<uidb64>/set-password/)
+        response = self.client.get(reset_url, follow=True)
+        self.assertEqual(response.status_code, 200)
+
+        # POST new password
+        post_url = response.redirect_chain[0][0]
+        post_response = self.client.post(post_url, {
+            'new_password1': 'NewValidPassword123!',
+            'new_password2': 'NewValidPassword123!',
+        })
+        self.assertRedirects(post_response, reverse('accounts:password_reset_complete'))
+
+        # Verify old password no longer works
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.check_password('OldPassword123!'))
+        self.assertTrue(self.user.check_password('NewValidPassword123!'))
+
+        # Verify user can log in with new password
+        login_response = self.client.post(reverse('accounts:login'), {
+            'username': 'resetuser',
+            'password': 'NewValidPassword123!',
+        })
+        self.assertTrue(login_response.wsgi_request.user.is_authenticated)
+
+    def test_password_reset_confirm_invalid_token_rejects(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        invalid_url = reverse('accounts:password_reset_confirm', kwargs={'uidb64': uid, 'token': 'invalid-token-123'})
+
+        response = self.client.get(invalid_url)
+        self.assertEqual(response.status_code, 200)
+        # Should render invalid token message / not display password fields
+        self.assertContains(response, 'invalid')
+
+        # Attempt to POST new password should not change password
+        post_response = self.client.post(invalid_url, {
+            'new_password1': 'NewValidPassword123!',
+            'new_password2': 'NewValidPassword123!',
+        })
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('OldPassword123!'))
+
+    @override_settings(PASSWORD_RESET_TIMEOUT=-1)
+    def test_password_reset_confirm_expired_token_rejects(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        expired_url = reverse('accounts:password_reset_confirm', kwargs={'uidb64': uid, 'token': token})
+
+        response = self.client.get(expired_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'invalid')
+        
