@@ -69,6 +69,23 @@ class BookSlotViewTests(RoleTestCase):
         self.assertEqual(booking.lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(booking.price, self.teacher.lesson_price)
 
+    def test_student_with_pending_booking_gets_regular_pricing(self):
+        # simulate an existing pending trial booking at another time
+        other_start = self.valid_start + timedelta(hours=3)
+        Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=other_start,
+            end_at=other_start + timedelta(minutes=self.teacher.trial_duration_minutes),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.PENDING,
+        )
+        self._book(self.student_client, self.valid_start)
+        booking = Booking.objects.get(start_at=self.valid_start)
+        self.assertEqual(booking.lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(booking.price, self.teacher.lesson_price)
+
     def test_missing_start_at_returns_400(self):
         response = self.student_client.post(reverse('booking:book_slot'), {})
         self.assertEqual(response.status_code, 400)

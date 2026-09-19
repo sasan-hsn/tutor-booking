@@ -105,11 +105,18 @@ def get_lesson_type_and_price(teacher, student):
     """
     Returns (lesson_type, price, duration_minutes) for a given student.
     First-time students receive trial settings if offered by teacher.
+    Pending, confirmed, and completed bookings count towards previous lessons
+    to prevent duplicate trial requests while one is pending.
     """
     has_previous_lesson = Booking.objects.filter(
         student=student,
         teacher=teacher,
-        status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
+        status__in=[
+            Booking.Status.PENDING,
+            Booking.Status.CONFIRMED,
+            Booking.Status.COMPLETED,
+            Booking.Status.DISPUTING,
+        ],
     ).exists()
 
     if teacher.offers_trial and not has_previous_lesson:
