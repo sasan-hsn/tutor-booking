@@ -6,7 +6,11 @@ from django.test import TestCase
 
 from portfolio.models import TeacherProfile
 from booking.models import RegularAvailability, WeeklyOverride, Booking
-from booking.services import get_availability_windows, get_available_start_times
+from booking.services import (
+    get_availability_windows,
+    get_available_start_times,
+    get_lesson_type_and_price,
+)
 
 User = get_user_model()
 
@@ -239,4 +243,112 @@ class AvailabilityWindowsServiceTest(TestCase):
             datetime.combine(tomorrow, time(10, 30), tzinfo=self.tz),
             datetime.combine(tomorrow, time(11, 0), tzinfo=self.tz),
         ]
-        self.assertEqual(start_times, expected)        
+        self.assertEqual(start_times, expected)
+
+
+class LessonTypeAndPriceServiceTest(TestCase):
+    def setUp(self):
+        self.teacher_user = User.objects.create_user(
+            username='teacher_trial', password='password123', role=User.Role.TEACHER
+        )
+        self.teacher = self.teacher_user.teacher_profile
+        self.teacher.lesson_price = 30
+        self.teacher.lesson_duration_minutes = 60
+        self.teacher.offers_trial = True
+        self.teacher.trial_price = 10
+        self.teacher.trial_duration_minutes = 30
+        self.teacher.save()
+
+        self.student = User.objects.create_user(
+            username='student_trial', password='password123', role=User.Role.STUDENT
+        )
+
+    def test_first_time_student_receives_trial(self):
+        """A new student without previous bookings receives trial pricing and duration."""
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
+        self.assertEqual(price, self.teacher.trial_price)
+        self.assertEqual(duration, self.teacher.trial_duration_minutes)
+
+    def test_student_with_pending_booking_receives_regular_pricing(self):
+        """A student with a pending booking should not be allowed another trial."""
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now + timedelta(days=2),
+            end_at=now + timedelta(days=2, minutes=30),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.PENDING,
+        )
+
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price)
+        self.assertEqual(duration, self.teacher.lesson_duration_minutes)
+
+    def test_student_with_confirmed_booking_receives_regular_pricing(self):
+        """A student with a confirmed booking receives regular pricing."""
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now + timedelta(days=2),
+            end_at=now + timedelta(days=2, hours=1),
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.CONFIRMED,
+        )
+
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price)
+        self.assertEqual(duration, self.teacher.lesson_duration_minutes)
+
+    def test_student_with_completed_booking_receives_regular_pricing(self):
+        """A student with a completed booking receives regular pricing."""
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now - timedelta(days=2),
+            end_at=now - timedelta(days=2) + timedelta(minutes=30),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.COMPLETED,
+        )
+
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price)
+        self.assertEqual(duration, self.teacher.lesson_duration_minutes)
+
+    def test_student_with_cancelled_booking_can_receive_trial(self):
+        """If a pending trial was cancelled/declined, the student remains eligible for a trial."""
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now + timedelta(days=2),
+            end_at=now + timedelta(days=2, minutes=30),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.CANCELLED,
+        )
+
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
+        self.assertEqual(price, self.teacher.trial_price)
+        self.assertEqual(duration, self.teacher.trial_duration_minutes)
+
+    def test_teacher_not_offering_trial_returns_regular(self):
+        """If the teacher does not offer trials, first-time students get regular pricing."""
+        self.teacher.offers_trial = False
+        self.teacher.save()
+
+        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price)
+        self.assertEqual(duration, self.teacher.lesson_duration_minutes)
+        
