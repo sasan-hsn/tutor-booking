@@ -154,6 +154,8 @@ class Booking(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal('0.00'))],
     )
+    reminder_24h_sent = models.BooleanField(default=False, db_index=True)
+    reminder_1h_sent = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -161,6 +163,9 @@ class Booking(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Booking'
         verbose_name_plural = 'Bookings'
+        indexes = [
+            models.Index(fields=['status', 'start_at']),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['teacher', 'start_at'],

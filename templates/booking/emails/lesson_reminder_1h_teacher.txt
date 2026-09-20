@@ -1,0 +1,27 @@
+Hello {{ teacher_name }},
+
+This is a reminder that your lesson with {{ student_name }} starts in approximately 1 hour.
+
+{% if meeting_link %}MEETING LINK
+------------
+Start classroom using your meeting link:
+{{ meeting_link }}
+{% else %}MEETING LINK
+------------
+You have not set a permanent meeting link in your profile. Please ensure you share a video link with {{ student_name }} before the lesson starts.
+{% endif %}
+
+LESSON DETAILS
+--------------
+Student:     {{ student_name }}{% if student_email %} ({{ student_email }}){% endif %}
+Lesson Type: {{ lesson_type }}
+Date:        {{ date }}
+Time:        {{ time }} ({{ timezone }})
+Status:      Confirmed
+
+You can review your lesson details anytime on your dashboard:
+{{ dashboard_url }}
+
+Best regards,
+{{ site_name }}
+{{ site_url }}

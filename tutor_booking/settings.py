@@ -159,6 +159,18 @@ CELERY_TASK_ALWAYS_EAGER = (
 )
 CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
+# Celery Beat schedule for periodic background tasks
+CELERY_BEAT_SCHEDULE = {
+    'send-lesson-reminders-every-5-minutes': {
+        'task': 'booking.tasks.send_lesson_reminders',
+        'schedule': 300.0,
+    },
+    'expire-pending-bookings-every-15-minutes': {
+        'task': 'booking.tasks.expire_pending_bookings_task',
+        'schedule': 900.0,
+    },
+}
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
