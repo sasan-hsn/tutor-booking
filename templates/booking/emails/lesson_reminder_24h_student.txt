@@ -1,0 +1,26 @@
+Hello {{ student_name }},
+
+This is a friendly reminder that your upcoming lesson with {{ teacher_name }} is scheduled for tomorrow.
+
+LESSON DETAILS
+--------------
+Lesson Type: {{ lesson_type }}
+Date:        {{ date }}
+Time:        {{ time }} ({{ timezone }})
+Status:      Confirmed
+
+{% if meeting_link %}MEETING LINK
+------------
+Join your lesson using the link below:
+{{ meeting_link }}
+{% else %}MEETING LINK
+------------
+{{ teacher_name }} will share the meeting link with you prior to the lesson. You can also check your dashboard for updates.
+{% endif %}
+
+You can view your bookings and manage your lessons anytime on your dashboard:
+{{ student_dashboard_url }}
+
+Best regards,
+{{ teacher_name }}
+{{ site_url }}

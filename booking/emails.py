@@ -425,3 +425,165 @@ def send_cancellation_requested_teacher_email(booking) -> bool:
     logger.info("Sent cancellation requested alert email to teacher %s for booking #%s.", teacher_email, booking.id)
     return True
 
+
+def send_booking_reminder_24h_student_email(booking) -> bool:
+    """Send 24-hour advance reminder email to student for upcoming confirmed lesson."""
+    if not booking.student.email:
+        logger.info(
+            "Student %s for booking #%s has no email address; skipping 24h reminder email.",
+            booking.student_id,
+            booking.id,
+        )
+        return False
+
+    site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
+    site_domain = urlparse(site_url).netloc or site_url
+    site_name = getattr(settings, 'SITE_NAME', 'Tutor Booking')
+    student_dashboard_url = f"{site_url}{reverse('booking:student_dashboard')}"
+    local_start = booking.student_local_start
+    local_end = booking.student_local_end
+    meeting_link = (booking.teacher.meeting_link or '').strip()
+
+    context = {
+        'booking': booking,
+        'student': booking.student,
+        'student_name': booking.student_display_name,
+        'teacher_name': booking.teacher_display_name,
+        'header_title': booking.teacher_display_name,
+        'header_subtitle': booking.teacher.headline,
+        'footer_brand': booking.teacher_display_name,
+        'lesson_type': booking.get_lesson_type_display(),
+        'date': local_start.strftime('%A, %B %d, %Y'),
+        'time': f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}",
+        'timezone': booking.student.timezone,
+        'meeting_link': meeting_link,
+        'student_dashboard_url': student_dashboard_url,
+        'site_name': site_name,
+        'site_url': site_url,
+        'site_domain': site_domain,
+    }
+
+    subject = f"Lesson Reminder: Tomorrow with {booking.teacher_display_name} – {site_name}"
+    text_content = render_to_string('booking/emails/lesson_reminder_24h_student.txt', context)
+    html_content = render_to_string('booking/emails/lesson_reminder_24h_student.html', context)
+
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[booking.student.email],
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
+    logger.info("Sent 24h reminder email to student %s for booking #%s.", booking.student.email, booking.id)
+    return True
+
+
+def send_booking_reminder_1h_student_email(booking) -> bool:
+    """Send 1-hour advance reminder email to student for upcoming confirmed lesson."""
+    if not booking.student.email:
+        logger.info(
+            "Student %s for booking #%s has no email address; skipping 1h reminder email.",
+            booking.student_id,
+            booking.id,
+        )
+        return False
+
+    site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
+    site_domain = urlparse(site_url).netloc or site_url
+    site_name = getattr(settings, 'SITE_NAME', 'Tutor Booking')
+    student_dashboard_url = f"{site_url}{reverse('booking:student_dashboard')}"
+    local_start = booking.student_local_start
+    local_end = booking.student_local_end
+    meeting_link = (booking.teacher.meeting_link or '').strip()
+
+    context = {
+        'booking': booking,
+        'student': booking.student,
+        'student_name': booking.student_display_name,
+        'teacher_name': booking.teacher_display_name,
+        'header_title': booking.teacher_display_name,
+        'header_subtitle': booking.teacher.headline,
+        'footer_brand': booking.teacher_display_name,
+        'lesson_type': booking.get_lesson_type_display(),
+        'date': local_start.strftime('%A, %B %d, %Y'),
+        'time': f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}",
+        'timezone': booking.student.timezone,
+        'meeting_link': meeting_link,
+        'student_dashboard_url': student_dashboard_url,
+        'site_name': site_name,
+        'site_url': site_url,
+        'site_domain': site_domain,
+    }
+
+    subject = f"Lesson Starting in 1 Hour – {booking.teacher_display_name}"
+    text_content = render_to_string('booking/emails/lesson_reminder_1h_student.txt', context)
+    html_content = render_to_string('booking/emails/lesson_reminder_1h_student.html', context)
+
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[booking.student.email],
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
+    logger.info("Sent 1h reminder email to student %s for booking #%s.", booking.student.email, booking.id)
+    return True
+
+
+def send_booking_reminder_1h_teacher_email(booking) -> bool:
+    """Send 1-hour advance reminder email to teacher for upcoming confirmed lesson."""
+    teacher_email = booking.teacher.user.email or booking.teacher.contact_email
+    if not teacher_email:
+        logger.info(
+            "Teacher %s for booking #%s has no email address; skipping 1h reminder email.",
+            booking.teacher_id,
+            booking.id,
+        )
+        return False
+
+    site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
+    site_domain = urlparse(site_url).netloc or site_url
+    site_name = getattr(settings, 'SITE_NAME', 'Tutor Booking')
+    dashboard_url = f"{site_url}{reverse('booking:teacher_dashboard')}"
+    local_start = booking.teacher_local_start
+    local_end = booking.teacher_local_end
+    meeting_link = (booking.teacher.meeting_link or '').strip()
+
+    context = {
+        'booking': booking,
+        'teacher': booking.teacher,
+        'teacher_name': booking.teacher_display_name,
+        'student_name': booking.student_display_name,
+        'student_email': booking.student.email,
+        'header_title': site_name,
+        'header_subtitle': "Teacher Dashboard",
+        'footer_brand': site_name,
+        'lesson_type': booking.get_lesson_type_display(),
+        'date': local_start.strftime('%A, %B %d, %Y'),
+        'time': f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}",
+        'timezone': booking.teacher.user.timezone,
+        'meeting_link': meeting_link,
+        'dashboard_url': dashboard_url,
+        'site_name': site_name,
+        'site_url': site_url,
+        'site_domain': site_domain,
+    }
+
+    student_display = context['student_name']
+    subject = f"Upcoming Lesson in 1 Hour: {student_display} – {site_name}"
+    text_content = render_to_string('booking/emails/lesson_reminder_1h_teacher.txt', context)
+    html_content = render_to_string('booking/emails/lesson_reminder_1h_teacher.html', context)
+
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[teacher_email],
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
+    logger.info("Sent 1h reminder email to teacher %s for booking #%s.", teacher_email, booking.id)
+    return True
+

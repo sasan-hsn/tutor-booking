@@ -1,4 +1,5 @@
 from datetime import date, time, datetime, timedelta
+from unittest.mock import patch
 from django.utils import timezone
 from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
@@ -131,13 +132,17 @@ class AvailabilityWindowsServiceTest(TestCase):
         # 11:00 would end at 12:00 -> overlaps booking (ends 11:30) -> excluded
         self.assertEqual(start_times, [])
 
-    def test_available_start_times_excludes_past_slots(self):
+    @patch('django.utils.timezone.now')
+    def test_available_start_times_excludes_past_slots(self, mock_now):
         """Start times earlier than 'now' must never be returned, even
         when they fall inside an otherwise-open availability window."""
+        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo('UTC'))
+        mock_now.return_value = fixed_now
+
         self.teacher.instant_tutoring_enabled = True
         self.teacher.save()
 
-        now = timezone.localtime(timezone.now(), self.tz)
+        now = timezone.localtime(fixed_now, self.tz)
         today = now.date()
 
         RegularAvailability.objects.create(
@@ -197,14 +202,18 @@ class AvailabilityWindowsServiceTest(TestCase):
 
         self.assertEqual(start_times, [])
 
-    def test_instant_tutoring_enabled_respects_buffer(self):
+    @patch('django.utils.timezone.now')
+    def test_instant_tutoring_enabled_respects_buffer(self, mock_now):
         """When instant_tutoring_enabled is True, same-day slots inside
         the 1-hour buffer are excluded, but slots beyond the buffer are
         offered."""
+        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo('UTC'))
+        mock_now.return_value = fixed_now
+
         self.teacher.instant_tutoring_enabled = True
         self.teacher.save()
 
-        now = timezone.localtime(timezone.now(), self.tz)
+        now = timezone.localtime(fixed_now, self.tz)
         today = now.date()
 
         RegularAvailability.objects.create(

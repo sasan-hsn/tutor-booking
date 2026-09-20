@@ -35,6 +35,9 @@ class BookingModelTests(TestCase):
         booking.save()
 
         self.assertEqual(Booking.objects.count(), 1)
+        booking.refresh_from_db()
+        self.assertFalse(booking.reminder_24h_sent)
+        self.assertFalse(booking.reminder_1h_sent)
 
     # 2. Prevent a teacher from booking their own availability
     def test_teacher_cannot_book_own_availability(self):
