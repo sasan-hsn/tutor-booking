@@ -92,3 +92,76 @@ def send_booking_confirmed_student_email_task(self, booking_id: int):
         raise self.retry(exc=exc)
 
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_booking_declined_student_email_task(self, booking_id: int):
+    """Send student notification email when teacher declines a lesson request."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping declined student notification.", booking_id)
+        return
+
+    try:
+        emails.send_booking_declined_student_email(booking)
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        logger.exception(
+            "Transient error sending student declined notification email for booking #%s. Retrying...",
+            booking_id,
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_booking_cancelled_student_email_task(self, booking_id: int):
+    """Send student notification email when teacher cancels a confirmed lesson."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping cancelled student notification.", booking_id)
+        return
+
+    try:
+        emails.send_booking_cancelled_student_email(booking)
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        logger.exception(
+            "Transient error sending student cancelled notification email for booking #%s. Retrying...",
+            booking_id,
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_cancellation_requested_teacher_email_task(self, booking_id: int):
+    """Send teacher alert email when student requests lesson cancellation."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping teacher cancellation request notification.", booking_id)
+        return
+
+    try:
+        emails.send_cancellation_requested_teacher_email(booking)
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        logger.exception(
+            "Transient error sending teacher cancellation request alert email for booking #%s. Retrying...",
+            booking_id,
+        )
+        raise self.retry(exc=exc)
+
+
+

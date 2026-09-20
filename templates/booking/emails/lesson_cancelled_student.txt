@@ -1,0 +1,23 @@
+LESSON CANCELLED
+================
+
+Hi {{ student_name }},
+
+Your upcoming lesson with {{ teacher_name }} has been cancelled.
+
+LESSON DETAILS
+--------------
+Lesson Type: {{ lesson_type }}
+Date: {{ date }}
+Time: {{ time }} ({{ timezone }})
+Status: Cancelled
+
+If you would like to reschedule, you can book a new lesson at any time:
+{{ book_lesson_url }}
+
+You can also view your dashboard:
+{{ student_dashboard_url }}
+
+--
+{{ footer_brand }}
+{{ site_url }}
