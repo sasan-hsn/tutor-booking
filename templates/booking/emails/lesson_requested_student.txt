@@ -15,5 +15,5 @@ You can view your requests and upcoming lessons anytime on your dashboard:
 {{ student_dashboard_url }}
 
 Best regards,
-{{ site_name }} Team
+{{ teacher_name }}
 {{ site_url }}

@@ -69,7 +69,7 @@ class BookingNotificationTasksTests(RoleTestCase):
         email = mail.outbox[0]
         self.assertEqual(email.to, ['student@example.com'])
         self.assertIn('Lesson Request Received', email.subject)
-        self.assertIn('English with Mary', email.subject)
+        self.assertIn('Mary Smith', email.subject)
 
         # Check localized time in student's timezone (America/New_York = UTC-4 in summer / UTC-5 in winter)
         local_start = timezone.localtime(self.start_at, self.student_tz)
@@ -81,6 +81,7 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertIn(expected_time_str, email.body)
         self.assertIn('America/New_York', email.body)
         self.assertIn('John', email.body)
+        self.assertIn('Mary Smith', email.body)
         self.assertIn('Trial Lesson', email.body)
         self.assertIn('pending', email.body.lower())
 
@@ -92,6 +93,7 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertIn(expected_time_str, html_content)
         self.assertIn('America/New_York', html_content)
         self.assertIn('John', html_content)
+        self.assertIn('Mary Smith', html_content)
         self.assertIn('Trial Lesson', html_content)
         self.assertIn('Pending', html_content)
 
@@ -101,9 +103,7 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
         self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
-        self.assertIn('New Lesson Request', email.subject)
-        self.assertIn('John Doe', email.subject)
-        self.assertIn('English with Mary', email.subject)
+        self.assertIn('New Lesson Request from John Doe', email.subject)
 
         # Check localized time in teacher's timezone (Asia/Tehran = UTC+3:30)
         local_start = timezone.localtime(self.start_at, self.teacher_tz)
@@ -128,6 +128,27 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertIn('Asia/Tehran', html_content)
         self.assertIn('John Doe', html_content)
         self.assertIn(reverse('booking:teacher_dashboard'), html_content)
+
+    def test_student_email_uses_teacher_branding_and_headline(self):
+        """Verify emails dynamically brand to any teacher without hardcoded names."""
+        self.teacher_user.first_name = 'Alex'
+        self.teacher_user.last_name = 'Taylor'
+        self.teacher_user.save()
+        self.teacher.headline = 'Business English & Exam Prep Coach'
+        self.teacher.save()
+
+        send_booking_request_student_email_task(self.booking.id)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertIn('Lesson Request Received – Alex Taylor', email.subject)
+        self.assertIn('Alex Taylor', email.body)
+        self.assertNotIn('English with Mary', email.body)
+
+        html_content = email.alternatives[0][0]
+        self.assertIn('Alex Taylor', html_content)
+        self.assertIn('Business English &amp; Exam Prep Coach', html_content)
+        self.assertNotIn('English with Mary', html_content)
 
     def test_missing_student_email_skips_silently(self):
         self.student_user.email = ''

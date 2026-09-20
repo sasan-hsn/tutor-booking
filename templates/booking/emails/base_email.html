@@ -19,11 +19,13 @@
                                 <tr>
                                     <td>
                                         <div style="font-size: 22px; font-weight: 700; color: #4F7A62; letter-spacing: -0.5px; line-height: 1.2;">
-                                            English with Mary
+                                            {{ header_title }}
                                         </div>
+                                        {% if header_subtitle %}
                                         <div style="font-size: 13px; color: #5C6E61; margin-top: 4px; font-weight: 500;">
-                                            Personal English Tutoring
+                                            {{ header_subtitle }}
                                         </div>
+                                        {% endif %}
                                     </td>
                                 </tr>
                             </table>
@@ -41,7 +43,7 @@
                     <tr>
                         <td style="padding: 24px 32px; background-color: #FAF6F0; border-top: 1px solid #F1EAE4; text-align: center;">
                             <p style="margin: 0 0 6px; font-size: 12px; color: #5C6E61; font-weight: 500;">
-                                &copy; {{ site_name }} &bull; <a href="{{ site_url }}" style="color: #4F7A62; text-decoration: none;">englishwithmary.ir</a>
+                                &copy; {{ footer_brand }} &bull; <a href="{{ site_url }}" style="color: #4F7A62; text-decoration: none;">{{ site_domain }}</a>
                             </p>
                             <p style="margin: 0; font-size: 11px; color: #8F9E94;">
                                 This is an automated notification regarding your lesson booking.

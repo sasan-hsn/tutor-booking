@@ -14,5 +14,5 @@ Please log in to your dashboard to review this request and accept or decline the
 {{ dashboard_url }}
 
 Best regards,
-{{ site_name }} Team
+{{ site_name }}
 {{ site_url }}
