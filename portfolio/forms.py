@@ -59,7 +59,6 @@ class TeacherPortfolioSettingsForm(forms.ModelForm):
         model = TeacherProfile
         fields = [
             'headline', 'bio', 'teaching_philosophy', 'intro_video_url', 'hero_image',
-            'meeting_link',
             'contact_email', 'whatsapp_number', 'telegram_username', 'instagram_username',
         ]
         widgets = {
@@ -67,10 +66,6 @@ class TeacherPortfolioSettingsForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'teaching_philosophy': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'intro_video_url': forms.URLInput(attrs={'class': 'form-control'}),
-            'meeting_link': forms.URLInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
-            }),
             'contact_email': forms.EmailInput(attrs={'class': 'form-control'}),
             'whatsapp_number': forms.TextInput(attrs={'class': 'form-control'}),
             'telegram_username': forms.TextInput(attrs={'class': 'form-control'}),
@@ -95,11 +90,16 @@ class TeacherBookingSettingsForm(forms.ModelForm):
     class Meta:
         model = TeacherProfile
         fields = [
+            'meeting_link',
             'lesson_price', 'lesson_duration_minutes',
             'offers_trial', 'trial_price', 'trial_duration_minutes',
             'instant_tutoring_enabled',
         ]
         widgets = {
+            'meeting_link': forms.URLInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
+            }),
             'lesson_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'lesson_duration_minutes': forms.NumberInput(attrs={'class': 'form-control', 'min': '15'}),
             'offers_trial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),

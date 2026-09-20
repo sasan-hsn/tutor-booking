@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.urls import reverse
 from accounts.tests.base import RoleTestCase
 from accounts.models import User
-from portfolio.forms import TeacherPortfolioSettingsForm
+from portfolio.forms import TeacherBookingSettingsForm, TeacherPortfolioSettingsForm
 from portfolio.models import Certificate, TeacherProfile
 
 
@@ -203,13 +203,13 @@ class TeacherProfileMeetingLinkTests(RoleTestCase):
         self.assertEqual(self.teacher.meeting_link, '')
 
 
-class TeacherPortfolioSettingsFormMeetingLinkTests(RoleTestCase):
+class TeacherBookingSettingsFormMeetingLinkTests(RoleTestCase):
     def setUp(self):
         super().setUp()
         self.teacher = self.teacher_user.teacher_profile
 
     def test_form_includes_meeting_link_with_placeholder_and_help_text(self):
-        form = TeacherPortfolioSettingsForm(instance=self.teacher)
+        form = TeacherBookingSettingsForm(instance=self.teacher)
         self.assertIn('meeting_link', form.fields)
         field = form.fields['meeting_link']
         self.assertFalse(field.required)
@@ -217,15 +217,19 @@ class TeacherPortfolioSettingsFormMeetingLinkTests(RoleTestCase):
         self.assertIn('placeholder', field.widget.attrs)
         self.assertTrue(bool(field.widget.attrs['placeholder']))
 
+        portfolio_form = TeacherPortfolioSettingsForm(instance=self.teacher)
+        self.assertNotIn('meeting_link', portfolio_form.fields)
+
     def test_form_valid_with_valid_meeting_link(self):
-        form = TeacherPortfolioSettingsForm(
+        form = TeacherBookingSettingsForm(
             data={
-                'headline': 'English lessons',
-                'bio': 'Experienced tutor',
-                'teaching_philosophy': 'Communicative',
-                'intro_video_url': 'https://youtube.com/watch?v=123',
                 'meeting_link': 'https://meet.google.com/xyz-abcd-efg',
-                'contact_email': 'teacher@example.com',
+                'lesson_price': '25.00',
+                'lesson_duration_minutes': '50',
+                'offers_trial': 'on',
+                'trial_price': '10.00',
+                'trial_duration_minutes': '25',
+                'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
         )
@@ -236,14 +240,15 @@ class TeacherPortfolioSettingsFormMeetingLinkTests(RoleTestCase):
     def test_form_valid_with_blank_meeting_link(self):
         self.teacher.meeting_link = 'https://meet.google.com/existing'
         self.teacher.save()
-        form = TeacherPortfolioSettingsForm(
+        form = TeacherBookingSettingsForm(
             data={
-                'headline': 'English lessons',
-                'bio': 'Experienced tutor',
-                'teaching_philosophy': 'Communicative',
-                'intro_video_url': 'https://youtube.com/watch?v=123',
                 'meeting_link': '',
-                'contact_email': 'teacher@example.com',
+                'lesson_price': '25.00',
+                'lesson_duration_minutes': '50',
+                'offers_trial': '',
+                'trial_price': '',
+                'trial_duration_minutes': '25',
+                'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
         )
@@ -252,14 +257,15 @@ class TeacherPortfolioSettingsFormMeetingLinkTests(RoleTestCase):
         self.assertEqual(saved.meeting_link, '')
 
     def test_form_invalid_with_malformed_meeting_link(self):
-        form = TeacherPortfolioSettingsForm(
+        form = TeacherBookingSettingsForm(
             data={
-                'headline': 'English lessons',
-                'bio': 'Experienced tutor',
-                'teaching_philosophy': 'Communicative',
-                'intro_video_url': 'https://youtube.com/watch?v=123',
                 'meeting_link': 'not-a-valid-url',
-                'contact_email': 'teacher@example.com',
+                'lesson_price': '25.00',
+                'lesson_duration_minutes': '50',
+                'offers_trial': '',
+                'trial_price': '',
+                'trial_duration_minutes': '25',
+                'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
         )
@@ -267,60 +273,63 @@ class TeacherPortfolioSettingsFormMeetingLinkTests(RoleTestCase):
         self.assertIn('meeting_link', form.errors)
 
 
-class TeacherPortfolioSettingsViewMeetingLinkTests(RoleTestCase):
+class TeacherBookingSettingsViewMeetingLinkTests(RoleTestCase):
     def setUp(self):
         super().setUp()
         self.teacher = self.teacher_user.teacher_profile
 
     def _payload(self, **overrides):
         data = {
-            'headline': 'Expert English Coach',
-            'bio': 'Native speaker teaching since 2018',
-            'teaching_philosophy': 'Immersion and practice',
-            'intro_video_url': 'https://youtube.com/embed/demo',
             'meeting_link': '',
-            'contact_email': 'mary@example.com',
-            'whatsapp_number': '',
-            'telegram_username': '',
-            'instagram_username': '',
+            'lesson_price': '30.00',
+            'lesson_duration_minutes': '50',
+            'offers_trial': 'on',
+            'trial_price': '15.00',
+            'trial_duration_minutes': '25',
+            'instant_tutoring_enabled': '',
         }
         data.update(overrides)
         return data
 
-    def test_get_portfolio_settings_renders_meeting_link_field(self):
+    def test_get_booking_settings_renders_meeting_link_field(self):
         self.teacher.meeting_link = 'https://meet.google.com/room-123'
         self.teacher.save()
-        response = self.teacher_client.get(reverse('portfolio:teacher_settings_portfolio'))
+        response = self.teacher_client.get(reverse('portfolio:teacher_settings_booking'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="meeting_link"')
         self.assertContains(response, 'https://meet.google.com/room-123')
         # Check that help text and placeholder are rendered
         self.assertContains(response, 'placeholder=')
 
-    def test_post_portfolio_settings_updates_meeting_link(self):
+    def test_portfolio_settings_does_not_render_meeting_link_field(self):
+        response = self.teacher_client.get(reverse('portfolio:teacher_settings_portfolio'))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'name="meeting_link"')
+
+    def test_post_booking_settings_updates_meeting_link(self):
         url = 'https://zoom.us/j/1234567890'
         response = self.teacher_client.post(
-            reverse('portfolio:teacher_settings_portfolio'),
+            reverse('portfolio:teacher_settings_booking'),
             self._payload(meeting_link=url),
         )
         self.assertEqual(response.status_code, 302)
         self.teacher.refresh_from_db()
         self.assertEqual(self.teacher.meeting_link, url)
 
-    def test_post_portfolio_settings_clears_meeting_link(self):
+    def test_post_booking_settings_clears_meeting_link(self):
         self.teacher.meeting_link = 'https://zoom.us/j/1234567890'
         self.teacher.save()
         response = self.teacher_client.post(
-            reverse('portfolio:teacher_settings_portfolio'),
+            reverse('portfolio:teacher_settings_booking'),
             self._payload(meeting_link=''),
         )
         self.assertEqual(response.status_code, 302)
         self.teacher.refresh_from_db()
         self.assertEqual(self.teacher.meeting_link, '')
 
-    def test_post_portfolio_settings_invalid_url_shows_error(self):
+    def test_post_booking_settings_invalid_url_shows_error(self):
         response = self.teacher_client.post(
-            reverse('portfolio:teacher_settings_portfolio'),
+            reverse('portfolio:teacher_settings_booking'),
             self._payload(meeting_link='invalid-url'),
         )
         self.assertEqual(response.status_code, 200)
