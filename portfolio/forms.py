@@ -54,7 +54,7 @@ class TeacherPortfolioSettingsForm(forms.ModelForm):
         help_text='A large photo shown at the top of your public page.',
         widget=forms.FileInput(attrs={'class': 'form-control'}),
     )
-        
+
     class Meta:
         model = TeacherProfile
         fields = [
@@ -90,11 +90,16 @@ class TeacherBookingSettingsForm(forms.ModelForm):
     class Meta:
         model = TeacherProfile
         fields = [
+            'meeting_link',
             'lesson_price', 'lesson_duration_minutes',
             'offers_trial', 'trial_price', 'trial_duration_minutes',
             'instant_tutoring_enabled',
         ]
         widgets = {
+            'meeting_link': forms.URLInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
+            }),
             'lesson_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'lesson_duration_minutes': forms.NumberInput(attrs={'class': 'form-control', 'min': '15'}),
             'offers_trial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),

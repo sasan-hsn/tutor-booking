@@ -39,3 +39,11 @@ _Avoid_: Demo lesson, sample class
 **Regular Lesson**:
 A standard-priced lesson booked at the teacher's default rate and duration.
 _Avoid_: Standard lesson, paid lesson
+
+**Lesson Reminder**:
+An automated notification sent to a student and teacher prior to a confirmed booking's scheduled start time.
+_Avoid_: Lesson alert, booking notification, calendar ping
+
+**Meeting Link**:
+A video conference URL (e.g., Google Meet, Zoom) associated with a teacher where the online lesson takes place.
+_Avoid_: Classroom URL, video room, lesson link

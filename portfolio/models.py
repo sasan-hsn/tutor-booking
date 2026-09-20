@@ -13,6 +13,12 @@ class TeacherProfile(models.Model):
     bio = models.TextField(blank=True, default='')
     teaching_philosophy = models.TextField(blank=True, default='')
     intro_video_url = models.URLField(max_length=500, blank=True, default='')
+    meeting_link = models.URLField(
+        max_length=500,
+        blank=True,
+        default='',
+        help_text="Your permanent video meeting link (e.g. Google Meet or Zoom) included in lesson confirmation and reminder emails.",
+    )
     headline = models.CharField(max_length=255, blank=True, default='')
     lesson_price = models.DecimalField(
         max_digits=10,
