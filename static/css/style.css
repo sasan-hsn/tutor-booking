@@ -1322,6 +1322,7 @@ h1, h2, h3, h4, h5, h6,
 .lesson-detail-status-dot[data-status="completed"] { background-color: #6B7280; }
 .lesson-detail-status-dot[data-status="cancelled"] { background-color: #B0B7C3; }
 .lesson-detail-status-dot[data-status="disputing"] { background-color: #E4463C; }
+.lesson-detail-status-dot[data-status="expired"]   { background-color: var(--accent-terracotta); }
 
 .lesson-detail-actions {
     display: flex;
@@ -1948,6 +1949,7 @@ h1, h2, h3, h4, h5, h6,
 .calendar-booking-row[data-status="completed"] { border-left-color: #6B7280; color: #6B7280; }
 .calendar-booking-row[data-status="cancelled"] { border-left-color: #B0B7C3; color: #B0B7C3; text-decoration: line-through; }
 .calendar-booking-row[data-status="disputing"] { border-left-color: #E4463C; color: #E4463C; }
+.calendar-booking-row[data-status="expired"]   { border-left-color: var(--accent-terracotta); color: var(--accent-terracotta); }
 
 /* Status Filter */
 .status-filter-dropdown,
@@ -2021,6 +2023,7 @@ h1, h2, h3, h4, h5, h6,
 .status-dot[data-status="completed"] { background-color: #6B7280; }
 .status-dot[data-status="cancelled"] { background-color: #B0B7C3; }
 .status-dot[data-status="disputing"] { background-color: #E4463C; }
+.status-dot[data-status="expired"]   { background-color: var(--accent-terracotta); }
 
 /* Student Filter */
 .student-filter-panel {

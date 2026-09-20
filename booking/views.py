@@ -19,6 +19,7 @@ from portfolio.models import TeacherProfile
 from .forms import ReviewForm
 from .models import Booking, RegularAvailability, Review, WeeklyOverride
 from .services import (
+    expire_stale_bookings,
     get_available_start_times,
     get_calendar_grid,
     get_calendar_navigation,
@@ -29,6 +30,8 @@ from .services import (
 
 @student_required
 def student_dashboard(request):
+    expire_stale_bookings(student=request.user)
+
     upcoming_bookings = (
         Booking.objects
         .filter(
@@ -200,6 +203,7 @@ def book_slot(request):
 @teacher_required
 def teacher_dashboard(request):
     teacher = request.user.teacher_profile
+    expire_stale_bookings(teacher=teacher)
 
     upcoming_bookings = (
         Booking.objects
@@ -231,6 +235,7 @@ def teacher_dashboard(request):
 
 @teacher_required
 def teacher_lesson_requests(request):
+    expire_stale_bookings(teacher=request.user.teacher_profile)
     viewer_tz = ZoneInfo(request.user.timezone)
 
     lesson_requests = (
@@ -272,7 +277,13 @@ def respond_to_booking(request, booking_id):
             booking.status = Booking.Status.CANCELLED
         booking.cancellation_requested = False
         booking.save()
+    elif booking.status == Booking.Status.EXPIRED:
+        return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
     elif booking.status == Booking.Status.PENDING:
+        if booking.start_at <= timezone.now():
+            booking.status = Booking.Status.EXPIRED
+            booking.save()
+            return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
         booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
         booking.save()
     else:
