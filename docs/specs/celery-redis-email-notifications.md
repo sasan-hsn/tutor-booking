@@ -32,7 +32,7 @@ Furthermore, attempting to send emails synchronously within the web request cycl
 11. As a teacher, I want to receive an email notification if a student submits a cancellation request for a lesson, so that I can review and confirm the cancellation in my dashboard.
 12. As a student, I want to receive an email reminder 24 hours before my confirmed lesson begins, so that I have advance notice to prepare for our session.
 13. As a student, I want to receive an email reminder 1 hour before my confirmed lesson begins, so that I have an immediate prompt and meeting link ready when lesson time arrives.
-14. As a teacher, I want to receive automated email reminders 24 hours and 1 hour before scheduled lessons, so that I stay on top of my daily teaching schedule.
+14. As a teacher, I want to receive an automated email reminder 1 hour before scheduled lessons with the classroom meeting link, so that I have an operational prompt right before class, while avoiding alert fatigue from individual 24-hour reminders across multiple daily lessons (with tomorrow's schedule summarized via a consolidated Daily Digest instead).
 15. As a student or teacher, I want to never receive duplicate reminder emails for the same lesson, so that my inbox is not spammed.
 16. As a student or teacher, I want to never receive reminder emails for a lesson that has been cancelled or expired, so that I am not misled by outdated notifications.
 17. As a teacher, I want to be able to save my video meeting link (e.g. Google Meet or Zoom URL) in my profile settings, so that all future booking emails automatically include my classroom link.
@@ -66,8 +66,10 @@ Furthermore, attempting to send emails synchronously within the web request cycl
 - **Idempotent Reminder Sweeps**:
   - Extend the booking schema with two boolean tracking flags: `reminder_24h_sent` and `reminder_1h_sent` (defaulting to `False`).
   - Index booking start time and status to ensure high-performance periodic queries.
-  - Celery Beat executes a periodic reminder task on a 5-minute interval.
-  - The task queries for confirmed bookings within the 24-hour window (where `reminder_24h_sent` is `False`) and within the 1-hour window (where `reminder_1h_sent` is `False`), sends the respective emails, and atomically updates the flags.
+  - Celery Beat executes a periodic reminder task on a 5-minute interval:
+    - **24h Window**: Queries confirmed bookings in the 24h window (bounded so bookings confirmed <24h away do not fire a 24h reminder) where `reminder_24h_sent` is `False`. Sends 24h reminder to **student only**.
+    - **1h Window**: Queries confirmed bookings in the 1h window (`now < start_at <= now + 1h`) where `reminder_1h_sent` is `False`. Sends 1h reminder to **both student and teacher** with the direct classroom meeting link.
+    - Atomically updates tracking flags to prevent duplicate dispatch across consecutive ticks.
   - Bookings that are cancelled, completed, or expired are naturally excluded from the query, preventing phantom reminders.
 
 - **Automated Expiration Sweep**:
