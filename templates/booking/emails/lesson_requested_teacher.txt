@@ -1,0 +1,18 @@
+Hello {{ teacher_name }},
+
+You have received a new lesson request from {{ student_name }}.
+
+REQUEST DETAILS
+---------------
+Student:     {{ student_name }}{% if student_email %} ({{ student_email }}){% endif %}
+Lesson Type: {{ lesson_type }}
+Date:        {{ date }}
+Time:        {{ time }} ({{ timezone }})
+Status:      Awaiting Your Response
+
+Please log in to your dashboard to review this request and accept or decline the lesson:
+{{ dashboard_url }}
+
+Best regards,
+{{ site_name }}
+{{ site_url }}

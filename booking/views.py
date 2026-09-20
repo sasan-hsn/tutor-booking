@@ -26,6 +26,7 @@ from .services import (
     get_lesson_type_and_price,
     get_week_data,
 )
+from .tasks import send_booking_request_notifications
 
 
 @student_required
@@ -185,6 +186,11 @@ def book_slot(request):
                 end_at=end_at_val,
                 lesson_type=lesson_type,
                 price=price,
+            )
+
+            booking_id = booking.id
+            transaction.on_commit(
+                lambda: send_booking_request_notifications(booking_id)
             )
 
     except IntegrityError:

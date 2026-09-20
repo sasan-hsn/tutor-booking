@@ -1,0 +1,19 @@
+Hello {{ student_name }},
+
+Your lesson request has been submitted to {{ teacher_name }} and is currently awaiting confirmation.
+
+LESSON DETAILS
+--------------
+Lesson Type: {{ lesson_type }}
+Date:        {{ date }}
+Time:        {{ time }} ({{ timezone }})
+Status:      Pending Teacher Review
+
+{{ teacher_name }} will review your request shortly. You will receive another email as soon as your lesson is confirmed or updated.
+
+You can view your requests and upcoming lessons anytime on your dashboard:
+{{ student_dashboard_url }}
+
+Best regards,
+{{ teacher_name }}
+{{ site_url }}
