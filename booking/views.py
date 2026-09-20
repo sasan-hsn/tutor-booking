@@ -26,7 +26,10 @@ from .services import (
     get_lesson_type_and_price,
     get_week_data,
 )
-from .tasks import send_booking_request_notifications
+from .tasks import (
+    send_booking_confirmed_student_email_task,
+    send_booking_request_notifications,
+)
 
 
 @student_required
@@ -290,8 +293,14 @@ def respond_to_booking(request, booking_id):
             booking.status = Booking.Status.EXPIRED
             booking.save()
             return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
-        booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
-        booking.save()
+        with transaction.atomic():
+            booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
+            booking.save()
+            if action == 'accept':
+                booking_id = booking.id
+                transaction.on_commit(
+                    lambda: send_booking_confirmed_student_email_task.delay(booking_id)
+                )
     else:
         return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
 
