@@ -15,6 +15,19 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: tutor_booking_redis_prod
+    command: redis-server --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data_prod:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   web:
     build: .
     container_name: tutor_booking_web
@@ -32,6 +45,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
@@ -42,6 +57,22 @@ services:
     labels:
       - "autoheal=true"
 
+  celery_worker:
+    build: .
+    container_name: tutor_booking_celery_worker
+    command: celery -A tutor_booking worker -l info -c 2
+    volumes:
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    env_file:
+      - .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   autoheal:
     image: willfarrell/autoheal
     container_name: autoheal
@@ -49,7 +80,8 @@ services:
       - AUTOHEAL_CONTAINER_LABEL=autoheal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped    
+    restart: unless-stopped
 
 volumes:
   postgres_data_prod:
+  redis_data_prod:

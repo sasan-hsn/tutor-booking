@@ -123,8 +123,8 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 
-# Custom User Model
-AUTH_USER_MODEL = 'accounts.User'
+# Site URL for absolute links in emails and tasks
+SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000' if DEBUG else 'https://englishwithmary.ir')
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -136,6 +136,27 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 
 USE_TZ = True
+
+# Custom User Model
+AUTH_USER_MODEL = 'accounts.User'
+
+
+# Celery configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# Celery task execution mode (eager in automated tests or local dev fallback)
+CELERY_TASK_ALWAYS_EAGER = (
+    os.getenv('CELERY_TASK_ALWAYS_EAGER', '').lower() in ('true', '1')
+    or ('test' in sys.argv)
+)
+CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
 
 # Static files (CSS, JavaScript, Images)
