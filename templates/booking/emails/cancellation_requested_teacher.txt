@@ -1,0 +1,21 @@
+LESSON CANCELLATION REQUEST
+===========================
+
+Hi {{ teacher_name }},
+
+{{ student_name }} has requested to cancel their upcoming lesson.
+
+LESSON DETAILS
+--------------
+Student: {{ student_name }}{% if student_email %} ({{ student_email }}){% endif %}
+Lesson Type: {{ lesson_type }}
+Date: {{ date }}
+Time: {{ time }} ({{ timezone }})
+Status: Cancellation Requested
+
+Please review this request in your dashboard:
+{{ dashboard_url }}
+
+--
+{{ footer_brand }}
+{{ site_url }}

@@ -10,10 +10,13 @@ from django.utils import timezone
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking, RegularAvailability
 from booking.tasks import (
+    send_booking_cancelled_student_email_task,
     send_booking_confirmed_student_email_task,
+    send_booking_declined_student_email_task,
     send_booking_request_notifications,
     send_booking_request_student_email_task,
     send_booking_request_teacher_email_task,
+    send_cancellation_requested_teacher_email_task,
 )
 
 
@@ -354,6 +357,171 @@ class BookingNotificationTasksTests(RoleTestCase):
             with self.assertRaises(ValueError):
                 send_booking_confirmed_student_email_task.apply(args=[self.booking.id], throw=True)
 
+    # --- Declined student notification task tests ---
+
+    def test_send_booking_declined_student_email_success(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save()
+
+        send_booking_declined_student_email_task(self.booking.id)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['student@example.com'])
+        self.assertIn('Lesson Request Declined', email.subject)
+        self.assertIn('Mary Smith', email.subject)
+
+        # Check localized time in student's timezone
+        local_start = timezone.localtime(self.start_at, self.student_tz)
+        local_end = timezone.localtime(self.end_at, self.student_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('America/New_York', email.body)
+        self.assertIn('John', email.body)
+        self.assertIn('Mary Smith', email.body)
+        self.assertIn('unavailable', email.body.lower())
+        self.assertIn('alternative', email.body.lower())
+
+        # Check multipart HTML alternative
+        self.assertEqual(len(email.alternatives), 1)
+        html_content, mimetype = email.alternatives[0]
+        self.assertEqual(mimetype, 'text/html')
+        self.assertIn(expected_date_str, html_content)
+        self.assertIn(expected_time_str, html_content)
+        self.assertIn('America/New_York', html_content)
+        self.assertIn('John', html_content)
+        self.assertIn('Mary Smith', html_content)
+        self.assertIn('unavailable', html_content.lower())
+
+    def test_send_booking_declined_missing_student_email_skips(self):
+        self.student_user.email = ''
+        self.student_user.save()
+
+        send_booking_declined_student_email_task(self.booking.id)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_send_booking_declined_nonexistent_booking_skips(self):
+        send_booking_declined_student_email_task(999999)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_declined_task_retries_on_transient_error(self):
+        with patch('booking.emails.send_booking_declined_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+            with self.assertRaises(Exception):
+                send_booking_declined_student_email_task.apply(args=[self.booking.id], throw=True)
+
+    # --- Cancelled student notification task tests ---
+
+    def test_send_booking_cancelled_student_email_success(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save()
+
+        send_booking_cancelled_student_email_task(self.booking.id)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['student@example.com'])
+        self.assertIn('Lesson Cancelled', email.subject)
+        self.assertIn('Mary Smith', email.subject)
+
+        # Check localized time in student's timezone
+        local_start = timezone.localtime(self.start_at, self.student_tz)
+        local_end = timezone.localtime(self.end_at, self.student_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('America/New_York', email.body)
+        self.assertIn('John', email.body)
+        self.assertIn('Mary Smith', email.body)
+        self.assertIn('cancelled', email.body.lower())
+
+        # Check multipart HTML alternative
+        self.assertEqual(len(email.alternatives), 1)
+        html_content, mimetype = email.alternatives[0]
+        self.assertEqual(mimetype, 'text/html')
+        self.assertIn(expected_date_str, html_content)
+        self.assertIn(expected_time_str, html_content)
+        self.assertIn('America/New_York', html_content)
+        self.assertIn('John', html_content)
+        self.assertIn('Mary Smith', html_content)
+        self.assertIn('cancelled', html_content.lower())
+
+    def test_send_booking_cancelled_missing_student_email_skips(self):
+        self.student_user.email = ''
+        self.student_user.save()
+
+        send_booking_cancelled_student_email_task(self.booking.id)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_send_booking_cancelled_nonexistent_booking_skips(self):
+        send_booking_cancelled_student_email_task(999999)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_cancelled_task_retries_on_transient_error(self):
+        with patch('booking.emails.send_booking_cancelled_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+            with self.assertRaises(Exception):
+                send_booking_cancelled_student_email_task.apply(args=[self.booking.id], throw=True)
+
+    # --- Cancellation requested teacher alert task tests ---
+
+    def test_send_cancellation_requested_teacher_email_success(self):
+        self.booking.cancellation_requested = True
+        self.booking.save()
+
+        send_cancellation_requested_teacher_email_task(self.booking.id)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
+        self.assertIn('Cancellation Request from John Doe', email.subject)
+
+        # Check localized time in teacher's timezone (Asia/Tehran)
+        local_start = timezone.localtime(self.start_at, self.teacher_tz)
+        local_end = timezone.localtime(self.end_at, self.teacher_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('Asia/Tehran', email.body)
+        self.assertIn('Mary', email.body)
+        self.assertIn('John Doe', email.body)
+        self.assertIn('student@example.com', email.body)
+        self.assertIn(reverse('booking:teacher_dashboard'), email.body)
+
+        # Check multipart HTML alternative
+        self.assertEqual(len(email.alternatives), 1)
+        html_content, mimetype = email.alternatives[0]
+        self.assertEqual(mimetype, 'text/html')
+        self.assertIn(expected_date_str, html_content)
+        self.assertIn(expected_time_str, html_content)
+        self.assertIn('Asia/Tehran', html_content)
+        self.assertIn('John Doe', html_content)
+        self.assertIn(reverse('booking:teacher_dashboard'), html_content)
+
+    def test_send_cancellation_requested_missing_teacher_email_skips(self):
+        self.teacher_user.email = ''
+        self.teacher_user.save()
+        self.teacher.contact_email = ''
+        self.teacher.save()
+
+        send_cancellation_requested_teacher_email_task(self.booking.id)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_send_cancellation_requested_nonexistent_booking_skips(self):
+        send_cancellation_requested_teacher_email_task(999999)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_cancellation_requested_task_retries_on_transient_error(self):
+        with patch('booking.emails.send_cancellation_requested_teacher_email', side_effect=smtplib.SMTPException('SMTP error')):
+            with self.assertRaises(Exception):
+                send_cancellation_requested_teacher_email_task.apply(args=[self.booking.id], throw=True)
+
+
 
 class RespondToBookingNotificationTests(RoleTestCase):
     @classmethod
@@ -431,7 +599,7 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertIn('STATUS:CONFIRMED', ics_content)
         self.assertIn('LOCATION:https://meet.google.com/test-room', ics_content)
 
-    def test_respond_to_booking_decline_does_not_dispatch_confirmation_email(self):
+    def test_respond_to_booking_decline_dispatches_declined_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
                 reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
@@ -441,9 +609,26 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertEqual(response.status_code, 200)
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
-        self.assertEqual(len(mail.outbox), 0)
 
-    def test_respond_to_cancellation_accept_does_not_dispatch_confirmation_email(self):
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['student@example.com'])
+        self.assertIn('Lesson Request Declined', email.subject)
+        self.assertNotIn('Lesson Confirmed', email.subject)
+        self.assertIn('Mary Smith', email.subject)
+
+        # Localized time check in student's timezone
+        local_start = timezone.localtime(self.start_at, self.student_tz)
+        local_end = timezone.localtime(self.end_at, self.student_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('America/New_York', email.body)
+        self.assertIn('unavailable', email.body.lower())
+        self.assertIn('alternative', email.body.lower())
+
+    def test_respond_to_cancellation_accept_dispatches_cancelled_email(self):
         self.booking.status = Booking.Status.CONFIRMED
         self.booking.cancellation_requested = True
         self.booking.save()
@@ -457,6 +642,39 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertEqual(response.status_code, 200)
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
+        self.assertFalse(self.booking.cancellation_requested)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['student@example.com'])
+        self.assertIn('Lesson Cancelled', email.subject)
+        self.assertNotIn('Lesson Confirmed', email.subject)
+        self.assertIn('Mary Smith', email.subject)
+
+        # Localized time check in student's timezone
+        local_start = timezone.localtime(self.start_at, self.student_tz)
+        local_end = timezone.localtime(self.end_at, self.student_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('America/New_York', email.body)
+        self.assertIn('cancelled', email.body.lower())
+
+    def test_respond_to_cancellation_decline_does_not_dispatch_email(self):
+        self.booking.status = Booking.Status.CONFIRMED
+        self.booking.cancellation_requested = True
+        self.booking.save()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
+                {'action': 'decline'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
         self.assertFalse(self.booking.cancellation_requested)
         self.assertEqual(len(mail.outbox), 0)
 
@@ -576,3 +794,171 @@ class BookSlotViewNotificationTests(RoleTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(len(mail.outbox), 0)
+
+
+class CancelLessonNotificationTests(RoleTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.teacher.lesson_price = 25
+        cls.teacher.lesson_duration_minutes = 60
+        cls.teacher.save()
+
+        cls.teacher_user.email = 'teacher@englishwithmary.ir'
+        cls.teacher_user.first_name = 'Mary'
+        cls.teacher_user.last_name = 'Smith'
+        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.save()
+
+        cls.student_user.email = 'student@example.com'
+        cls.student_user.first_name = 'John'
+        cls.student_user.last_name = 'Doe'
+        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.save()
+
+    def setUp(self):
+        super().setUp()
+        self.student_tz = ZoneInfo(self.student_user.timezone)
+        future_date = timezone.localdate() + timedelta(days=3)
+        self.start_at = timezone.datetime.combine(
+            future_date, time(16, 0), tzinfo=ZoneInfo('UTC')
+        )
+        self.end_at = self.start_at + timedelta(minutes=60)
+
+        self.booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=self.start_at,
+            end_at=self.end_at,
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.CONFIRMED,
+        )
+
+    def test_cancel_confirmed_lesson_dispatches_cancelled_email(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse('booking:cancel_lesson', kwargs={'booking_id': self.booking.id}),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['student@example.com'])
+        self.assertIn('Lesson Cancelled', email.subject)
+        self.assertIn('Mary Smith', email.subject)
+
+        # Localized time check
+        local_start = timezone.localtime(self.start_at, self.student_tz)
+        local_end = timezone.localtime(self.end_at, self.student_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('America/New_York', email.body)
+        self.assertIn('cancelled', email.body.lower())
+
+    def test_cancel_awaiting_resolution_lesson_does_not_dispatch_email(self):
+        past_date = timezone.localdate() - timedelta(days=1)
+        past_booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=timezone.datetime.combine(past_date, time(10, 0), tzinfo=ZoneInfo('UTC')),
+            end_at=timezone.datetime.combine(past_date, time(11, 0), tzinfo=ZoneInfo('UTC')),
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.CONFIRMED,
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse('booking:cancel_lesson', kwargs={'booking_id': past_booking.id}),
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class RequestCancellationNotificationTests(RoleTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.teacher.lesson_price = 25
+        cls.teacher.lesson_duration_minutes = 60
+        cls.teacher.save()
+
+        cls.teacher_user.email = 'teacher@englishwithmary.ir'
+        cls.teacher_user.first_name = 'Mary'
+        cls.teacher_user.last_name = 'Smith'
+        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.save()
+
+        cls.student_user.email = 'student@example.com'
+        cls.student_user.first_name = 'John'
+        cls.student_user.last_name = 'Doe'
+        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.save()
+
+    def setUp(self):
+        super().setUp()
+        self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
+        future_date = timezone.localdate() + timedelta(days=3)
+        self.start_at = timezone.datetime.combine(
+            future_date, time(16, 0), tzinfo=ZoneInfo('UTC')
+        )
+        self.end_at = self.start_at + timedelta(minutes=60)
+
+        self.booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=self.start_at,
+            end_at=self.end_at,
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.CONFIRMED,
+        )
+
+    def test_request_cancellation_dispatches_alert_to_teacher(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.student_client.post(
+                reverse('booking:request_cancellation', kwargs={'booking_id': self.booking.id}),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertTrue(self.booking.cancellation_requested)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
+        self.assertIn('Cancellation Request from John Doe', email.subject)
+
+        # Localized time check in teacher's timezone
+        local_start = timezone.localtime(self.start_at, self.teacher_tz)
+        local_end = timezone.localtime(self.end_at, self.teacher_tz)
+        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        self.assertIn(expected_date_str, email.body)
+        self.assertIn(expected_time_str, email.body)
+        self.assertIn('Asia/Tehran', email.body)
+        self.assertIn('John Doe', email.body)
+        self.assertIn('student@example.com', email.body)
+        self.assertIn(reverse('booking:teacher_dashboard'), email.body)
+
+    def test_duplicate_request_cancellation_does_not_dispatch_email(self):
+        self.booking.cancellation_requested = True
+        self.booking.save()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.student_client.post(
+                reverse('booking:request_cancellation', kwargs={'booking_id': self.booking.id}),
+            )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(len(mail.outbox), 0)
+

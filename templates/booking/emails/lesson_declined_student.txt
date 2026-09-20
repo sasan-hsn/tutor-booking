@@ -1,0 +1,23 @@
+LESSON REQUEST UPDATE
+=====================
+
+Hi {{ student_name }},
+
+Thank you for your interest in learning with {{ teacher_name }}. Unfortunately, {{ teacher_name }} is unable to accept your lesson request for the selected time as the slot is unavailable.
+
+LESSON DETAILS
+--------------
+Lesson Type: {{ lesson_type }}
+Requested Date: {{ date }}
+Requested Time: {{ time }} ({{ timezone }})
+Status: Declined
+
+You are warmly invited to choose an alternative time that fits your schedule:
+{{ book_lesson_url }}
+
+You can also review your bookings in your dashboard:
+{{ student_dashboard_url }}
+
+--
+{{ footer_brand }}
+{{ site_url }}

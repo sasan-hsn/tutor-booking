@@ -27,8 +27,11 @@ from .services import (
     get_week_data,
 )
 from .tasks import (
+    send_booking_cancelled_student_email_task,
     send_booking_confirmed_student_email_task,
+    send_booking_declined_student_email_task,
     send_booking_request_notifications,
+    send_cancellation_requested_teacher_email_task,
 )
 
 
@@ -282,10 +285,17 @@ def respond_to_booking(request, booking_id):
         return JsonResponse({'error': 'Invalid action.'}, status=400)
 
     if booking.cancellation_requested:
-        if action == 'accept':
-            booking.status = Booking.Status.CANCELLED
-        booking.cancellation_requested = False
-        booking.save()
+        was_confirmed = (booking.status == Booking.Status.CONFIRMED)
+        with transaction.atomic():
+            if action == 'accept':
+                booking.status = Booking.Status.CANCELLED
+            booking.cancellation_requested = False
+            booking.save()
+            if action == 'accept' and was_confirmed:
+                booking_id = booking.id
+                transaction.on_commit(
+                    lambda: send_booking_cancelled_student_email_task.delay(booking_id)
+                )
     elif booking.status == Booking.Status.EXPIRED:
         return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
     elif booking.status == Booking.Status.PENDING:
@@ -296,10 +306,14 @@ def respond_to_booking(request, booking_id):
         with transaction.atomic():
             booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
             booking.save()
+            booking_id = booking.id
             if action == 'accept':
-                booking_id = booking.id
                 transaction.on_commit(
                     lambda: send_booking_confirmed_student_email_task.delay(booking_id)
+                )
+            elif action == 'decline':
+                transaction.on_commit(
+                    lambda: send_booking_declined_student_email_task.delay(booking_id)
                 )
     else:
         return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
@@ -589,8 +603,15 @@ def cancel_lesson(request, booking_id):
     if booking.is_awaiting_resolution:
         return JsonResponse({"error": "This lesson has already passed and needs resolution, not cancellation."}, status=400)
 
-    booking.status = Booking.Status.CANCELLED
-    booking.save()
+    with transaction.atomic():
+        was_confirmed = (booking.status == Booking.Status.CONFIRMED)
+        booking.status = Booking.Status.CANCELLED
+        booking.save()
+        booking_id = booking.id
+        if was_confirmed:
+            transaction.on_commit(
+                lambda: send_booking_cancelled_student_email_task.delay(booking_id)
+            )
     return JsonResponse({"success": True})
 
 
@@ -712,8 +733,13 @@ def request_cancellation(request, booking_id):
         cancellation_requested=False,
     )
 
-    booking.cancellation_requested = True
-    booking.save()
+    with transaction.atomic():
+        booking.cancellation_requested = True
+        booking.save()
+        booking_id = booking.id
+        transaction.on_commit(
+            lambda: send_cancellation_requested_teacher_email_task.delay(booking_id)
+        )
     return JsonResponse({"success": True})
 
 
