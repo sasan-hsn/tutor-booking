@@ -9,6 +9,27 @@ from .models import Booking, RegularAvailability, WeeklyOverride
 INSTANT_TUTORING_BUFFER = timedelta(hours=1)
 
 
+def expire_stale_bookings(teacher=None, student=None, now=None):
+    """
+    Finds all PENDING bookings with start_at <= now and transitions them to EXPIRED.
+    Optionally scoped by teacher and/or student.
+    Returns the count of bookings updated.
+    """
+    if now is None:
+        now = timezone.now()
+
+    qs = Booking.objects.filter(
+        status=Booking.Status.PENDING,
+        start_at__lte=now,
+    )
+    if teacher is not None:
+        qs = qs.filter(teacher=teacher)
+    if student is not None:
+        qs = qs.filter(student=student)
+
+    return qs.update(status=Booking.Status.EXPIRED)
+
+
 def get_availability_windows(teacher, date_val: date):
     """
     Returns a list of (start_time, end_time) tuples representing the
@@ -108,6 +129,8 @@ def get_lesson_type_and_price(teacher, student):
     Pending, confirmed, and completed bookings count towards previous lessons
     to prevent duplicate trial requests while one is pending.
     """
+    expire_stale_bookings(teacher=teacher, student=student)
+
     has_previous_lesson = Booking.objects.filter(
         student=student,
         teacher=teacher,
@@ -129,6 +152,8 @@ def get_calendar_grid(year: int, month: int, *, teacher=None, student=None):
     Generate a monthly calendar grid (Sun-Sat) with pre-fetched bookings.
     Captures the entire visible grid span (including visible edge days from adjacent months).
     """
+    expire_stale_bookings(teacher=teacher, student=student)
+
     if teacher is not None:
         viewer_tz = ZoneInfo(teacher.user.timezone)
     elif student is not None:

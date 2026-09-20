@@ -113,5 +113,8 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Scratch & skill workspaces
+.scratch/
+
 # PyPI configuration file
 .pypirc
