@@ -605,17 +605,12 @@ def cancel_lesson(request, booking_id):
 
     with transaction.atomic():
         was_confirmed = (booking.status == Booking.Status.CONFIRMED)
-        was_pending = (booking.status == Booking.Status.PENDING)
         booking.status = Booking.Status.CANCELLED
         booking.save()
         booking_id = booking.id
         if was_confirmed:
             transaction.on_commit(
                 lambda: send_booking_cancelled_student_email_task.delay(booking_id)
-            )
-        elif was_pending:
-            transaction.on_commit(
-                lambda: send_booking_declined_student_email_task.delay(booking_id)
             )
     return JsonResponse({"success": True})
 
