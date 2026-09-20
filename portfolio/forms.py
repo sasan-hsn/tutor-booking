@@ -54,11 +54,12 @@ class TeacherPortfolioSettingsForm(forms.ModelForm):
         help_text='A large photo shown at the top of your public page.',
         widget=forms.FileInput(attrs={'class': 'form-control'}),
     )
-        
+
     class Meta:
         model = TeacherProfile
         fields = [
             'headline', 'bio', 'teaching_philosophy', 'intro_video_url', 'hero_image',
+            'meeting_link',
             'contact_email', 'whatsapp_number', 'telegram_username', 'instagram_username',
         ]
         widgets = {
@@ -66,6 +67,10 @@ class TeacherPortfolioSettingsForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'teaching_philosophy': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'intro_video_url': forms.URLInput(attrs={'class': 'form-control'}),
+            'meeting_link': forms.URLInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
+            }),
             'contact_email': forms.EmailInput(attrs={'class': 'form-control'}),
             'whatsapp_number': forms.TextInput(attrs={'class': 'form-control'}),
             'telegram_username': forms.TextInput(attrs={'class': 'form-control'}),

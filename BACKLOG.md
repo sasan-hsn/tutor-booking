@@ -23,14 +23,14 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [ ] Actually test restoring from a `.sql.gz` backup file (an untested backup is a risk)
 
 ## 🚀 Major planned features (rough priority order)
-- [ ] Celery + Redis background task infrastructure (prerequisite for email/notifications — sending email synchronously in the request/response cycle is bad practice)
+- [ ] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep) — **CURRENT TOP PRIORITY**
 - [ ] In-platform notifications
-- [ ] Email (booking confirmations, reminders, password reset)
 - [ ] Student↔teacher messaging (decide up front: real-time via Django Channels/WebSockets, or simple polling/refresh — this decision significantly affects implementation complexity)
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
 - [ ] Payments/financial section (last, after everything above)
 
-## 🔮 Architecture — low priority, only if actually needed
+## 🔮 Architecture & Integrations — future / low priority
+- [ ] Direct Google Meet API integration — automatically generate and attach unique Google Meet room links per booking (replaces static teacher meeting link)
 - [ ] JWT / separate API layer — only if/when a mobile app or public third-party API is built. Do NOT use this to replace the current session-based auth on the main site (see CLAUDE.md, Architecture Decisions #4, for the reasoning already worked through).
 
 ## Notes
