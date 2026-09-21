@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "anymail",
 
     # Local apps
     'accounts',
@@ -112,15 +113,28 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Email configuration
-EMAIL_BACKEND = os.getenv(
-    'EMAIL_BACKEND',
-    'django.core.mail.backends.console.EmailBackend' if DEBUG else 'django.core.mail.backends.smtp.EmailBackend'
-)
 # Site identity and URL for absolute links in emails and tasks
 SITE_NAME = os.getenv('SITE_NAME', 'English with Mary')
 SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000' if DEBUG else 'https://englishwithmary.ir')
 
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'{SITE_NAME} <noreply@englishwithmary.ir>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
+ANYMAIL = {
+    'BREVO_API_KEY': BREVO_API_KEY,
+}
+
+if DEBUG:
+    default_email_backend = 'django.core.mail.backends.console.EmailBackend'
+elif BREVO_API_KEY:
+    default_email_backend = 'anymail.backends.brevo.EmailBackend'
+else:
+    default_email_backend = 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', default_email_backend)
+
+# SMTP fallback configuration (used if EMAIL_BACKEND is explicitly set to SMTP)
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
