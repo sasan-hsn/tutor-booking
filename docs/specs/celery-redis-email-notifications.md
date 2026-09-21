@@ -75,6 +75,12 @@ Furthermore, attempting to send emails synchronously within the web request cycl
 - **Automated Expiration Sweep**:
   - Celery Beat executes a periodic task on a 15-minute interval that runs the central stale booking expiration routine, automatically transitioning past-due pending requests to expired status.
 
+- **Teacher Daily Schedule Digest Sweep**:
+  - Celery Beat executes an hourly periodic sweep (`send_daily_schedule_digests`) evaluating whether a teacher's local time matches the evening briefing window (20:00 local time).
+  - For matching teachers, aggregates all confirmed lessons scheduled for tomorrow in the teacher's local timezone.
+  - Sends a consolidated responsive HTML and plain-text briefing (`teacher_daily_digest.html` / `.txt`) with meeting links, student names, and chronological schedules.
+  - Persists idempotent dispatch records (`TeacherDailyDigestRecord`) with database-level uniqueness constraints on `(teacher, target_date)` to prevent duplicate deliveries across retries or repeated periodic ticks.
+
 - **Email Templating and Formatting**:
   - Standardize all booking emails on multipart format (HTML and plain text).
   - Match typography and color tokens with the site design system (Inter, Outfit, primary blue, and accent amber).

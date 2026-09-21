@@ -281,3 +281,37 @@ class Review(models.Model):
 
     def __str__(self):
         return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'
+
+
+class TeacherDailyDigestRecord(models.Model):
+    class Status(models.TextChoices):
+        SENT = 'sent', 'Sent'
+        SKIPPED_EMPTY = 'skipped_empty', 'Skipped Empty'
+
+    teacher = models.ForeignKey(
+        'portfolio.TeacherProfile',
+        on_delete=models.CASCADE,
+        related_name='daily_digest_records',
+    )
+    target_date = models.DateField(
+        help_text="The date of the schedule summarized in this digest (in teacher's timezone).",
+    )
+    booking_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.SENT,
+    )
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-target_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['teacher', 'target_date'],
+                name='unique_teacher_daily_digest_target_date',
+            )
+        ]
+
+    def __str__(self):
+        return f"Daily Digest for {self.teacher} on {self.target_date} ({self.get_status_display()})"

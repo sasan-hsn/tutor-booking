@@ -1,0 +1,31 @@
+Hello {{ teacher_name }},
+
+{% if total_lessons > 0 %}Here is your daily schedule briefing for tomorrow, {{ date }}.
+You have {{ total_lessons }} confirmed lesson{{ total_lessons|pluralize }} scheduled.
+
+{% if meeting_link %}MEETING LINK
+------------
+Classroom Room: {{ meeting_link }}
+{% else %}MEETING LINK
+------------
+You have not set a permanent meeting link in your profile. Please ensure you share a video link with your students.
+{% endif %}
+
+TOMORROW'S SCHEDULE
+--------------------
+{% for item in lessons %}
+{{ forloop.counter }}. {{ item.time }} ({{ timezone }})
+   Student:     {{ item.student_name }}{% if item.student_email %} ({{ item.student_email }}){% endif %}
+   Lesson Type: {{ item.lesson_type }}{% if item.student_note %}
+   Note:        {{ item.student_note }}{% endif %}
+{% endfor %}
+{% else %}Here is your daily schedule briefing for tomorrow, {{ date }}.
+
+You have no lessons scheduled for tomorrow. Enjoy your day off!
+{% endif %}
+You can review and manage your schedule anytime on your teacher dashboard:
+{{ dashboard_url }}
+
+Best regards,
+{{ site_name }}
+{{ site_url }}
