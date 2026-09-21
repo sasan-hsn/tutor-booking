@@ -97,6 +97,7 @@ celerybeat.pid
 # Environments & Secrets
 .env*
 !.env.prod.example
+!.env.example
 .envrc
 .venv
 env/
