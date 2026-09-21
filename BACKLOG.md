@@ -23,7 +23,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [ ] Actually test restoring from a `.sql.gz` backup file (an untested backup is a risk)
 
 ## 🚀 Major planned features (rough priority order)
-- [ ] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep) — **CURRENT TOP PRIORITY**
+- [x] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep, teacher daily digest) (#160)
 - [ ] In-platform notifications
 - [ ] Student↔teacher messaging (decide up front: real-time via Django Channels/WebSockets, or simple polling/refresh — this decision significantly affects implementation complexity)
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
