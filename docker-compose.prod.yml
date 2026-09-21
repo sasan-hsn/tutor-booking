@@ -56,6 +56,9 @@ services:
       start_period: 10s
     labels:
       - "autoheal=true"
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
 
   celery_worker:
     build: .
@@ -72,6 +75,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
 
   celery_beat:
     build: .
@@ -85,6 +91,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
 
   autoheal:
     image: willfarrell/autoheal
@@ -98,3 +107,7 @@ services:
 volumes:
   postgres_data_prod:
   redis_data_prod:
+
+networks:
+  default:
+    enable_ipv6: false
