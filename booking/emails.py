@@ -587,3 +587,81 @@ def send_booking_reminder_1h_teacher_email(booking) -> bool:
     logger.info("Sent 1h reminder email to teacher %s for booking #%s.", teacher_email, booking.id)
     return True
 
+
+def send_teacher_daily_digest_email(teacher, target_date, bookings) -> bool:
+    """Send consolidated daily schedule digest email to the teacher for tomorrow's lessons."""
+    teacher_email = teacher.user.email or teacher.contact_email
+    if not teacher_email:
+        logger.info(
+            "Teacher %s has no email address; skipping daily digest email.",
+            teacher.id,
+        )
+        return False
+
+    site_url = getattr(settings, 'SITE_URL', 'http://127.0.0.1:8000').rstrip('/')
+    site_domain = urlparse(site_url).netloc or site_url
+    site_name = getattr(settings, 'SITE_NAME', 'Tutor Booking')
+    dashboard_url = f"{site_url}{reverse('booking:teacher_dashboard')}"
+    meeting_link = (teacher.meeting_link or '').strip()
+
+    lessons_data = []
+    for booking in bookings:
+        local_start = booking.teacher_local_start
+        local_end = booking.teacher_local_end
+        lessons_data.append({
+            'booking': booking,
+            'student_name': booking.student_display_name,
+            'student_email': booking.student.email,
+            'lesson_type': booking.get_lesson_type_display(),
+            'start_time': local_start.strftime('%H:%M'),
+            'end_time': local_end.strftime('%H:%M'),
+            'time': f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}",
+            'student_note': getattr(booking, 'student_note', None) or getattr(booking, 'notes', None) or '',
+        })
+
+    total_lessons = len(lessons_data)
+    date_str = target_date.strftime('%A, %B %d, %Y')
+
+    context = {
+        'teacher': teacher,
+        'teacher_name': teacher.user.get_full_name() or teacher.user.username,
+        'header_title': site_name,
+        'header_subtitle': "Daily Schedule Digest",
+        'footer_brand': site_name,
+        'date': date_str,
+        'target_date': target_date,
+        'total_lessons': total_lessons,
+        'lessons': lessons_data,
+        'timezone': teacher.user.timezone,
+        'meeting_link': meeting_link,
+        'dashboard_url': dashboard_url,
+        'site_name': site_name,
+        'site_url': site_url,
+        'site_domain': site_domain,
+    }
+
+    if total_lessons > 0:
+        plural_suffix = "s" if total_lessons != 1 else ""
+        subject = f"Daily Schedule Digest: {total_lessons} lesson{plural_suffix} scheduled for tomorrow – {site_name}"
+    else:
+        subject = f"Daily Schedule Digest: No lessons scheduled for tomorrow – {site_name}"
+
+    text_content = render_to_string('booking/emails/teacher_daily_digest.txt', context)
+    html_content = render_to_string('booking/emails/teacher_daily_digest.html', context)
+
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[teacher_email],
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
+    logger.info(
+        "Sent daily digest email with %s lessons to teacher %s for date %s.",
+        total_lessons,
+        teacher_email,
+        target_date,
+    )
+    return True
+

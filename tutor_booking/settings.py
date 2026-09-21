@@ -169,7 +169,13 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'booking.tasks.expire_pending_bookings_task',
         'schedule': 900.0,
     },
+    'send-teacher-daily-digest-hourly': {
+        'task': 'booking.tasks.send_daily_schedule_digests',
+        'schedule': 3600.0,
+    },
 }
+
+TEACHER_DAILY_DIGEST_HOUR = int(os.getenv('TEACHER_DAILY_DIGEST_HOUR', '20'))
 
 
 # Static files (CSS, JavaScript, Images)

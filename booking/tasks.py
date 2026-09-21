@@ -1,10 +1,13 @@
 import logging
 import smtplib
-from datetime import timedelta
+from datetime import date as dt_date, datetime, time as dt_time, timedelta
+from zoneinfo import ZoneInfo
 from celery import shared_task
-from django.db import models
+from django.conf import settings
+from django.db import models, transaction
 from django.utils import timezone
-from .models import Booking
+from portfolio.models import TeacherProfile
+from .models import Booking, TeacherDailyDigestRecord
 from . import emails
 
 logger = logging.getLogger(__name__)
@@ -351,6 +354,128 @@ def expire_pending_bookings_task():
     count = expire_stale_bookings()
     logger.info("Expired %s stale pending booking(s).", count)
     return count
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str: str, skip_empty: bool = True):
+    """
+    Send teacher daily schedule digest email for target_date.
+    Idempotent: skips if TeacherDailyDigestRecord exists for (teacher, target_date).
+    If no confirmed bookings exist and skip_empty is True, records SKIPPED_EMPTY and skips email.
+    """
+    target_date = dt_date.fromisoformat(target_date_str)
+
+    try:
+        with transaction.atomic():
+            teacher = (
+                TeacherProfile.objects.select_for_update()
+                .select_related('user')
+                .get(pk=teacher_id)
+            )
+            if TeacherDailyDigestRecord.objects.filter(teacher=teacher, target_date=target_date).exists():
+                logger.info(
+                    "Daily digest already recorded for teacher #%s on %s; skipping.",
+                    teacher_id,
+                    target_date,
+                )
+                return
+
+            teacher_tz = ZoneInfo(teacher.user.timezone)
+            day_start = datetime.combine(target_date, dt_time.min).replace(tzinfo=teacher_tz)
+            day_end = datetime.combine(target_date + timedelta(days=1), dt_time.min).replace(tzinfo=teacher_tz)
+
+            bookings = list(
+                Booking.objects.filter(
+                    teacher=teacher,
+                    status=Booking.Status.CONFIRMED,
+                    start_at__gte=day_start,
+                    start_at__lt=day_end,
+                )
+                .select_related('student', 'teacher__user')
+                .order_by('start_at')
+            )
+
+            if len(bookings) == 0 and skip_empty:
+                logger.info(
+                    "No confirmed bookings on %s for teacher #%s; skipping digest email and recording.",
+                    target_date,
+                    teacher_id,
+                )
+                TeacherDailyDigestRecord.objects.create(
+                    teacher=teacher,
+                    target_date=target_date,
+                    booking_count=0,
+                    status=TeacherDailyDigestRecord.Status.SKIPPED_EMPTY,
+                )
+                return
+
+            try:
+                emails.send_teacher_daily_digest_email(teacher, target_date, bookings)
+                TeacherDailyDigestRecord.objects.create(
+                    teacher=teacher,
+                    target_date=target_date,
+                    booking_count=len(bookings),
+                    status=TeacherDailyDigestRecord.Status.SENT,
+                )
+            except TRANSIENT_EMAIL_ERRORS as exc:
+                logger.exception(
+                    "Transient error sending daily digest email for teacher #%s on %s. Retrying...",
+                    teacher_id,
+                    target_date,
+                )
+                raise self.retry(exc=exc)
+    except TeacherProfile.DoesNotExist:
+        logger.warning("TeacherProfile #%s not found; skipping daily digest task.", teacher_id)
+        return
+
+
+@shared_task
+def send_daily_schedule_digests(now=None):
+    """
+    Periodic task running e.g. hourly to evaluate whether a teacher's local time matches
+    the daily digest dispatch window (default 20:00 local time).
+    If matched and no digest has been sent yet for tomorrow, enqueues digest email task.
+    """
+    if now is None:
+        now = timezone.now()
+
+    target_hour = getattr(settings, 'TEACHER_DAILY_DIGEST_HOUR', 20)
+    teachers = TeacherProfile.objects.select_related('user').all()
+
+    evaluated_count = 0
+    dispatched_count = 0
+
+    for teacher in teachers:
+        evaluated_count += 1
+        teacher_tz = ZoneInfo(teacher.user.timezone)
+        teacher_local_now = timezone.localtime(now, teacher_tz)
+
+        if teacher_local_now.hour != target_hour:
+            continue
+
+        target_date = teacher_local_now.date() + timedelta(days=1)
+
+        if TeacherDailyDigestRecord.objects.filter(teacher=teacher, target_date=target_date).exists():
+            continue
+
+        send_teacher_daily_digest_email_task.delay(teacher.id, target_date.isoformat())
+        dispatched_count += 1
+
+    logger.info(
+        "Daily schedule digest sweep completed: evaluated %s teachers, dispatched %s digests.",
+        evaluated_count,
+        dispatched_count,
+    )
+    return {
+        'evaluated_teachers': evaluated_count,
+        'dispatched_digests': dispatched_count,
+    }
+
 
 
 
