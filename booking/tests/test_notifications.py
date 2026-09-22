@@ -2,6 +2,8 @@ import smtplib
 from datetime import date, time, timedelta, timezone as dt_timezone
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
+import requests
+from anymail.exceptions import AnymailAPIError, AnymailRequestsAPIError
 
 from django.core import mail
 from django.urls import reverse
@@ -10,6 +12,10 @@ from django.utils import timezone
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking, RegularAvailability
 from booking.tasks import (
+    safe_send_booking_cancelled_email,
+    safe_send_booking_confirmed_email,
+    safe_send_booking_declined_email,
+    safe_send_cancellation_requested_email,
     send_booking_cancelled_student_email_task,
     send_booking_confirmed_student_email_task,
     send_booking_declined_student_email_task,
@@ -190,10 +196,51 @@ class BookingNotificationTasksTests(RoleTestCase):
             with self.assertRaises(Exception):
                 send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
 
+    def test_task_retries_on_transient_anymail_api_error(self):
+        resp = requests.Response()
+        resp.status_code = 429
+        resp.reason = 'Too Many Requests'
+        err = AnymailAPIError('Rate limit exceeded', response=resp, status_code=429)
+        with patch('booking.emails.send_booking_request_student_email', side_effect=err):
+            with self.assertRaises(Exception):
+                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+
+    def test_task_retries_on_requests_exception(self):
+        with patch('booking.emails.send_booking_request_student_email', side_effect=requests.exceptions.ConnectionError('Connection timed out')):
+            with self.assertRaises(Exception):
+                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+
+    def test_task_does_not_retry_on_non_transient_anymail_error(self):
+        resp = requests.Response()
+        resp.status_code = 401
+        resp.reason = 'Unauthorized'
+        err = AnymailAPIError('Invalid API Key', response=resp, status_code=401)
+        with patch('booking.emails.send_booking_request_student_email', side_effect=err):
+            with self.assertRaises(AnymailAPIError):
+                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+
     def test_task_does_not_retry_on_non_transient_exception(self):
         with patch('booking.emails.send_booking_request_student_email', side_effect=ValueError('Programming error')):
             with self.assertRaises(ValueError):
                 send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+
+    def test_safe_notification_helpers_never_raise_on_task_delay_failure(self):
+        with patch('booking.tasks.send_booking_request_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+            with patch('booking.tasks.send_booking_request_teacher_email_task.delay', side_effect=ConnectionError('Redis down')):
+                # None of these should raise
+                send_booking_request_notifications(self.booking.id)
+
+        with patch('booking.tasks.send_booking_confirmed_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+            safe_send_booking_confirmed_email(self.booking.id)
+
+        with patch('booking.tasks.send_booking_declined_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+            safe_send_booking_declined_email(self.booking.id)
+
+        with patch('booking.tasks.send_booking_cancelled_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+            safe_send_booking_cancelled_email(self.booking.id)
+
+        with patch('booking.tasks.send_cancellation_requested_teacher_email_task.delay', side_effect=ConnectionError('Redis down')):
+            safe_send_cancellation_requested_email(self.booking.id)
 
     def test_send_booking_confirmed_student_email_with_meeting_link(self):
         self.teacher.meeting_link = 'https://meet.google.com/abc-defg-hij'

@@ -132,3 +132,22 @@ class BookSlotViewTests(RoleTestCase):
         # the self-booking check at all — this test actually verifies
         # access control, not the self-booking business rule
         self.assertEqual(response.status_code, 403)
+
+    def test_booking_succeeds_even_if_notification_dispatch_fails(self):
+        from unittest.mock import patch
+        with patch('booking.tasks.send_booking_request_student_email_task.delay', side_effect=ConnectionError("Redis connection refused")):
+            response = self._book(self.student_client, self.valid_start)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Booking.objects.count(), 1)
+        booking = Booking.objects.first()
+        self.assertEqual(booking.student, self.student_user)
+        self.assertEqual(booking.status, Booking.Status.PENDING)
+
+    def test_unexpected_exception_in_book_slot_returns_clean_500_json(self):
+        from unittest.mock import patch
+        with patch('booking.views.get_lesson_type_and_price', side_effect=RuntimeError("Unexpected crash")):
+            response = self._book(self.student_client, self.valid_start)
+        self.assertEqual(response.status_code, 500)
+        data = response.json()
+        self.assertIn('error', data)
+        self.assertIn('unexpected error occurred', data['error'].lower())
