@@ -2,10 +2,12 @@ import logging
 import smtplib
 from datetime import date as dt_date, datetime, time as dt_time, timedelta
 from zoneinfo import ZoneInfo
+from anymail.exceptions import AnymailAPIError, AnymailRequestsAPIError
 from celery import shared_task
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
+import requests
 from portfolio.models import TeacherProfile
 from .models import Booking, TeacherDailyDigestRecord
 from . import emails
@@ -17,7 +19,19 @@ TRANSIENT_EMAIL_ERRORS = (
     ConnectionError,
     TimeoutError,
     OSError,
+    requests.exceptions.RequestException,
+    AnymailAPIError,
 )
+
+
+def is_transient_email_error(exc: Exception) -> bool:
+    """Determine whether an email error is temporary and safe to retry."""
+    if isinstance(exc, AnymailAPIError):
+        # 429 Too Many Requests and 5xx Server Errors from Brevo API are transient
+        return getattr(exc, 'status_code', None) in (429, 500, 502, 503, 504)
+    if isinstance(exc, TRANSIENT_EMAIL_ERRORS):
+        return True
+    return False
 
 
 @shared_task(
@@ -37,6 +51,8 @@ def send_booking_request_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_request_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending student confirmation email for booking #%s. Retrying...",
             booking_id,
@@ -61,6 +77,8 @@ def send_booking_request_teacher_email_task(self, booking_id: int):
     try:
         emails.send_booking_request_teacher_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending teacher alert email for booking #%s. Retrying...",
             booking_id,
@@ -69,9 +87,48 @@ def send_booking_request_teacher_email_task(self, booking_id: int):
 
 
 def send_booking_request_notifications(booking_id: int):
-    """Convenience helper to enqueue both student and teacher request emails."""
-    send_booking_request_student_email_task.delay(booking_id)
-    send_booking_request_teacher_email_task.delay(booking_id)
+    """Safely enqueue both student and teacher request emails; never raise to the caller."""
+    try:
+        send_booking_request_student_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue student notification task for booking #%s", booking_id)
+
+    try:
+        send_booking_request_teacher_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue teacher notification task for booking #%s", booking_id)
+
+
+def safe_send_booking_confirmed_email(booking_id: int):
+    """Safely enqueue student confirmation email without raising to the caller."""
+    try:
+        send_booking_confirmed_student_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue confirmed student email task for booking #%s", booking_id)
+
+
+def safe_send_booking_declined_email(booking_id: int):
+    """Safely enqueue student decline email without raising to the caller."""
+    try:
+        send_booking_declined_student_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue declined student email task for booking #%s", booking_id)
+
+
+def safe_send_booking_cancelled_email(booking_id: int):
+    """Safely enqueue student cancellation email without raising to the caller."""
+    try:
+        send_booking_cancelled_student_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue cancelled student email task for booking #%s", booking_id)
+
+
+def safe_send_cancellation_requested_email(booking_id: int):
+    """Safely enqueue teacher cancellation requested email without raising to the caller."""
+    try:
+        send_cancellation_requested_teacher_email_task.delay(booking_id)
+    except Exception:
+        logger.exception("Failed to enqueue cancellation requested teacher email task for booking #%s", booking_id)
 
 
 @shared_task(
@@ -91,6 +148,8 @@ def send_booking_confirmed_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_confirmed_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending student confirmation email for booking #%s. Retrying...",
             booking_id,
@@ -115,6 +174,8 @@ def send_booking_declined_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_declined_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending student declined notification email for booking #%s. Retrying...",
             booking_id,
@@ -139,6 +200,8 @@ def send_booking_cancelled_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_cancelled_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending student cancelled notification email for booking #%s. Retrying...",
             booking_id,
@@ -163,6 +226,8 @@ def send_cancellation_requested_teacher_email_task(self, booking_id: int):
     try:
         emails.send_cancellation_requested_teacher_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending teacher cancellation request alert email for booking #%s. Retrying...",
             booking_id,
@@ -195,6 +260,8 @@ def send_booking_reminder_24h_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_reminder_24h_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending 24h reminder email for booking #%s. Retrying...",
             booking_id,
@@ -227,6 +294,8 @@ def send_booking_reminder_1h_student_email_task(self, booking_id: int):
     try:
         emails.send_booking_reminder_1h_student_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending 1h student reminder email for booking #%s. Retrying...",
             booking_id,
@@ -259,6 +328,8 @@ def send_booking_reminder_1h_teacher_email_task(self, booking_id: int):
     try:
         emails.send_booking_reminder_1h_teacher_email(booking)
     except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
         logger.exception(
             "Transient error sending 1h teacher reminder email for booking #%s. Retrying...",
             booking_id,
@@ -423,6 +494,8 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
                     status=TeacherDailyDigestRecord.Status.SENT,
                 )
             except TRANSIENT_EMAIL_ERRORS as exc:
+                if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+                    raise
                 logger.exception(
                     "Transient error sending daily digest email for teacher #%s on %s. Retrying...",
                     teacher_id,

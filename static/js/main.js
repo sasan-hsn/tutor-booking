@@ -181,10 +181,20 @@ function initBookingModal() {
                 body: `start_at=${encodeURIComponent(startAtVal)}`,
             });
 
-            const data = await response.json();
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                // Non-JSON response (e.g. HTML 500 error page)
+            }
 
             if (!response.ok) {
-                alert(data.error || 'Something went wrong. Please try again.');
+                const errorMsg = (data && data.error)
+                    ? data.error
+                    : (response.status >= 500
+                        ? 'A server error occurred. Please refresh the page to verify your booking status.'
+                        : 'Something went wrong. Please try again.');
+                alert(errorMsg);
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = 'Next';
                 return;
@@ -193,7 +203,7 @@ function initBookingModal() {
             modal.hide();
             window.location.reload();
         } catch (err) {
-            alert('Network error. Please try again.');
+            alert('Network error. Please check your connection and try again.');
             confirmBtn.disabled = false;
             confirmBtn.textContent = 'Next';
         }
@@ -303,10 +313,13 @@ function initLessonDetailModalManager() {
                 method: 'POST',
                 body: new FormData(form),
             });
-            const data = await response.json();
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {}
 
             if (!response.ok) {
-                alert(data.error || 'Something went wrong. Please try again.');
+                alert((data && data.error) || 'Something went wrong. Please try again.');
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Submit Review';
                 return;
@@ -536,10 +549,13 @@ function initScheduleModal() {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: `day_of_week=${currentDay}&start_time=${start}&end_time=${end}`,
                 });
-                const data = await response.json();
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {}
 
                 if (!response.ok) {
-                    alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                    alert(data && data.error ? (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) : 'Something went wrong.');
                     addBtn.disabled = false;
                     return;
                 }
@@ -748,10 +764,13 @@ function initOverrideScheduleModal() {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: `date=${currentDate}&start_time=${start}&end_time=${end}`,
                 });
-                const data = await response.json();
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {}
 
                 if (!response.ok) {
-                    alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                    alert(data && data.error ? (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) : 'Something went wrong.');
                     addBtn.disabled = false;
                     return;
                 }
@@ -1041,10 +1060,13 @@ function initCertificateManager() {
                 method: 'POST',
                 body: new FormData(addForm),
             });
-            const data = await response.json();
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {}
 
             if (!response.ok) {
-                alert(data.error ? JSON.stringify(data.error) : 'Something went wrong.');
+                alert(data && data.error ? (typeof data.error === 'object' ? JSON.stringify(data.error) : data.error) : 'Something went wrong.');
                 btn.disabled = false;
                 return;
             }

@@ -66,3 +66,27 @@ class EmailSettingsTests(SimpleTestCase):
             'EMAIL_BACKEND': 'django.core.mail.backends.dummy.EmailBackend',
         })
         self.assertEqual(backend, 'django.core.mail.backends.dummy.EmailBackend')
+
+    def _resolve_celery_broker(self, env_vars):
+        """Helper to simulate settings.py Celery broker URL resolution logic."""
+        debug = env_vars.get('DEBUG', 'False') == 'True'
+        default_redis_host = 'localhost' if debug else 'redis'
+        return env_vars.get('CELERY_BROKER_URL', f'redis://{default_redis_host}:6379/0')
+
+    def test_celery_broker_defaults_to_localhost_in_dev(self):
+        """When DEBUG=True and no CELERY_BROKER_URL, default is localhost."""
+        broker = self._resolve_celery_broker({'DEBUG': 'True'})
+        self.assertEqual(broker, 'redis://localhost:6379/0')
+
+    def test_celery_broker_defaults_to_redis_service_in_production(self):
+        """When DEBUG=False and no CELERY_BROKER_URL, default is docker service 'redis'."""
+        broker = self._resolve_celery_broker({'DEBUG': 'False'})
+        self.assertEqual(broker, 'redis://redis:6379/0')
+
+    def test_explicit_celery_broker_env_var_takes_precedence(self):
+        """Explicit CELERY_BROKER_URL always overrides default selection."""
+        broker = self._resolve_celery_broker({
+            'DEBUG': 'False',
+            'CELERY_BROKER_URL': 'redis://custom-redis:6379/1',
+        })
+        self.assertEqual(broker, 'redis://custom-redis:6379/1')

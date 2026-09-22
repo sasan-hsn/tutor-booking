@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -27,12 +28,14 @@ from .services import (
     get_week_data,
 )
 from .tasks import (
-    send_booking_cancelled_student_email_task,
-    send_booking_confirmed_student_email_task,
-    send_booking_declined_student_email_task,
+    safe_send_booking_cancelled_email,
+    safe_send_booking_confirmed_email,
+    safe_send_booking_declined_email,
+    safe_send_cancellation_requested_email,
     send_booking_request_notifications,
-    send_cancellation_requested_teacher_email_task,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @student_required
@@ -203,6 +206,12 @@ def book_slot(request):
         return JsonResponse({'error': 'This time is no longer available.'}, status=409)
     except ValidationError as e:
         return JsonResponse({'error': str(e)}, status=400)
+    except Exception:
+        logger.exception("Unexpected error in book_slot")
+        return JsonResponse(
+            {'error': 'An unexpected error occurred. Please refresh the page to check your booking.'},
+            status=500,
+        )
 
     return JsonResponse({
         'success': True,
@@ -294,7 +303,7 @@ def respond_to_booking(request, booking_id):
             if action == 'accept' and was_confirmed:
                 booking_id = booking.id
                 transaction.on_commit(
-                    lambda: send_booking_cancelled_student_email_task.delay(booking_id)
+                    lambda: safe_send_booking_cancelled_email(booking_id)
                 )
     elif booking.status == Booking.Status.EXPIRED:
         return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
@@ -309,11 +318,11 @@ def respond_to_booking(request, booking_id):
             booking_id = booking.id
             if action == 'accept':
                 transaction.on_commit(
-                    lambda: send_booking_confirmed_student_email_task.delay(booking_id)
+                    lambda: safe_send_booking_confirmed_email(booking_id)
                 )
             elif action == 'decline':
                 transaction.on_commit(
-                    lambda: send_booking_declined_student_email_task.delay(booking_id)
+                    lambda: safe_send_booking_declined_email(booking_id)
                 )
     else:
         return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
@@ -610,7 +619,7 @@ def cancel_lesson(request, booking_id):
         booking_id = booking.id
         if was_confirmed:
             transaction.on_commit(
-                lambda: send_booking_cancelled_student_email_task.delay(booking_id)
+                lambda: safe_send_booking_cancelled_email(booking_id)
             )
     return JsonResponse({"success": True})
 
@@ -738,7 +747,7 @@ def request_cancellation(request, booking_id):
         booking.save()
         booking_id = booking.id
         transaction.on_commit(
-            lambda: send_cancellation_requested_teacher_email_task.delay(booking_id)
+            lambda: safe_send_cancellation_requested_email(booking_id)
         )
     return JsonResponse({"success": True})
 
