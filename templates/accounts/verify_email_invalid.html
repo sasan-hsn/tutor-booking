@@ -1,0 +1,49 @@
+{% extends "landing_base.html" %}
+
+{% block title %}
+{% if status == 'expired' %}Verification Link Expired{% else %}Invalid Verification Link{% endif %} – {{ site_name }}
+{% endblock %}
+
+{% block page_content %}
+<div class="container max-w-5xl px-4 py-5">
+    <div class="glass-card p-4 mx-auto text-center" style="max-width: 480px;">
+        {% if status == 'expired' %}
+        <div class="mb-3">
+            <span class="badge bg-warning text-dark px-3 py-2 text-uppercase fs-6">Expired Link</span>
+        </div>
+        <h1 class="mb-3 fs-3">Verification Link Expired</h1>
+        <p class="text-muted mb-4">
+            This verification link has expired because it was created more than 24 hours ago. Please request a new verification link below.
+        </p>
+
+        <form method="post" action="{% url 'accounts:resend_verification_email' %}">
+            {% csrf_token %}
+            {% if target_user %}
+            <input type="hidden" name="email" value="{{ target_user.email }}">
+            {% endif %}
+            {% if next_url %}
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% endif %}
+            <button type="submit" class="btn-accent w-100 mb-3">
+                Send New Verification Link
+            </button>
+        </form>
+        {% else %}
+        <div class="mb-3">
+            <span class="badge bg-danger px-3 py-2 text-uppercase fs-6">Invalid Link</span>
+        </div>
+        <h1 class="mb-3 fs-3">Invalid Verification Link</h1>
+        <p class="text-muted mb-4">
+            This verification link is invalid, malformed, or has already been used. If you recently changed your password, older verification links are automatically invalidated.
+        </p>
+        <a href="{% url 'accounts:login' %}" class="btn-accent w-100 mb-3 d-inline-block text-decoration-none">
+            Go to Login
+        </a>
+        {% endif %}
+
+        <p class="text-muted text-center mt-3 mb-0 small">
+            Need help? Contact support or <a href="{% url 'accounts:login' %}" class="text-primary-brand">log in to your account</a>.
+        </p>
+    </div>
+</div>
+{% endblock %}
