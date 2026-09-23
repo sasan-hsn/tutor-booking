@@ -47,3 +47,23 @@ _Avoid_: Lesson alert, booking notification, calendar ping
 **Meeting Link**:
 A video conference URL (e.g., Google Meet, Zoom) associated with a teacher where the online lesson takes place.
 _Avoid_: Classroom URL, video room, lesson link
+
+**Verified User**:
+An account whose email address has been confirmed through an email verification link.
+_Avoid_: Activated account, confirmed user
+
+**Unverified User**:
+An account whose registered email address has not yet been confirmed via verification link.
+_Avoid_: Inactive account, unconfirmed user
+
+**Pending Email Change**:
+An in-progress transition where a user requests to change their registered email address; the current address remains active and verified until the new address is confirmed via verification link.
+_Avoid_: Unconfirmed email swap, email update request
+
+**Verification Token**:
+A time-limited, cryptographically signed token used to prove ownership of an email address.
+_Avoid_: Activation code, confirmation hash, verification key
+
+**Revocation Link**:
+A one-click security URL included in advisory emails that allows an account holder to immediately terminate an unauthorized pending email change.
+_Avoid_: Undo link, cancellation button

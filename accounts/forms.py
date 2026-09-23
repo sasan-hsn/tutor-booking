@@ -10,7 +10,19 @@ from .models import User
 from .utils import get_timezone_choices
 
 
-class StudentSignUpForm(UserCreationForm):
+class EmailNormalizationAndUniquenessMixin:
+    def clean_email(self):
+        email = User.objects.normalize_email(self.cleaned_data.get('email', ''))
+        if email:
+            qs = User.objects.filter(email__iexact=email)
+            if getattr(self, 'instance', None) and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise forms.ValidationError("A user with that email already exists.")
+        return email
+
+
+class StudentSignUpForm(EmailNormalizationAndUniquenessMixin, UserCreationForm):
     email = forms.EmailField(required=True)
     timezone = forms.ChoiceField(choices=[], required=False)
 
@@ -81,7 +93,7 @@ class StudentProfileSettingsForm(forms.Form):
             self.user.save()
 
 
-class TeacherSignUpForm(UserCreationForm):
+class TeacherSignUpForm(EmailNormalizationAndUniquenessMixin, UserCreationForm):
     email = forms.EmailField(required=True)
     timezone = forms.ChoiceField(choices=[], required=False)
 
