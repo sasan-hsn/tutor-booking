@@ -1,0 +1,15 @@
+Hello {{ user_name }},
+
+Thank you for registering on {{ site_name }}!
+
+Please verify your email address to activate your account and start scheduling lessons:
+
+{{ verification_url }}
+
+This link is valid for 24 hours.
+
+If you did not create an account on {{ site_name }}, you can safely ignore this email.
+
+--
+{{ site_name }}
+{{ site_url }}

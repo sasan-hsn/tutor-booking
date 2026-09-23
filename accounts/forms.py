@@ -68,6 +68,14 @@ class StyledSetPasswordForm(SetPasswordForm):
         for field in self.fields.values():
             field.widget.attrs.update({'class': 'form-control'})
 
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        if not user.is_email_verified:
+            user.is_email_verified = True
+            if commit:
+                user.save(update_fields=['is_email_verified'])
+        return user
+
 
 class StudentProfileSettingsForm(forms.Form):
     profile_picture = forms.ImageField(required=False)

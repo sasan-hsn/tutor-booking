@@ -174,6 +174,24 @@ CELERY_TASK_ALWAYS_EAGER = (
 )
 CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
+# Cache configuration (Redis DB 1 for cache, isolated from Celery broker on DB 0)
+REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', f'redis://{default_redis_host}:6379/1')
+
+if 'test' in sys.argv:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'tutor-booking-test-cache',
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_CACHE_URL,
+        }
+    }
+
 # Celery Beat schedule for periodic background tasks
 CELERY_BEAT_SCHEDULE = {
     'send-lesson-reminders-every-5-minutes': {

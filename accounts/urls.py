@@ -11,6 +11,10 @@ urlpatterns = [
     path('logout/', views.user_logout, name='logout'),
     path('settings/', views.profile_settings, name='profile_settings'),
     path('signup/teacher/', views.teacher_signup, name='teacher_signup'),
+    path('verify/resend/', views.resend_verification_email, name='resend_verification_email'),
+    path('resend-verification/', views.resend_verification_email),
+    path('verify-email/<str:token>/', views.verify_email, name='verify_email'),
+    path('verify/<str:token>/', views.verify_email),
     path(
         'password_reset/',
         auth_views.PasswordResetView.as_view(

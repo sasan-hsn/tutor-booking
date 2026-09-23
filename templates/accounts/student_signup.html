@@ -8,6 +8,7 @@
         <h1 class="mb-4">Sign Up</h1>
         <form method="post" id="signupForm">
             {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next|default:'' }}">
 
             {% for field in form %}
             <div class="mb-3">
