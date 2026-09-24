@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core import mail
@@ -255,6 +256,78 @@ class EmailVerificationViewsTests(TestCase):
 
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
+
+    def test_styled_set_password_form_save_commit_false(self):
+        self.assertFalse(self.student.is_email_verified)
+        form = StyledSetPasswordForm(user=self.student, data={
+            'new_password1': 'BrandNewPass123!',
+            'new_password2': 'BrandNewPass123!',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        unsaved_user = form.save(commit=False)
+
+        self.assertTrue(unsaved_user.is_email_verified)
+        db_user = User.objects.get(pk=self.student.pk)
+        self.assertFalse(db_user.is_email_verified)
+        self.assertFalse(db_user.check_password('BrandNewPass123!'))
+
+        unsaved_user.save()
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_email_verified)
+        self.assertTrue(self.student.check_password('BrandNewPass123!'))
+
+    def test_password_reset_full_lifecycle_auto_verifies_and_invalidates_prior_verification_link(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            signup_response = self.client.post(reverse('accounts:student_signup'), {
+                'username': 'lifecycle_student',
+                'email': 'lifecycle@example.com',
+                'password1': 'InitialPass123!',
+                'password2': 'InitialPass123!',
+            })
+        self.assertEqual(signup_response.status_code, 302)
+        user = User.objects.get(username='lifecycle_student')
+        self.assertFalse(user.is_email_verified)
+        self.assertEqual(len(mail.outbox), 1)
+
+        verification_email = mail.outbox[0]
+        verify_match = re.search(r'(/accounts/verify-email/[^\s]+)', verification_email.body)
+        self.assertIsNotNone(verify_match)
+        verify_path = verify_match.group(1)
+
+        self.client.logout()
+
+        mail.outbox.clear()
+        reset_req_response = self.client.post(reverse('accounts:password_reset'), {
+            'email': 'lifecycle@example.com',
+        })
+        self.assertRedirects(reset_req_response, reverse('accounts:password_reset_done'))
+        self.assertEqual(len(mail.outbox), 1)
+
+        reset_email = mail.outbox[0]
+        reset_match = re.search(r'(/accounts/reset/[^\s]+)', reset_email.body)
+        self.assertIsNotNone(reset_match)
+        reset_path = reset_match.group(1)
+
+        confirm_get_response = self.client.get(reset_path, follow=True)
+        self.assertEqual(confirm_get_response.status_code, 200)
+        post_url = confirm_get_response.redirect_chain[0][0]
+
+        confirm_post_response = self.client.post(post_url, {
+            'new_password1': 'BrandNewPass123!',
+            'new_password2': 'BrandNewPass123!',
+        })
+        self.assertRedirects(confirm_post_response, reverse('accounts:password_reset_complete'))
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_email_verified)
+        self.assertTrue(user.check_password('BrandNewPass123!'))
+
+        stale_verify_response = self.client.get(verify_path)
+        self.assertEqual(stale_verify_response.status_code, 400)
+        self.assertTemplateUsed(stale_verify_response, 'accounts/verify_email_invalid.html')
+        self.assertContains(stale_verify_response, 'Invalid Verification Link', status_code=400)
+
+        self.assertNotIn('_auth_user_id', self.client.session)
 
     def test_logout_view_respects_safe_next_url(self):
         self.client.force_login(self.student)

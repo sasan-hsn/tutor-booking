@@ -73,12 +73,9 @@ class StyledSetPasswordForm(SetPasswordForm):
             field.widget.attrs.update({'class': 'form-control'})
 
     def save(self, commit=True):
-        user = super().save(commit=commit)
-        if not user.is_email_verified:
-            user.is_email_verified = True
-            if commit:
-                user.save(update_fields=['is_email_verified'])
-        return user
+        if not self.user.is_email_verified:
+            self.user.is_email_verified = True
+        return super().save(commit=commit)
 
 
 class StudentProfileSettingsForm(EmailNormalizationAndUniquenessMixin, forms.Form):
