@@ -12,10 +12,16 @@ class RoleTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.teacher_user = User.objects.create_user(
-            username='access_teacher', password='password123', role=User.Role.TEACHER
+            username='access_teacher',
+            password='password123',
+            role=User.Role.TEACHER,
+            is_email_verified=True,
         )
         cls.student_user = User.objects.create_user(
-            username='access_student', password='password123', role=User.Role.STUDENT
+            username='access_student',
+            password='password123',
+            role=User.Role.STUDENT,
+            is_email_verified=True,
         )
 
     def setUp(self):

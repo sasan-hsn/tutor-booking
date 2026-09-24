@@ -113,7 +113,10 @@ class BookSlotViewTests(RoleTestCase):
 
         from accounts.models import User
         another_student = User.objects.create_user(
-            username='second_student', password='password123', role=User.Role.STUDENT
+            username='second_student',
+            password='password123',
+            role=User.Role.STUDENT,
+            is_email_verified=True,
         )
         another_client = self.client_class()
         another_client.force_login(another_student)
@@ -121,6 +124,23 @@ class BookSlotViewTests(RoleTestCase):
         response = self._book(another_client, self.valid_start)
         self.assertEqual(response.status_code, 409)
         self.assertEqual(Booking.objects.count(), 1)
+
+    def test_unverified_student_cannot_book_slot(self):
+        self.student_user.is_email_verified = False
+        self.student_user.save()
+
+        response = self._book(self.student_client, self.valid_start)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {'error': 'email_unverified'})
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_book_slot_with_unverified_teacher_returns_409(self):
+        self.teacher_user.is_email_verified = False
+        self.teacher_user.save()
+
+        response = self._book(self.student_client, self.valid_start)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(Booking.objects.count(), 0)
 
     def test_teacher_cannot_book_own_slot(self):
         # log the teacher's own user in as if they were trying to book

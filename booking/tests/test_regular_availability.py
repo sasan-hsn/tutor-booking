@@ -8,7 +8,9 @@ from booking.models import RegularAvailability
 
 class RegularAvailabilityValidationTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(username='teacher1', password='password123')
+        self.user = User.objects.create_user(
+            username='teacher1', password='password123', is_email_verified=True
+        )
         self.teacher = TeacherProfile.objects.create(user=self.user)
 
     def test_valid_regular_availability_creation(self):
@@ -68,3 +70,18 @@ class RegularAvailabilityValidationTests(TestCase):
         availability.full_clean()
         availability.save()
         self.assertEqual(availability.end_time, time(19, 0))
+
+    def test_unverified_teacher_cannot_create_regular_availability(self):
+        """Unverified teachers cannot save regular availability."""
+        self.user.is_email_verified = False
+        self.user.save()
+
+        availability = RegularAvailability(
+            teacher=self.teacher,
+            day_of_week=RegularAvailability.DayOfWeek.MONDAY,
+            start_time=time(14, 0),
+            end_time=time(18, 0),
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            availability.full_clean()
+        self.assertIn('You must verify your email address before setting availability.', str(ctx.exception))

@@ -151,6 +151,9 @@ def student_booking_week_ajax(request):
 @student_required
 @require_POST
 def book_slot(request):
+    if not request.user.is_email_verified:
+        return JsonResponse({'error': 'email_unverified'}, status=403)
+
     start_at_str = request.POST.get('start_at')
     if not start_at_str:
         return JsonResponse({'error': 'start_at is required.'}, status=400)
@@ -398,6 +401,12 @@ def teacher_regular_schedule(request):
 @teacher_required
 @require_POST
 def teacher_regular_schedule_add(request):
+    if not request.user.is_email_verified:
+        return JsonResponse(
+            {'error': 'You must verify your email address before setting availability.'},
+            status=403,
+        )
+
     availability = RegularAvailability(
         teacher=request.user.teacher_profile,
         day_of_week=request.POST.get('day_of_week'),
@@ -495,6 +504,12 @@ def teacher_weekly_override(request):
 @teacher_required
 @require_POST
 def teacher_weekly_override_add(request):
+    if not request.user.is_email_verified:
+        return JsonResponse(
+            {'error': 'You must verify your email address before setting availability.'},
+            status=403,
+        )
+
     override = WeeklyOverride(
         teacher=request.user.teacher_profile,
         date=request.POST.get('date'),

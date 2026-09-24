@@ -11,6 +11,7 @@ from booking.services import (
     get_availability_windows,
     get_available_start_times,
     get_lesson_type_and_price,
+    get_week_data,
 )
 
 User = get_user_model()
@@ -19,7 +20,7 @@ User = get_user_model()
 class AvailabilityWindowsServiceTest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='teacher_test', password='password123'
+            username='teacher_test', password='password123', is_email_verified=True
         )
         self.teacher = TeacherProfile.objects.create(
             user=self.user,
@@ -66,6 +67,50 @@ class AvailabilityWindowsServiceTest(TestCase):
         windows = get_availability_windows(self.teacher, self.target_monday)
 
         self.assertEqual(windows, [(time(14, 0), time(16, 0))])
+
+    def test_unverified_teacher_returns_no_availability_windows(self):
+        """Unverified teachers have all availability windows suppressed."""
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=RegularAvailability.DayOfWeek.MONDAY,
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+        self.user.is_email_verified = False
+        self.user.save()
+
+        windows = get_availability_windows(self.teacher, self.target_monday)
+        self.assertEqual(windows, [])
+
+    def test_unverified_teacher_returns_no_available_start_times(self):
+        """Unverified teachers produce no bookable start times."""
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=RegularAvailability.DayOfWeek.MONDAY,
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+        self.user.is_email_verified = False
+        self.user.save()
+
+        start_times = get_available_start_times(self.teacher, self.target_monday, 60)
+        self.assertEqual(start_times, [])
+
+    def test_unverified_teacher_returns_empty_week_data_slots(self):
+        """get_week_data yields empty slots for all days when the teacher is unverified."""
+        RegularAvailability.objects.create(
+            teacher=self.teacher,
+            day_of_week=RegularAvailability.DayOfWeek.MONDAY,
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+        self.user.is_email_verified = False
+        self.user.save()
+
+        week_days = [self.target_monday + timedelta(days=i) for i in range(7)]
+        week_data = get_week_data(self.teacher, self.tz, week_days, 60)
+        for day_entry in week_data:
+            self.assertEqual(day_entry['slots'], [])
 
     def test_full_day_off_override_returns_no_windows(self):
         """A full-day-off WeeklyOverride results in zero available windows."""

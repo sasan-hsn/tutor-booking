@@ -11,15 +11,15 @@ from booking.models import RegularAvailability, Booking
 class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
-            username='testteacher', password='test123', role=User.Role.TEACHER
+            username='testteacher', password='test123', role=User.Role.TEACHER, is_email_verified=True
         )
         self.teacher = self.teacher_user.teacher_profile
 
         self.student1 = User.objects.create_user(
-            username='student1', password='test123', role=User.Role.STUDENT
+            username='student1', password='test123', role=User.Role.STUDENT, is_email_verified=True
         )
         self.student2 = User.objects.create_user(
-            username='student2', password='test123', role=User.Role.STUDENT
+            username='student2', password='test123', role=User.Role.STUDENT, is_email_verified=True
         )
 
         # 2026-09-28 is a Monday

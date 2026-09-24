@@ -99,6 +99,22 @@ class WeeklyOverrideViewTests(RoleTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(WeeklyOverride.objects.count(), 0)
 
+    def test_unverified_teacher_cannot_add_override(self):
+        self.teacher_user.is_email_verified = False
+        self.teacher_user.save()
+
+        response = self.teacher_client.post(
+            reverse('booking:teacher_weekly_override_add'),
+            {
+                'date': self.future_date.isoformat(),
+                'start_time': '10:00',
+                'end_time': '12:00',
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(WeeklyOverride.objects.count(), 0)
+        self.assertIn('You must verify your email address', response.json().get('error', ''))
+
     # --- teacher_weekly_override_delete ---
 
     def test_delete_own_override_succeeds(self):

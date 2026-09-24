@@ -134,6 +134,10 @@ function initBookingModal() {
 
     const modal = new bootstrap.Modal(modalEl);
     const confirmBtn = document.getElementById('confirmBookingBtn');
+    const verificationAlert = document.getElementById('modalVerificationAlert');
+    const resendBtn = document.getElementById('modalResendVerificationBtn');
+    const resendFeedback = document.getElementById('modalResendFeedback');
+    const resendUrl = dayPicker.dataset.resendVerificationUrl;
 
     const teacherName = dayPicker.dataset.teacherName;
     const teacherInitial = dayPicker.dataset.teacherInitial;
@@ -142,9 +146,69 @@ function initBookingModal() {
     const lessonTypeDisplay = dayPicker.dataset.lessonTypeDisplay;
     const bookSlotUrl = dayPicker.dataset.bookSlotUrl;
 
+    function resetVerificationAlert() {
+        if (verificationAlert) {
+            verificationAlert.classList.add('d-none');
+        }
+        if (resendFeedback) {
+            resendFeedback.textContent = '';
+            resendFeedback.className = 'small ms-2';
+        }
+    }
+
+    if (resendBtn && resendUrl) {
+        resendBtn.addEventListener('click', async () => {
+            resendBtn.disabled = true;
+            const originalText = resendBtn.textContent;
+            resendBtn.textContent = 'Sending...';
+            if (resendFeedback) {
+                resendFeedback.textContent = '';
+                resendFeedback.className = 'small ms-2';
+            }
+
+            try {
+                const response = await csrfFetch(resendUrl, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' },
+                });
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (e) {}
+
+                if (response.ok) {
+                    if (resendFeedback) {
+                        resendFeedback.textContent = 'Verification email sent! Check your inbox.';
+                        resendFeedback.className = 'small ms-2 text-success fw-semibold';
+                    }
+                } else if (response.status === 429) {
+                    if (resendFeedback) {
+                        resendFeedback.textContent = (data && data.error) ? data.error : 'Please wait before requesting another email.';
+                        resendFeedback.className = 'small ms-2 text-danger';
+                    }
+                } else {
+                    if (resendFeedback) {
+                        resendFeedback.textContent = (data && data.error) ? data.error : 'Could not resend email.';
+                        resendFeedback.className = 'small ms-2 text-danger';
+                    }
+                }
+            } catch (err) {
+                if (resendFeedback) {
+                    resendFeedback.textContent = 'Network error. Please try again.';
+                    resendFeedback.className = 'small ms-2 text-danger';
+                }
+            } finally {
+                resendBtn.disabled = false;
+                resendBtn.textContent = originalText;
+            }
+        });
+    }
+
     document.addEventListener('click', (e) => {
         const slotBtn = e.target.closest('.slot-open');
         if (!slotBtn) return;
+
+        resetVerificationAlert();
 
         const avatarEl = document.getElementById('modalTeacherAvatar');
         if (avatarEl) {
@@ -165,6 +229,10 @@ function initBookingModal() {
         confirmBtn.textContent = 'Next';
 
         modal.show();
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        resetVerificationAlert();
     });
 
     confirmBtn.addEventListener('click', async () => {
@@ -189,6 +257,15 @@ function initBookingModal() {
             }
 
             if (!response.ok) {
+                if (response.status === 403 && data && data.error === 'email_unverified') {
+                    if (verificationAlert) {
+                        verificationAlert.classList.remove('d-none');
+                    }
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Next';
+                    return;
+                }
+
                 const errorMsg = (data && data.error)
                     ? data.error
                     : (response.status >= 500
@@ -1179,6 +1256,62 @@ function initPendingReviewsManager() {
     });
 }
 
+function initVerificationBanner() {
+    const banner = document.getElementById('studentVerificationBanner');
+    if (!banner) return;
+
+    const resendBtn = document.getElementById('bannerResendBtn');
+    const feedbackEl = document.getElementById('bannerResendFeedback');
+    const resendUrl = banner.dataset.resendUrl;
+    if (!resendBtn || !resendUrl) return;
+
+    resendBtn.addEventListener('click', async () => {
+        resendBtn.disabled = true;
+        const originalText = resendBtn.textContent;
+        resendBtn.textContent = 'Sending...';
+        if (feedbackEl) {
+            feedbackEl.textContent = '';
+            feedbackEl.className = 'small';
+        }
+
+        try {
+            const response = await csrfFetch(resendUrl, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' },
+            });
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (e) {}
+
+            if (response.ok) {
+                if (feedbackEl) {
+                    feedbackEl.textContent = 'Verification email sent! Check your inbox.';
+                    feedbackEl.className = 'small text-success fw-semibold';
+                }
+            } else if (response.status === 429) {
+                if (feedbackEl) {
+                    feedbackEl.textContent = (data && data.error) ? data.error : 'Please wait before requesting another email.';
+                    feedbackEl.className = 'small text-danger';
+                }
+            } else {
+                if (feedbackEl) {
+                    feedbackEl.textContent = (data && data.error) ? data.error : 'Failed to send email. Please try again.';
+                    feedbackEl.className = 'small text-danger';
+                }
+            }
+        } catch (err) {
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Network error. Please try again.';
+                feedbackEl.className = 'small text-danger';
+            }
+        } finally {
+            resendBtn.disabled = false;
+            resendBtn.textContent = originalText;
+        }
+    });
+}
+
 /* --------------------------------------------------------------------------
    11. Single Application Bootstrap
    -------------------------------------------------------------------------- */
@@ -1187,6 +1320,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initLessonCardsScroll();
     initWeekNav();
     initBookingModal();
+    initVerificationBanner();
     initLessonDetailModalManager();
     initLessonRequestsManager();
     initScheduleModal();
