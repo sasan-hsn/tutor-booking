@@ -63,3 +63,76 @@ def safe_send_verification_email(user_id: int, next_url: str | None = None):
         send_verification_email_task.delay(user_id, next_url=next_url)
     except Exception:
         logger.exception("Failed to enqueue email verification task for user #%s", user_id)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_email_change_emails_task(self, user_id: int):
+    """Deliver confirmation email to pending address and security advisory to current address."""
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        logger.warning("User #%s not found; skipping email change tasks.", user_id)
+        return
+
+    if not user.pending_email:
+        logger.info("User #%s has no pending_email; skipping email change tasks.", user_id)
+        return
+
+    try:
+        emails.send_email_change_confirmation_email(user)
+        emails.send_email_change_advisory_email(user)
+    except Exception as exc:
+        if is_transient_email_error(exc):
+            logger.exception("Transient error sending email change emails for user #%s. Retrying...", user_id)
+            raise self.retry(exc=exc)
+        logger.exception("Non-transient error sending email change emails for user #%s.", user_id)
+        raise
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+)
+def send_email_change_confirmation_email_task(self, user_id: int):
+    """Deliver confirmation email to pending address on resend."""
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        logger.warning("User #%s not found; skipping confirmation email task.", user_id)
+        return
+
+    if not user.pending_email:
+        logger.info("User #%s has no pending_email; skipping confirmation email task.", user_id)
+        return
+
+    try:
+        emails.send_email_change_confirmation_email(user)
+    except Exception as exc:
+        if is_transient_email_error(exc):
+            logger.exception("Transient error resending confirmation email for user #%s. Retrying...", user_id)
+            raise self.retry(exc=exc)
+        logger.exception("Non-transient error resending confirmation email for user #%s.", user_id)
+        raise
+
+
+def safe_send_email_change_emails(user_id: int):
+    """Safely enqueue email change confirmation and advisory tasks without crashing caller."""
+    try:
+        send_email_change_emails_task.delay(user_id)
+    except Exception:
+        logger.exception("Failed to enqueue email change tasks for user #%s", user_id)
+
+
+def safe_send_email_change_confirmation_email(user_id: int):
+    """Safely enqueue email change confirmation task without crashing caller."""
+    try:
+        send_email_change_confirmation_email_task.delay(user_id)
+    except Exception:
+        logger.exception("Failed to enqueue email change confirmation task for user #%s", user_id)

@@ -1,12 +1,14 @@
 from decimal import Decimal
 from django import forms
+from accounts.forms import EmailNormalizationAndUniquenessMixin
 from accounts.models import User
 from accounts.utils import get_timezone_choices
 from .models import Certificate, TeacherProfile
 
 
-class TeacherAccountSettingsForm(forms.Form):
+class TeacherAccountSettingsForm(EmailNormalizationAndUniquenessMixin, forms.Form):
     username = forms.CharField(max_length=150)
+    email = forms.EmailField(required=True)
     first_name = forms.CharField(max_length=150, required=False)
     last_name = forms.CharField(max_length=150, required=False)
     profile_picture = forms.ImageField(required=False)
@@ -20,6 +22,7 @@ class TeacherAccountSettingsForm(forms.Form):
 
         if user:
             self.fields['username'].initial = user.username
+            self.fields['email'].initial = user.email
             self.fields['first_name'].initial = user.first_name
             self.fields['last_name'].initial = user.last_name
             self.fields['timezone'].initial = user.timezone
@@ -35,6 +38,15 @@ class TeacherAccountSettingsForm(forms.Form):
         return username
 
     def save(self):
+        email = self.cleaned_data.get('email')
+        email_changed = False
+        if email and self.user:
+            current_email = (self.user.email or '').strip().lower()
+            if email != current_email:
+                if (self.user.pending_email or '').strip().lower() != email:
+                    self.user.pending_email = email
+                    email_changed = True
+
         if self.user:
             self.user.username = self.cleaned_data['username']
             self.user.first_name = self.cleaned_data['first_name']
@@ -45,6 +57,8 @@ class TeacherAccountSettingsForm(forms.Form):
         if self.profile and self.cleaned_data.get('profile_picture'):
             self.profile.profile_picture = self.cleaned_data['profile_picture']
             self.profile.save()
+
+        return email_changed
 
 
 class TeacherPortfolioSettingsForm(forms.ModelForm):

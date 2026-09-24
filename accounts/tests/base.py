@@ -13,12 +13,14 @@ class RoleTestCase(TestCase):
     def setUpTestData(cls):
         cls.teacher_user = User.objects.create_user(
             username='access_teacher',
+            email='access_teacher@example.com',
             password='password123',
             role=User.Role.TEACHER,
             is_email_verified=True,
         )
         cls.student_user = User.objects.create_user(
             username='access_student',
+            email='access_student@example.com',
             password='password123',
             role=User.Role.STUDENT,
             is_email_verified=True,

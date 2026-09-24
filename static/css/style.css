@@ -2201,3 +2201,54 @@ h1, h2, h3, h4, h5, h6,
 .checklist-item.checklist-done i {
     color: #16a34a;
 }
+
+.pending-email-alert {
+    background-color: var(--primary-blue-light);
+    border: 1px solid #c2ded0;
+    border-radius: var(--radius-md);
+    padding: 1rem 1.25rem;
+}
+
+.btn-pending-resend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background-color: var(--primary-blue);
+    color: #ffffff;
+    border: 1px solid var(--primary-blue);
+    border-radius: var(--radius-md);
+    padding: 0.45rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-pending-resend:hover {
+    background-color: var(--primary-blue-hover);
+    border-color: var(--primary-blue-hover);
+    color: #ffffff;
+}
+
+.btn-pending-cancel {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background-color: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 0.45rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-pending-cancel:hover {
+    background-color: #f3f4f6;
+    color: var(--text-main);
+    border-color: #d1d5db;
+}

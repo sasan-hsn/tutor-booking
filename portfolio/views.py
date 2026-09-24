@@ -1,9 +1,11 @@
 from django.contrib import messages
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from accounts.decorators import teacher_required
+from accounts.tasks import safe_send_email_change_emails
 from booking.models import Review
 
 from .forms import (
@@ -54,8 +56,12 @@ def teacher_settings_account(request):
     if request.method == 'POST':
         form = TeacherAccountSettingsForm(request.POST, request.FILES, user=request.user, profile=teacher)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Account settings updated.')
+            email_changed = form.save()
+            if email_changed:
+                transaction.on_commit(lambda: safe_send_email_change_emails(request.user.pk))
+                messages.success(request, 'Account settings updated. A confirmation email has been sent to your new address.')
+            else:
+                messages.success(request, 'Account settings updated.')
             return redirect('portfolio:teacher_settings_account')
     else:
         form = TeacherAccountSettingsForm(user=request.user, profile=teacher)

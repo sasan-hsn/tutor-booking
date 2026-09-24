@@ -5,6 +5,7 @@ from django.contrib.auth.forms import (
     SetPasswordForm,
     UserCreationForm,
 )
+from django.db.models import Q
 
 from .models import User
 from .utils import get_timezone_choices
@@ -14,9 +15,12 @@ class EmailNormalizationAndUniquenessMixin:
     def clean_email(self):
         email = User.objects.normalize_email(self.cleaned_data.get('email', ''))
         if email:
-            qs = User.objects.filter(email__iexact=email)
-            if getattr(self, 'instance', None) and self.instance.pk:
-                qs = qs.exclude(pk=self.instance.pk)
+            qs = User.objects.filter(
+                Q(email__iexact=email) | Q(pending_email__iexact=email)
+            )
+            user_instance = getattr(self, 'instance', None) or getattr(self, 'user', None)
+            if user_instance and user_instance.pk:
+                qs = qs.exclude(pk=user_instance.pk)
             if qs.exists():
                 raise forms.ValidationError("A user with that email already exists.")
         return email
@@ -77,7 +81,8 @@ class StyledSetPasswordForm(SetPasswordForm):
         return user
 
 
-class StudentProfileSettingsForm(forms.Form):
+class StudentProfileSettingsForm(EmailNormalizationAndUniquenessMixin, forms.Form):
+    email = forms.EmailField(required=True)
     profile_picture = forms.ImageField(required=False)
     timezone = forms.ChoiceField(choices=[], required=False)
 
@@ -87,7 +92,9 @@ class StudentProfileSettingsForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields['timezone'].choices = [(tz, tz) for tz in get_timezone_choices()]
         if user:
+            self.fields['email'].initial = user.email
             self.fields['timezone'].initial = user.timezone
+        self.fields['email'].widget.attrs.update({'class': 'form-control'})
         self.fields['timezone'].widget.attrs.update({'class': 'form-select'})
         self.fields['profile_picture'].widget.attrs.update({'class': 'form-control'})
 
@@ -98,7 +105,20 @@ class StudentProfileSettingsForm(forms.Form):
         tz = self.cleaned_data.get('timezone')
         if tz and self.user:
             self.user.timezone = tz
+
+        email = self.cleaned_data.get('email')
+        email_changed = False
+        if email and self.user:
+            current_email = (self.user.email or '').strip().lower()
+            if email != current_email:
+                if (self.user.pending_email or '').strip().lower() != email:
+                    self.user.pending_email = email
+                    email_changed = True
+
+        if self.user:
             self.user.save()
+
+        return email_changed
 
 
 class TeacherSignUpForm(EmailNormalizationAndUniquenessMixin, UserCreationForm):

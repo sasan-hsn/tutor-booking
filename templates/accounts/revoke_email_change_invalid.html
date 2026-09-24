@@ -1,0 +1,38 @@
+{% extends "landing_base.html" %}
+
+{% block title %}
+{% if status == 'expired' %}Revocation Link Expired{% else %}Invalid Revocation Link{% endif %} – {{ site_name }}
+{% endblock %}
+
+{% block page_content %}
+<div class="container max-w-5xl px-4 py-5">
+    <div class="glass-card p-4 mx-auto text-center" style="max-width: 480px;">
+        {% if status == 'expired' %}
+        <div class="mb-3">
+            <span class="badge bg-warning text-dark px-3 py-2 text-uppercase fs-6">Expired Link</span>
+        </div>
+        <h1 class="mb-3 fs-3">Revocation Link Expired</h1>
+        <p class="text-muted mb-4">
+            This revocation link has expired because it was created more than 24 hours ago. If the email change request is still pending, you can cancel it directly from your account settings.
+        </p>
+        {% else %}
+        <div class="mb-3">
+            <span class="badge bg-danger px-3 py-2 text-uppercase fs-6">Invalid Link</span>
+        </div>
+        <h1 class="mb-3 fs-3">Invalid or Inactive Link</h1>
+        <p class="text-muted mb-4">
+            This cancellation link is invalid or the pending email change request has already been cancelled, completed, or superseded.
+        </p>
+        {% endif %}
+
+        <div class="d-flex flex-column gap-2">
+            <a href="{% url 'accounts:login' %}" class="btn-accent w-100 py-2 text-decoration-none">
+                Go to Login
+            </a>
+            <a href="/" class="btn btn-outline-secondary w-100">
+                Return to Homepage
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

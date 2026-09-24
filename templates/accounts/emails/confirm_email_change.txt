@@ -1,0 +1,15 @@
+Hello {{ user_name }},
+
+You recently requested to update your email address on {{ site_name }} to {{ pending_email }}.
+
+Please click the link below to confirm this change:
+
+{{ confirmation_url }}
+
+This link is valid for 24 hours.
+
+If you did not request this change, you can safely ignore this email.
+
+--
+{{ site_name }}
+{{ site_url }}

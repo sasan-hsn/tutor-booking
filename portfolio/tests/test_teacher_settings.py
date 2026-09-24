@@ -17,6 +17,7 @@ class TeacherAccountSettingsTests(RoleTestCase):
             reverse('portfolio:teacher_settings_account'),
             {
                 'username': self.teacher_user.username,
+                'email': self.teacher_user.email,
                 'first_name': 'Mary',
                 'last_name': 'Smith',
                 'timezone': 'UTC',

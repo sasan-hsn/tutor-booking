@@ -19,8 +19,16 @@ from .rate_limiting import (
     get_client_ip,
     record_resend_attempt,
 )
-from .tasks import safe_send_verification_email
-from .tokens import email_verification_token_generator
+from .tasks import (
+    safe_send_email_change_confirmation_email,
+    safe_send_email_change_emails,
+    safe_send_verification_email,
+)
+from .tokens import (
+    email_change_revocation_token_generator,
+    email_change_token_generator,
+    email_verification_token_generator,
+)
 
 
 def student_signup(request):
@@ -80,8 +88,12 @@ def profile_settings(request):
     if request.method == 'POST':
         form = StudentProfileSettingsForm(request.POST, request.FILES, profile=profile, user=request.user)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Profile updated.')
+            email_changed = form.save()
+            if email_changed:
+                transaction.on_commit(lambda: safe_send_email_change_emails(request.user.pk))
+                messages.success(request, 'Profile updated. A confirmation email has been sent to your new address.')
+            else:
+                messages.success(request, 'Profile updated.')
             return redirect('accounts:profile_settings')
     else:
         form = StudentProfileSettingsForm(profile=profile, user=request.user)
@@ -89,6 +101,173 @@ def profile_settings(request):
     return render(request, 'accounts/profile_settings.html', {
         'form': form,
     })
+
+
+def confirm_email_change(request, token):
+    """
+    Handle confirmation link clicks for pending email change:
+    - Validate token against pending_email and user password salt.
+    - If expired or invalid: render verify_email_invalid.html.
+    - If authenticated as different user: render verify_email_conflict.html.
+    - If unauthenticated: auto-login user.
+    - Atomically: promote pending_email to email, clear pending_email, mark is_email_verified=True.
+    - Redirect to profile/account settings with success message.
+    """
+    user, status = email_change_token_generator.check_token(token)
+
+    if status == 'expired':
+        return render(request, 'accounts/verify_email_invalid.html', {
+            'status': 'expired',
+            'target_user': user,
+        }, status=400)
+
+    if status == 'invalid' or not user:
+        return render(request, 'accounts/verify_email_invalid.html', {
+            'status': 'invalid',
+        }, status=400)
+
+    # Cross-session conflict protection
+    if request.user.is_authenticated and request.user.pk != user.pk:
+        return render(request, 'accounts/verify_email_conflict.html', {
+            'logged_in_user': request.user,
+            'target_user': user,
+            'token': token,
+        }, status=200)
+
+    # Auto-login if logged out
+    if not request.user.is_authenticated:
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+    # Atomically promote pending_email to email
+    with transaction.atomic():
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        if not locked_user.pending_email:
+            return render(request, 'accounts/verify_email_invalid.html', {
+                'status': 'invalid',
+            }, status=400)
+
+        # Check for competing claim by another account
+        if User.objects.filter(email__iexact=locked_user.pending_email).exclude(pk=locked_user.pk).exists():
+            locked_user.pending_email = None
+            locked_user.save(update_fields=['pending_email'])
+            messages.error(request, 'This email address is already claimed by another account.')
+            if locked_user.role == User.Role.TEACHER:
+                return redirect('portfolio:teacher_settings_account')
+            return redirect('accounts:profile_settings')
+
+        new_email = locked_user.pending_email
+        locked_user.email = new_email
+        locked_user.pending_email = None
+        locked_user.is_email_verified = True
+        locked_user.save(update_fields=['email', 'pending_email', 'is_email_verified'])
+
+    messages.success(request, f'Your email address has been successfully updated to {new_email}.')
+    if locked_user.role == User.Role.TEACHER:
+        return redirect('portfolio:teacher_settings_account')
+    return redirect('accounts:profile_settings')
+
+
+def revoke_email_change(request, token):
+    """
+    Handle security advisory revocation link:
+    - Protected against automated GET pre-fetchers (e.g. Microsoft SafeLinks):
+      GET renders confirmation screen without mutating state.
+      POST executes cancellation and invalidates token.
+    """
+    user, status = email_change_revocation_token_generator.check_token(token)
+
+    if status == 'expired':
+        return render(request, 'accounts/revoke_email_change_invalid.html', {
+            'status': 'expired',
+        }, status=400)
+
+    if status == 'invalid' or not user:
+        return render(request, 'accounts/revoke_email_change_invalid.html', {
+            'status': 'invalid',
+        }, status=400)
+
+    if request.method == 'POST':
+        with transaction.atomic():
+            locked_user = User.objects.select_for_update().get(pk=user.pk)
+            cancelled_email = locked_user.pending_email
+            locked_user.pending_email = None
+            locked_user.save(update_fields=['pending_email'])
+
+        return render(request, 'accounts/revoke_email_change_success.html', {
+            'target_user': locked_user,
+            'cancelled_email': cancelled_email,
+        })
+
+    return render(request, 'accounts/revoke_email_change.html', {
+        'target_user': user,
+        'pending_email': user.pending_email,
+        'token': token,
+    })
+
+
+@login_required
+@require_POST
+def cancel_email_change(request):
+    """
+    Cancel in-progress email change from profile/account settings.
+    Immediately clears user.pending_email, invalidating outstanding tokens.
+    """
+    if request.user.pending_email:
+        request.user.pending_email = None
+        request.user.save(update_fields=['pending_email'])
+        messages.success(request, 'Email change request has been cancelled.')
+    else:
+        messages.info(request, 'No pending email change to cancel.')
+
+    referer = request.META.get('HTTP_REFERER')
+    if referer and url_has_allowed_host_and_scheme(referer, allowed_hosts={request.get_host()}):
+        return redirect(referer)
+    if request.user.role == User.Role.TEACHER:
+        return redirect('portfolio:teacher_settings_account')
+    return redirect('accounts:profile_settings')
+
+
+@login_required
+@require_POST
+def resend_email_change_email(request):
+    """
+    Resend confirmation email for pending email change.
+    Enforces rate limiting (60s cooldown, 5/hour ceiling).
+    """
+    if not request.user.pending_email:
+        messages.info(request, 'No pending email change to resend.')
+        if request.user.role == User.Role.TEACHER:
+            return redirect('portfolio:teacher_settings_account')
+        return redirect('accounts:profile_settings')
+
+    client_ip = get_client_ip(request)
+    allowed, reason, retry_after = check_resend_rate_limit(
+        user=request.user,
+        email=request.user.pending_email,
+        ip=client_ip,
+    )
+
+    if not allowed:
+        if reason == 'cooldown':
+            msg = f"Please wait {retry_after} second{'s' if retry_after != 1 else ''} before requesting another confirmation email."
+        else:
+            msg = "Too many confirmation requests. Please try again later."
+        messages.warning(request, msg)
+    else:
+        record_resend_attempt(
+            user=request.user,
+            email=request.user.pending_email,
+            ip=client_ip,
+        )
+        safe_send_email_change_confirmation_email(request.user.pk)
+        messages.success(request, f"A new confirmation email has been sent to {request.user.pending_email}.")
+
+    referer = request.META.get('HTTP_REFERER')
+    if referer and url_has_allowed_host_and_scheme(referer, allowed_hosts={request.get_host()}):
+        return redirect(referer)
+    if request.user.role == User.Role.TEACHER:
+        return redirect('portfolio:teacher_settings_account')
+    return redirect('accounts:profile_settings')
 
 
 def teacher_signup(request):
