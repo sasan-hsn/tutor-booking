@@ -9,13 +9,13 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-class EmailVerificationTokenGenerator:
+class BaseEmailActionTokenGenerator:
     """
-    Stateless email verification token generator using Django's TimestampSigner.
+    Base stateless token generator using Django's TimestampSigner.
     Tokens are signed with a salt derived from the user's password hash, ensuring
-    any credential change immediately invalidates outstanding verification links.
+    any credential change immediately invalidates outstanding links.
     """
-    SALT_PREFIX = 'accounts.email-verification'
+    SALT_PREFIX = 'accounts.base-token'
     TOKEN_TTL = 60 * 60 * 24  # 24 hours (86,400 seconds)
 
     def _get_salt(self, user) -> str:
@@ -26,11 +26,14 @@ class EmailVerificationTokenGenerator:
         Generate a stateless signed token encoding user.id and target email.
         Token format: <base64_payload>:<timestamp>:<signature>
         """
-        target_email = (email or user.email or '').strip().lower()
+        target_email = (email or '').strip().lower()
         payload = f"{user.pk}:{target_email}"
         encoded_payload = urlsafe_base64_encode(force_bytes(payload))
         signer = TimestampSigner(salt=self._get_salt(user))
         return signer.sign(encoded_payload)
+
+    def _get_expected_email(self, user) -> str | None:
+        raise NotImplementedError
 
     def check_token(self, token: str) -> tuple[User | None, str]:
         """
@@ -71,7 +74,12 @@ class EmailVerificationTokenGenerator:
         try:
             decoded_verified = force_str(urlsafe_base64_decode(verified_payload))
             verified_id_str, verified_email = decoded_verified.split(':', 1)
-            if int(verified_id_str) != user.pk or verified_email.lower() != (user.email or '').lower():
+            expected_email = self._get_expected_email(user)
+            if (
+                not expected_email
+                or int(verified_id_str) != user.pk
+                or verified_email.lower() != expected_email.strip().lower()
+            ):
                 return None, 'invalid'
         except Exception:
             return None, 'invalid'
@@ -79,4 +87,36 @@ class EmailVerificationTokenGenerator:
         return user, 'valid'
 
 
+class EmailVerificationTokenGenerator(BaseEmailActionTokenGenerator):
+    SALT_PREFIX = 'accounts.email-verification'
+
+    def make_token(self, user, email: str | None = None) -> str:
+        return super().make_token(user, email=email or user.email)
+
+    def _get_expected_email(self, user) -> str | None:
+        return user.email
+
+
+class EmailChangeTokenGenerator(BaseEmailActionTokenGenerator):
+    SALT_PREFIX = 'accounts.email-change'
+
+    def make_token(self, user, email: str | None = None) -> str:
+        return super().make_token(user, email=email or user.pending_email)
+
+    def _get_expected_email(self, user) -> str | None:
+        return user.pending_email
+
+
+class EmailChangeRevocationTokenGenerator(BaseEmailActionTokenGenerator):
+    SALT_PREFIX = 'accounts.email-change-revocation'
+
+    def make_token(self, user, email: str | None = None) -> str:
+        return super().make_token(user, email=email or user.pending_email)
+
+    def _get_expected_email(self, user) -> str | None:
+        return user.pending_email
+
+
 email_verification_token_generator = EmailVerificationTokenGenerator()
+email_change_token_generator = EmailChangeTokenGenerator()
+email_change_revocation_token_generator = EmailChangeRevocationTokenGenerator()

@@ -48,3 +48,49 @@ class EmailTemplateTests(SimpleTestCase):
         self.assertIn('Hello Jane Doe', txt_rendered)
         self.assertIn('https://englishwithmary.ir/accounts/verify-email/dummy-token/', txt_rendered)
         self.assertIn('24 hours', txt_rendered)
+
+    def test_confirm_email_change_templates_render(self):
+        context = {
+            'user_name': 'Jane Doe',
+            'pending_email': 'newaddress@example.com',
+            'confirmation_url': 'https://englishwithmary.ir/accounts/email-change/confirm/dummy-token/',
+            'site_name': 'English with Mary',
+            'site_url': 'https://englishwithmary.ir',
+            'site_domain': 'englishwithmary.ir',
+        }
+        html_rendered = render_to_string('accounts/emails/confirm_email_change.html', context)
+        txt_rendered = render_to_string('accounts/emails/confirm_email_change.txt', context)
+
+        self.assertIn('Jane Doe', html_rendered)
+        self.assertIn('Confirm Email Address', html_rendered)
+        self.assertIn('newaddress@example.com', html_rendered)
+        self.assertIn('https://englishwithmary.ir/accounts/email-change/confirm/dummy-token/', html_rendered)
+        self.assertIn('24 hours', html_rendered)
+
+        self.assertIn('Hello Jane Doe', txt_rendered)
+        self.assertIn('https://englishwithmary.ir/accounts/email-change/confirm/dummy-token/', txt_rendered)
+        self.assertIn('newaddress@example.com', txt_rendered)
+
+    def test_email_change_advisory_templates_render(self):
+        context = {
+            'user_name': 'Jane Doe',
+            'current_email': 'oldaddress@example.com',
+            'pending_email': 'newaddress@example.com',
+            'revocation_url': 'https://englishwithmary.ir/accounts/email-change/revoke/dummy-token/',
+            'site_name': 'English with Mary',
+            'site_url': 'https://englishwithmary.ir',
+            'site_domain': 'englishwithmary.ir',
+        }
+        html_rendered = render_to_string('accounts/emails/email_change_advisory.html', context)
+        txt_rendered = render_to_string('accounts/emails/email_change_advisory.txt', context)
+
+        self.assertIn('Jane Doe', html_rendered)
+        self.assertIn('Security Alert', html_rendered)
+        self.assertIn('newaddress@example.com', html_rendered)
+        self.assertIn('oldaddress@example.com', html_rendered)
+        self.assertIn('https://englishwithmary.ir/accounts/email-change/revoke/dummy-token/', html_rendered)
+
+        self.assertIn('Hello Jane Doe', txt_rendered)
+        self.assertIn('Security Alert', txt_rendered)
+        self.assertIn('newaddress@example.com', txt_rendered)
+        self.assertIn('https://englishwithmary.ir/accounts/email-change/revoke/dummy-token/', txt_rendered)

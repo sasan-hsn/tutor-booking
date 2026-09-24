@@ -15,6 +15,10 @@ urlpatterns = [
     path('resend-verification/', views.resend_verification_email),
     path('verify-email/<str:token>/', views.verify_email, name='verify_email'),
     path('verify/<str:token>/', views.verify_email),
+    path('email-change/confirm/<str:token>/', views.confirm_email_change, name='confirm_email_change'),
+    path('email-change/revoke/<str:token>/', views.revoke_email_change, name='revoke_email_change'),
+    path('email-change/cancel/', views.cancel_email_change, name='cancel_email_change'),
+    path('email-change/resend/', views.resend_email_change_email, name='resend_email_change_email'),
     path(
         'password_reset/',
         auth_views.PasswordResetView.as_view(

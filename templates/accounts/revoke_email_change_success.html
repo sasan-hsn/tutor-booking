@@ -1,0 +1,42 @@
+{% extends "landing_base.html" %}
+
+{% block title %}Email Change Request Cancelled – {{ site_name }}{% endblock %}
+
+{% block page_content %}
+<div class="container max-w-5xl px-4 py-5">
+    <div class="glass-card p-4 mx-auto text-center" style="max-width: 520px;">
+        <div class="mb-3">
+            <span class="badge bg-success px-3 py-2 text-uppercase fs-6">Change Cancelled</span>
+        </div>
+
+        <h1 class="mb-3 fs-3">Email Change Request Cancelled</h1>
+
+        <p class="text-muted mb-3">
+            The pending email change request{% if cancelled_email %} to <strong>{{ cancelled_email }}</strong>{% endif %} has been cancelled.
+        </p>
+
+        <p class="text-muted mb-4">
+            Your active email address remains <strong>{{ target_user.email }}</strong>. All outstanding confirmation links have been invalidated.
+        </p>
+
+        <div class="alert alert-warning text-start mb-4 small">
+            <strong>Security Notice:</strong> If you suspect someone attempted to access your account without your permission, we strongly recommend changing your password immediately.
+        </div>
+
+        <div class="d-flex flex-column gap-2">
+            {% if user.is_authenticated %}
+            <a href="{% if target_user.role == 'teacher' %}{% url 'portfolio:teacher_settings_account' %}{% else %}{% url 'accounts:profile_settings' %}{% endif %}" class="btn-accent w-100 py-2 text-decoration-none">
+                Return to Account Settings
+            </a>
+            {% else %}
+            <a href="{% url 'accounts:login' %}" class="btn-accent w-100 py-2 text-decoration-none">
+                Go to Login
+            </a>
+            {% endif %}
+            <a href="/" class="btn btn-outline-secondary w-100">
+                Return to Homepage
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

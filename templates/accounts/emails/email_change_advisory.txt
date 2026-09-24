@@ -1,0 +1,15 @@
+Hello {{ user_name }},
+
+Security Alert: A request was made to update the email address for your {{ site_name }} account to {{ pending_email }}.
+
+Your current email address ({{ current_email }}) will remain active and continue receiving lesson notifications until the new address is confirmed.
+
+If you requested this change, no action is required from you at this address.
+
+If you did NOT request this change, someone may be attempting to access your account. Please cancel the change request immediately by visiting the link below:
+
+{{ revocation_url }}
+
+--
+{{ site_name }}
+{{ site_url }}

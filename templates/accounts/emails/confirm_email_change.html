@@ -1,0 +1,51 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Confirm your new email address – {{ site_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+    <span style="display: inline-block; padding: 4px 12px; background-color: #E8F5E9; color: #2E7D32; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Email Address Change
+    </span>
+</div>
+
+<h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: #2F3E32; line-height: 1.3;">
+    Confirm Your New Email Address
+</h1>
+
+<p style="margin: 0 0 16px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    Hi <strong>{{ user_name }}</strong>,
+</p>
+
+<p style="margin: 0 0 16px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    You recently requested to update your email address on <strong>{{ site_name }}</strong> to <strong>{{ pending_email }}</strong>.
+</p>
+
+<p style="margin: 0 0 24px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    Please click the button below to confirm that you own this email address and complete the update:
+</p>
+
+<!-- Call to Action Button -->
+<div style="margin: 32px 0; text-align: center;">
+    <a href="{{ confirmation_url }}" style="display: inline-block; padding: 14px 32px; background-color: #4F7A62; color: #FFFFFF; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px; box-shadow: 0 2px 6px rgba(79, 122, 98, 0.25);">
+        Confirm Email Address
+    </a>
+</div>
+
+<p style="margin: 0 0 12px; font-size: 13px; color: #5C6E61; line-height: 1.5;">
+    This confirmation link is valid for <strong>24 hours</strong>. If you did not request this email address change, you can safely ignore this email.
+</p>
+
+<div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid #F1EAE4;">
+    <p style="margin: 0 0 8px; font-size: 12px; color: #8F9E94;">
+        If the button above doesn't work, copy and paste this link into your browser:
+    </p>
+    <p style="margin: 0; font-size: 12px; color: #4F7A62; word-break: break-all;">
+        <a href="{{ confirmation_url }}" style="color: #4F7A62; text-decoration: underline;">{{ confirmation_url }}</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block footer_note %}
+This is an automated notification regarding an email change request on {{ site_name }}.
+{% endblock %}
