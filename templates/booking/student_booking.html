@@ -31,7 +31,8 @@
     data-teacher-avatar-url="{{ teacher_profile_picture|default:'' }}"
     data-teacher-avatar-color="{{ teacher_avatar_color }}" data-lesson-type-display="{{ lesson_type_display }}"
     data-week-ajax-url="{% url 'booking:student_booking_week_ajax' %}"
-    data-book-slot-url="{% url 'booking:book_slot' %}">
+    data-book-slot-url="{% url 'booking:book_slot' %}"
+    data-resend-verification-url="{% url 'accounts:resend_verification_email' %}">
     {% include "partials/_day_picker_columns.html" %}
 </div>
 
@@ -49,6 +50,20 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <div id="modalVerificationAlert" class="alert alert-warning d-none mb-3" role="alert">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                        <div>
+                            <div>Email verification is required before you can book a lesson. Please check your inbox or resend the verification link.</div>
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-warning text-dark border-warning" id="modalResendVerificationBtn">
+                                    Resend verification link
+                                </button>
+                                <span id="modalResendFeedback" class="small ms-2"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <table class="table mb-0">
                     <thead>
                         <tr>

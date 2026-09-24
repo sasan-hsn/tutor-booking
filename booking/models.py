@@ -32,6 +32,9 @@ class RegularAvailability(models.Model):
     def clean(self):
         super().clean()
 
+        if self.teacher_id and hasattr(self.teacher, 'user') and not self.teacher.user.is_email_verified:
+            raise ValidationError("You must verify your email address before setting availability.")
+
         if self.start_time and self.end_time and self.start_time >= self.end_time:
             raise ValidationError({'end_time': 'End time must be after start time.'})
 
@@ -68,6 +71,9 @@ class WeeklyOverride(models.Model):
 
     def clean(self):
         super().clean()
+
+        if self.teacher_id and hasattr(self.teacher, 'user') and not self.teacher.user.is_email_verified:
+            raise ValidationError("You must verify your email address before setting availability.")
 
         # Case 1: Full-day off override (is_available = False)
         if not self.is_available:

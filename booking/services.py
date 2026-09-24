@@ -35,10 +35,14 @@ def get_availability_windows(teacher, date_val: date):
     Returns a list of (start_time, end_time) tuples representing the
     teacher's available windows on date_val.
 
+    If the teacher is unverified, no windows are published.
     If any WeeklyOverride exists for this date, only override
     windows apply (RegularAvailability is ignored); otherwise RegularAvailability
     for that weekday applies.
     """
+    if not teacher or not getattr(teacher, 'user', None) or not getattr(teacher.user, 'is_email_verified', False):
+        return []
+
     # Evaluate overrides in a single database query
     overrides = list(
         WeeklyOverride.objects.filter(teacher=teacher, date=date_val).order_by('start_time')

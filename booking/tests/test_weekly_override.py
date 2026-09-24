@@ -12,7 +12,7 @@ User = get_user_model()
 class WeeklyOverrideModelTest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='test_teacher', password='password123'
+            username='test_teacher', password='password123', is_email_verified=True
         )
         self.teacher = TeacherProfile.objects.create(user=self.user)
         self.target_date = date(2026, 9, 20)
@@ -138,3 +138,20 @@ class WeeklyOverrideModelTest(TestCase):
         )
         with self.assertRaises(ValidationError):
             second_day_off.full_clean()
+
+    # 9. Error when teacher is unverified
+    def test_unverified_teacher_cannot_create_weekly_override(self):
+        """Test ValidationError when teacher is unverified."""
+        self.user.is_email_verified = False
+        self.user.save()
+
+        override = WeeklyOverride(
+            teacher=self.teacher,
+            date=self.target_date,
+            start_time=time(10, 0),
+            end_time=time(14, 0),
+            is_available=True,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            override.full_clean()
+        self.assertIn('You must verify your email address before setting availability.', str(ctx.exception))
