@@ -236,6 +236,124 @@ class LoginViewTestCase(TestCase):
             })
             self.assertEqual(response.status_code, 200)
             self.assertContains(response, 'Please enter a correct')
+
+    def test_global_ip_rate_limiting_locks_out_on_twenty_first_attempt_across_multiple_users(self):
+        client_ip = '198.51.100.99'
+        for i in range(20):
+            response = self.client.post(reverse('accounts:login'), {
+                'username': f'sprayed_user_{i}',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR=client_ip)
+            self.assertEqual(response.status_code, 200, f"Attempt {i+1} should return 200")
+
+        # 21st attempt across different username from the same IP is locked out
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'wrongpassword',
+        }, REMOTE_ADDR=client_ip)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn('Retry-After', response.headers)
+        retry_after = int(response['Retry-After'])
+        self.assertGreater(retry_after, 0)
+        self.assertLessEqual(retry_after, 900)
+        self.assertContains(response, 'alert alert-danger', status_code=429)
+        self.assertContains(response, 'Too many failed login attempts', status_code=429)
+        self.assertContains(response, '15 minutes', status_code=429)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    def test_global_ip_lockout_pre_auth_short_circuit_prevents_password_hashing(self):
+        client_ip = '198.51.100.99'
+        for i in range(20):
+            self.client.post(reverse('accounts:login'), {
+                'username': f'sprayed_user_{i}',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR=client_ip)
+
+        with patch('django.contrib.auth.authenticate') as mock_auth:
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'testpass123',
+            }, REMOTE_ADDR=client_ip)
+            self.assertEqual(response.status_code, 429)
+            mock_auth.assert_not_called()
+
+    def test_global_ip_lockout_structured_security_logging(self):
+        client_ip = '198.51.100.99'
+        for i in range(20):
+            self.client.post(reverse('accounts:login'), {
+                'username': f'sprayed_user_{i}',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR=client_ip)
+
+        with self.assertLogs('accounts.rate_limiting', level='WARNING') as cm:
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'SuperSecretPasswordNeverLog123!',
+            }, REMOTE_ADDR=client_ip)
+            self.assertEqual(response.status_code, 429)
+
+        self.assertIn(client_ip, cm.output[0])
+        self.assertIn('student1', cm.output[0])
+        self.assertIn('ip_ceiling', cm.output[0])
+        self.assertNotIn('SuperSecretPasswordNeverLog123!', cm.output[0])
+
+    def test_global_ip_lockout_allows_different_ip(self):
+        ip_a = '198.51.100.99'
+        ip_b = '198.51.100.100'
+
+        for i in range(20):
+            self.client.post(reverse('accounts:login'), {
+                'username': f'sprayed_user_{i}',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR=ip_a)
+
+        # IP A is locked out
+        response_ip_a = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        }, REMOTE_ADDR=ip_a)
+        self.assertEqual(response_ip_a.status_code, 429)
+
+        # IP B can log in successfully with valid credentials
+        response_ip_b = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        }, REMOTE_ADDR=ip_b)
+        self.assertRedirects(response_ip_b, reverse('booking:student_dashboard'))
+
+    def test_successful_login_does_not_reset_global_ip_ceiling(self):
+        client_ip = '198.51.100.99'
+        # 19 failed attempts across sprayed usernames
+        for i in range(19):
+            self.client.post(reverse('accounts:login'), {
+                'username': f'sprayed_user_{i}',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR=client_ip)
+
+        # 20th attempt: legitimate user logs in successfully
+        valid_response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        }, REMOTE_ADDR=client_ip)
+        self.assertRedirects(valid_response, reverse('booking:student_dashboard'))
+
+        # Log out
+        self.client.logout()
+
+        # Another failed attempt from the same IP (makes total IP failures = 20)
+        fail_response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'wrongpassword',
+        }, REMOTE_ADDR=client_ip)
+        self.assertEqual(fail_response.status_code, 200)
+
+        # 21st attempt is now locked out because IP ceiling was NOT cleared by successful login
+        blocked_response = self.client.post(reverse('accounts:login'), {
+            'username': 'other_student',
+            'password': 'wrongpassword',
+        }, REMOTE_ADDR=client_ip)
+        self.assertEqual(blocked_response.status_code, 429)
+
    
 
 
