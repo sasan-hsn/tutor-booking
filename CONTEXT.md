@@ -76,3 +76,8 @@ _Avoid_: Account ban, account suspension, IP blacklist
 A client IP or user currently restricted from performing sensitive actions (such as logging in or requesting verification emails) due to exceeding request frequency thresholds.
 _Avoid_: Blocked client, throttled user, banned visitor
 
+**Global IP Ceiling**:
+A sliding-window rate limit restricting total failed authentication attempts originating from a single IP address across all usernames to mitigate horizontal password spraying and distributed credential stuffing.
+_Avoid_: IP blacklist, IP ban, server firewall block
+
+

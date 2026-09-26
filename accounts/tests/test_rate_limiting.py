@@ -5,12 +5,16 @@ from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase
 
 from accounts.rate_limiting import (
+    LOCKOUT_TYPE_COMPOUND,
+    LOCKOUT_TYPE_IP_CEILING,
+    check_login_ip_rate_limit,
     check_login_rate_limit,
     check_resend_rate_limit,
     get_client_ip,
     normalize_username,
     record_login_failure,
     record_resend_attempt,
+    reset_login_ip_rate_limit,
     reset_login_rate_limit,
 )
 
@@ -241,5 +245,149 @@ class RateLimitingUnitTests(SimpleTestCase):
         with patch.object(cache, 'set', side_effect=Exception("Redis write error")):
             # Should not raise exception
             record_resend_attempt(ip='10.0.0.1')
+
+    def test_login_ip_rate_limit_initial_allowed(self):
+        allowed, retry_after = check_login_ip_rate_limit(ip='10.0.0.1')
+        self.assertTrue(allowed)
+        self.assertEqual(retry_after, 0)
+
+    def test_login_ip_rate_limit_locks_out_after_twenty_failures(self):
+        ip = '10.0.0.1'
+        for i in range(20):
+            allowed, retry_after = check_login_ip_rate_limit(ip=ip)
+            self.assertTrue(allowed, f"Attempt {i+1} should be allowed before 20 failures are recorded")
+            self.assertEqual(retry_after, 0)
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        # 21st attempt from this IP is locked out
+        allowed, retry_after = check_login_ip_rate_limit(ip=ip)
+        self.assertFalse(allowed)
+        self.assertGreater(retry_after, 0)
+        self.assertLessEqual(retry_after, 900)
+
+    def test_check_login_rate_limit_enforces_ip_ceiling_across_distinct_users(self):
+        ip = '10.0.0.1'
+        for i in range(20):
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        # Attempt for a completely fresh user21 from the same IP is blocked
+        allowed, retry_after = check_login_rate_limit(ip=ip, username='user_21')
+        self.assertFalse(allowed)
+        self.assertGreater(retry_after, 0)
+        self.assertLessEqual(retry_after, 900)
+
+    def test_login_ip_rate_limit_sliding_window_expiration(self):
+        ip = '10.0.0.1'
+        now = 2000.0
+        key = f"rl:login:ip:{ip}"
+        # 20 attempts recorded at t=1099.0 (relative to now=2000.0, 2000 - 1099 = 901 > 900)
+        cache.set(key, [1099.0] * 20, timeout=900)
+
+        from unittest.mock import patch
+        with patch('time.time', return_value=now):
+            allowed, retry_after = check_login_ip_rate_limit(ip=ip)
+            self.assertTrue(allowed)
+            self.assertEqual(retry_after, 0)
+
+    def test_login_ip_rate_limit_passive_rejection_does_not_extend_window(self):
+        ip = '10.0.0.1'
+        from unittest.mock import patch
+        with patch('time.time', return_value=1000.0):
+            for i in range(20):
+                record_login_failure(ip=ip, username=f"user_{i}")
+
+        # At t=1300 (300s into 900s window -> 600s remaining)
+        with patch('time.time', return_value=1300.0):
+            allowed, retry_after_1 = check_login_ip_rate_limit(ip=ip)
+            self.assertFalse(allowed)
+            self.assertEqual(retry_after_1, 600)
+
+        # At t=1500 (500s into 900s window -> 400s remaining)
+        with patch('time.time', return_value=1500.0):
+            allowed, retry_after_2 = check_login_ip_rate_limit(ip=ip)
+            self.assertFalse(allowed)
+            self.assertEqual(retry_after_2, 400)
+
+    def test_reset_login_ip_rate_limit(self):
+        ip = '10.0.0.1'
+        for i in range(20):
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        allowed, _ = check_login_ip_rate_limit(ip=ip)
+        self.assertFalse(allowed)
+
+        reset_login_ip_rate_limit(ip=ip)
+
+        allowed, retry_after = check_login_ip_rate_limit(ip=ip)
+        self.assertTrue(allowed)
+        self.assertEqual(retry_after, 0)
+
+    def test_successful_login_resets_compound_but_not_ip_ceiling(self):
+        ip = '10.0.0.1'
+        for i in range(10):
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        # Reset compound key for user_0
+        reset_login_rate_limit(ip=ip, username='user_0')
+
+        # IP ceiling bucket still has 10 attempts
+        ip_timestamps = cache.get(f"rl:login:ip:{ip}")
+        self.assertEqual(len(ip_timestamps), 10)
+
+    def test_check_login_rate_limit_blocks_without_username_when_ip_ceiling_hit(self):
+        ip = '10.0.0.1'
+        for i in range(20):
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        # Even with empty/None username, global IP ceiling blocks the attempt
+        allowed, retry_after = check_login_rate_limit(ip=ip, username=None)
+        self.assertFalse(allowed)
+        self.assertGreater(retry_after, 0)
+
+        allowed_empty, retry_after_empty = check_login_rate_limit(ip=ip, username='   ')
+        self.assertFalse(allowed_empty)
+        self.assertGreater(retry_after_empty, 0)
+
+    def test_audit_logging_compound_lockout(self):
+        ip = '10.0.0.1'
+        username = 'student1'
+        for _ in range(5):
+            record_login_failure(ip=ip, username=username)
+
+        with self.assertLogs('accounts.rate_limiting', level='WARNING') as cm:
+            allowed, retry_after = check_login_rate_limit(ip=ip, username=username)
+
+        self.assertFalse(allowed)
+        self.assertEqual(len(cm.records), 1)
+        record = cm.records[0]
+        self.assertEqual(record.client_ip, ip)
+        self.assertEqual(record.normalized_username, 'student1')
+        self.assertEqual(record.lockout_type, LOCKOUT_TYPE_COMPOUND)
+        self.assertEqual(record.retry_after, retry_after)
+        self.assertIn(ip, cm.output[0])
+        self.assertIn('student1', cm.output[0])
+        self.assertIn(LOCKOUT_TYPE_COMPOUND, cm.output[0])
+        self.assertNotIn('password', cm.output[0].lower())
+
+    def test_audit_logging_ip_ceiling_lockout(self):
+        ip = '10.0.0.1'
+        for i in range(20):
+            record_login_failure(ip=ip, username=f"user_{i}")
+
+        with self.assertLogs('accounts.rate_limiting', level='WARNING') as cm:
+            allowed, retry_after = check_login_rate_limit(ip=ip, username='fresh_user')
+
+        self.assertFalse(allowed)
+        self.assertEqual(len(cm.records), 1)
+        record = cm.records[0]
+        self.assertEqual(record.client_ip, ip)
+        self.assertEqual(record.normalized_username, 'fresh_user')
+        self.assertEqual(record.lockout_type, LOCKOUT_TYPE_IP_CEILING)
+        self.assertEqual(record.retry_after, retry_after)
+        self.assertIn(ip, cm.output[0])
+        self.assertIn('fresh_user', cm.output[0])
+        self.assertIn(LOCKOUT_TYPE_IP_CEILING, cm.output[0])
+        self.assertNotIn('password', cm.output[0].lower())
+
 
 
