@@ -53,10 +53,16 @@ class StudentSignUpForm(EmailNormalizationAndUniquenessMixin, UserCreationForm):
 
 
 class StyledAuthenticationForm(AuthenticationForm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, rate_limited=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.rate_limited = rate_limited
         for field in self.fields.values():
             field.widget.attrs.update({'class': 'form-control'})
+
+    def clean(self):
+        if self.rate_limited:
+            return self.cleaned_data
+        return super().clean()
 
 
 class StyledPasswordResetForm(PasswordResetForm):

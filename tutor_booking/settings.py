@@ -176,6 +176,7 @@ CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
 # Cache configuration (Redis DB 1 for cache, isolated from Celery broker on DB 0)
 REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', f'redis://{default_redis_host}:6379/1')
+REDIS_PROTOCOL = int(os.getenv('REDIS_PROTOCOL', '2'))
 
 if 'test' in sys.argv:
     CACHES = {
@@ -189,6 +190,9 @@ else:
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': REDIS_CACHE_URL,
+            'OPTIONS': {
+                'protocol': REDIS_PROTOCOL,
+            },
         }
     }
 

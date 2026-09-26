@@ -15,9 +15,12 @@ from .forms import (
 )
 from .models import User
 from .rate_limiting import (
+    check_login_rate_limit,
     check_resend_rate_limit,
     get_client_ip,
+    record_login_failure,
     record_resend_attempt,
+    reset_login_rate_limit,
 )
 from .tasks import (
     safe_send_email_change_confirmation_email,
@@ -53,9 +56,31 @@ def user_login(request):
     next_url = request.POST.get('next') or request.GET.get('next')
 
     if request.method == 'POST':
+        client_ip = get_client_ip(request)
+        raw_username = request.POST.get('username', '')
+
+        is_allowed, retry_after = check_login_rate_limit(client_ip, raw_username)
+        if not is_allowed:
+            form = StyledAuthenticationForm(request, data=request.POST, rate_limited=True)
+            minutes = max(1, round(retry_after / 60))
+            error_msg = (
+                f"Too many failed login attempts. Please try again in {minutes} "
+                f"minute{'s' if minutes != 1 else ''}."
+            )
+            form.add_error(None, error_msg)
+            response = render(
+                request,
+                'accounts/login.html',
+                {'form': form, 'next': next_url or ''},
+                status=429,
+            )
+            response['Retry-After'] = str(retry_after)
+            return response
+
         form = StyledAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
+            reset_login_rate_limit(client_ip, raw_username)
             login(request, user)
 
             if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
@@ -64,6 +89,8 @@ def user_login(request):
             if user.role == User.Role.TEACHER:
                 return redirect('booking:teacher_dashboard')
             return redirect('booking:student_dashboard')
+        else:
+            record_login_failure(client_ip, raw_username)
     else:
         form = StyledAuthenticationForm()
     return render(request, 'accounts/login.html', {'form': form, 'next': next_url or ''})
