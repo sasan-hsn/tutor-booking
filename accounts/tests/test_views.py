@@ -64,12 +64,24 @@ class LoginViewTestCase(TestCase):
         self.assertEqual(response.wsgi_request.user.role, User.Role.TEACHER)
         self.assertRedirects(response, reverse('booking:teacher_dashboard'))
 
+    def test_login_page_renders_clean_without_error_alert(self):
+        response = self.client.get(reverse('accounts:login'))
+        self.assertEqual(response.status_code, 200)
+        form = response.context['form']
+        self.assertFalse(form.non_field_errors())
+        self.assertNotContains(response, 'alert alert-danger')
+
     def test_invalid_credentials_not_authenticated(self):
         response = self.client.post(reverse('accounts:login'), {
             'username': 'student1',
             'password': 'wrongpassword',
         })
-        self.assertFalse(response.wsgi_request.user.is_authenticated)   
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        form = response.context['form']
+        self.assertTrue(form.non_field_errors())
+        self.assertContains(response, 'alert alert-danger')
+        self.assertContains(response, 'Please enter a correct')   
 
 
 class LogoutViewTestCase(TestCase):
