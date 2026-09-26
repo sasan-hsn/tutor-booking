@@ -93,6 +93,12 @@ h1, h2, h3, h4, h5, h6,
     display: inline-block;
 }
 
+.alert .errorlist {
+    margin-bottom: 0;
+    padding-left: 0;
+    list-style: none;
+}
+
 /* --------------------------------------------------------------------------
    3. Buttons & Interactive Elements
    -------------------------------------------------------------------------- */
