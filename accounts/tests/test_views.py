@@ -1,5 +1,7 @@
+from unittest.mock import patch
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils.encoding import force_bytes
@@ -39,12 +41,17 @@ class SignupViewTestCase(TestCase):
 
 class LoginViewTestCase(TestCase):
     def setUp(self):
+        cache.clear()
         self.student = User.objects.create_user(
             username='student1', password='testpass123', role=User.Role.STUDENT
         )
         self.teacher = User.objects.create_user(
             username='teacher1', password='testpass123', role=User.Role.TEACHER
         )
+
+    def tearDown(self):
+        super().tearDown()
+        cache.clear()
 
     def test_student_login_authenticates_and_redirects(self):
         response = self.client.post(reverse('accounts:login'), {
@@ -81,7 +88,155 @@ class LoginViewTestCase(TestCase):
         form = response.context['form']
         self.assertTrue(form.non_field_errors())
         self.assertContains(response, 'alert alert-danger')
-        self.assertContains(response, 'Please enter a correct')   
+        self.assertContains(response, 'Please enter a correct')
+
+    def test_login_rate_limiting_locks_out_on_sixth_attempt(self):
+        for i in range(5):
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+            self.assertEqual(response.status_code, 200, f"Attempt {i+1} should return 200")
+
+        # 6th attempt should be rejected with 429 Too Many Requests
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'wrongpassword',
+        })
+        self.assertEqual(response.status_code, 429)
+        self.assertIn('Retry-After', response.headers)
+        retry_after = int(response['Retry-After'])
+        self.assertGreater(retry_after, 0)
+        self.assertLessEqual(retry_after, 300)
+        self.assertContains(response, 'alert alert-danger', status_code=429)
+        self.assertContains(response, 'Too many failed login attempts', status_code=429)
+        self.assertContains(response, 'minute', status_code=429)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    def test_pre_auth_short_circuit_prevents_password_hashing(self):
+        for _ in range(5):
+            self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+
+        # During lockout, authenticate() should never be invoked
+        with patch('django.contrib.auth.authenticate') as mock_auth:
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'testpass123',
+            })
+            self.assertEqual(response.status_code, 429)
+            mock_auth.assert_not_called()
+
+    def test_passive_rejection_does_not_extend_lockout(self):
+        with patch('time.time', return_value=1000.0):
+            for _ in range(5):
+                self.client.post(reverse('accounts:login'), {
+                    'username': 'student1',
+                    'password': 'wrongpassword',
+                })
+
+        with patch('time.time', return_value=1050.0):
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+            self.assertEqual(response.status_code, 429)
+            self.assertEqual(response['Retry-After'], '250')
+
+        # Checking at t=1100 should show remaining 200s, proving cooldown was not reset to 300s
+        with patch('time.time', return_value=1100.0):
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+            self.assertEqual(response.status_code, 429)
+            self.assertEqual(response['Retry-After'], '200')
+
+    def test_successful_login_resets_rate_limit(self):
+        for _ in range(4):
+            self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+
+        # 5th attempt is valid -> authenticates and clears counter
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        })
+        self.assertRedirects(response, reverse('booking:student_dashboard'))
+
+        # Subsequent failed attempt is allowed as attempt 1 (200, not 429)
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'wrongpassword',
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_ip_isolation_allows_login_from_different_ip(self):
+        # 5 failed attempts from IP A
+        for _ in range(5):
+            self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            }, REMOTE_ADDR='198.51.100.1')
+
+        # IP A is locked out
+        response_ip_a = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        }, REMOTE_ADDR='198.51.100.1')
+        self.assertEqual(response_ip_a.status_code, 429)
+
+        # IP B can log in successfully with valid credentials
+        response_ip_b = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'testpass123',
+        }, REMOTE_ADDR='198.51.100.2')
+        self.assertRedirects(response_ip_b, reverse('booking:student_dashboard'))
+
+    def test_username_normalization_applies_across_case_and_whitespace(self):
+        for _ in range(2):
+            self.client.post(reverse('accounts:login'), {
+                'username': '  student1  ',
+                'password': 'wrongpassword',
+            })
+        for _ in range(3):
+            self.client.post(reverse('accounts:login'), {
+                'username': 'STUDENT1',
+                'password': 'wrongpassword',
+            })
+
+        # 6th attempt with lowercase normalized username is locked out
+        response = self.client.post(reverse('accounts:login'), {
+            'username': 'student1',
+            'password': 'wrongpassword',
+        })
+        self.assertEqual(response.status_code, 429)
+
+    def test_login_fails_open_when_cache_backend_errors(self):
+        # Simulate Redis ResponseError: unknown command `HELLO` or connectivity crash
+        with patch.object(cache, 'get', side_effect=Exception("unknown command `HELLO`")):
+            # Valid login should succeed without 500
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'testpass123',
+            })
+            self.assertRedirects(response, reverse('booking:student_dashboard'))
+            self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+        with patch.object(cache, 'get', side_effect=Exception("unknown command `HELLO`")), \
+             patch.object(cache, 'set', side_effect=Exception("unknown command `HELLO`")):
+            # Invalid login should return 200 with invalid credentials message, not 500
+            response = self.client.post(reverse('accounts:login'), {
+                'username': 'student1',
+                'password': 'wrongpassword',
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'Please enter a correct')
+   
 
 
 class LogoutViewTestCase(TestCase):

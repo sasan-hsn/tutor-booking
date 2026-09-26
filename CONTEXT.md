@@ -67,3 +67,12 @@ _Avoid_: Activation code, confirmation hash, verification key
 **Revocation Link**:
 A one-click security URL included in advisory emails that allows an account holder to immediately terminate an unauthorized pending email change.
 _Avoid_: Undo link, cancellation button
+
+**Login Lockout**:
+A temporary security block on authentication attempts for a specific (IP address, account) or client after repeated failed login attempts.
+_Avoid_: Account ban, account suspension, IP blacklist
+
+**Rate-Limited Client**:
+A client IP or user currently restricted from performing sensitive actions (such as logging in or requesting verification emails) due to exceeding request frequency thresholds.
+_Avoid_: Blocked client, throttled user, banned visitor
+
