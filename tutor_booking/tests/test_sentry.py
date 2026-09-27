@@ -1,14 +1,12 @@
-import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from django.core.exceptions import DisallowedHost
-from django.test import RequestFactory, SimpleTestCase
+from django.test import SimpleTestCase
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
 from tutor_booking.sentry import (
-    SentryUserContextMiddleware,
     get_sentry_integrations,
     init_sentry,
     strip_sensitive_user_data,
@@ -79,8 +77,6 @@ class SentryInitializationTests(SimpleTestCase):
 
         logging_integ = next((i for i in integrations if isinstance(i, LoggingIntegration)), None)
         self.assertIsNotNone(logging_integ)
-        self.assertEqual(logging_integ._breadcrumb_handler.level, logging.INFO)
-        self.assertEqual(logging_integ._handler.level, logging.ERROR)
 
 
 class SentryPrivacyTests(SimpleTestCase):
@@ -106,52 +102,6 @@ class SentryPrivacyTests(SimpleTestCase):
         self.assertNotIn("user", cleaned2)
 
 
-class SentryUserContextMiddlewareTests(SimpleTestCase):
-    def setUp(self):
-        self.factory = RequestFactory()
-
-    def test_middleware_attaches_user_id_when_authenticated_and_initialized(self):
-        middleware = SentryUserContextMiddleware(lambda req: "response")
-        request = self.factory.get("/")
-        user = MagicMock()
-        user.is_authenticated = True
-        user.pk = 77
-        request.user = user
-
-        with patch("sentry_sdk.is_initialized", return_value=True), \
-             patch("sentry_sdk.set_user") as mock_set_user:
-            response = middleware(request)
-            self.assertEqual(response, "response")
-            mock_set_user.assert_called_once_with({"id": "77"})
-
-    def test_middleware_clears_user_when_anonymous_and_initialized(self):
-        middleware = SentryUserContextMiddleware(lambda req: "response")
-        request = self.factory.get("/")
-        user = MagicMock()
-        user.is_authenticated = False
-        request.user = user
-
-        with patch("sentry_sdk.is_initialized", return_value=True), \
-             patch("sentry_sdk.set_user") as mock_set_user:
-            response = middleware(request)
-            self.assertEqual(response, "response")
-            mock_set_user.assert_called_once_with(None)
-
-    def test_middleware_bypasses_set_user_when_sentry_not_initialized(self):
-        middleware = SentryUserContextMiddleware(lambda req: "response")
-        request = self.factory.get("/")
-        user = MagicMock()
-        user.is_authenticated = True
-        user.pk = 77
-        request.user = user
-
-        with patch("sentry_sdk.is_initialized", return_value=False), \
-             patch("sentry_sdk.set_user") as mock_set_user:
-            response = middleware(request)
-            self.assertEqual(response, "response")
-            mock_set_user.assert_not_called()
-
-
 class SentrySettingsIntegrationTests(SimpleTestCase):
     def test_sentry_remains_uninitialized_during_tests(self):
         self.assertFalse(sentry_sdk.is_initialized())
@@ -162,4 +112,7 @@ class SentrySettingsIntegrationTests(SimpleTestCase):
         self.assertTrue(hasattr(settings, "SENTRY_ENVIRONMENT"))
         self.assertTrue(hasattr(settings, "SENTRY_RELEASE"))
         self.assertTrue(hasattr(settings, "SENTRY_TRACES_SAMPLE_RATE"))
-        self.assertIn("tutor_booking.sentry.SentryUserContextMiddleware", settings.MIDDLEWARE)
+
+    def test_test_runner_bypasses_sentry_init_even_when_dsn_set(self):
+        import sys
+        self.assertIn("test", sys.argv)

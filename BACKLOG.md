@@ -25,7 +25,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
   - [x] Non-field error alert banner on login page (#193)
   - [x] Compound (IP, username) login rate limiting & pre-auth short-circuit (#194)
   - [x] Global IP ceiling on login & structured security audit logging (#195)
-- [ ] Error monitoring in production (e.g. Sentry — free tier is enough at this scale) (#199)
+- [x] Error monitoring in production (e.g. Sentry — free tier is enough at this scale) (#199)
 - [ ] Actually test restoring from a `.sql.gz` backup file (an untested backup is a risk)
 
 ## 🚀 Major planned features (rough priority order)

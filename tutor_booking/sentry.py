@@ -66,21 +66,3 @@ def init_sentry(
     )
     return True
 
-
-class SentryUserContextMiddleware:
-    """
-    Attach the surrogate user ID (pk) to the Sentry scope for authenticated requests.
-    Clears user context for anonymous requests. Safe no-op when Sentry is not initialized.
-    """
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        if sentry_sdk.is_initialized():
-            user = getattr(request, "user", None)
-            if user and getattr(user, "is_authenticated", False) and getattr(user, "pk", None):
-                sentry_sdk.set_user({"id": str(user.pk)})
-            else:
-                sentry_sdk.set_user(None)
-        return self.get_response(request)
