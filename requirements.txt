@@ -10,3 +10,4 @@ redis==8.1.0
 sqlparse==0.5.5
 tzdata==2026.3
 gunicorn==23.0.0
+sentry-sdk==2.70.0
