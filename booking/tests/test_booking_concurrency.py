@@ -1,8 +1,9 @@
 import threading
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from django.test import TransactionTestCase, Client
 from django.urls import reverse
+from django.utils import timezone
 from django.db import connection
 from accounts.models import User
 from booking.models import RegularAvailability, Booking
@@ -22,9 +23,14 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             username='student2', password='test123', role=User.Role.STUDENT, is_email_verified=True
         )
 
-        # 2026-09-28 is a Monday
+        # Ensure slot is on a future Monday
+        today = timezone.now().date()
+        days_until_next_monday = (0 - today.weekday()) % 7
+        if days_until_next_monday <= 0:
+            days_until_next_monday += 7
+        next_monday = today + timedelta(days=days_until_next_monday)
         self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
-        self.slot_start_at = datetime(2026, 9, 28, 10, 0, tzinfo=self.teacher_tz)
+        self.slot_start_at = datetime.combine(next_monday, time(10, 0), tzinfo=self.teacher_tz)
 
         RegularAvailability.objects.create(
             teacher=self.teacher,

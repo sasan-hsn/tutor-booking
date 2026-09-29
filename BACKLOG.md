@@ -26,7 +26,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
   - [x] Compound (IP, username) login rate limiting & pre-auth short-circuit (#194)
   - [x] Global IP ceiling on login & structured security audit logging (#195)
 - [x] Error monitoring in production (e.g. Sentry — free tier is enough at this scale) (#199)
-- [ ] Actually test restoring from a `.sql.gz` backup file (an untested backup is a risk)
+- [x] Actually test restoring from a `.sql.gz` backup file (an untested backup is a risk) (#201, #202, #203, #204, #205)
 
 ## 🚀 Major planned features (rough priority order)
 - [x] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep, teacher daily digest, Brevo HTTP API integration, resilient broker dispatch) (#160, #178, #180)
