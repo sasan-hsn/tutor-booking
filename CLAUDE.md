@@ -72,7 +72,11 @@ Chose a manual VPS + Docker Compose (over PaaS like Railway/Render) deliberately
 - **Static/media files:** `docker-compose.prod.yml` uses **bind mounts** (`./staticfiles:/app/staticfiles`, `./media:/app/media`), NOT named volumes. **Important history:** this was originally a named volume, which caused a production bug — Nginx (running on the host as `www-data`) couldn't read Docker's internally-managed volume storage (root-only permissions), causing uploaded teacher photos to 403. Fixed by switching to bind mounts pointing at a known host path (`~/app/staticfiles`, `~/app/media`), plus `chmod o+x` on `/home/deployer` and `~/app` (execute-only, not read — needed for Nginx to traverse into the bind-mount path without being able to list/browse the rest of the home directory).
 - **Nginx** (installed directly on the VPS host, not containerized — deliberate choice: unnecessary complexity for a single-project server, would reconsider if multiple projects were hosted on the same box): reverse proxy to `127.0.0.1:8000`, serves `/static/` and `/media/` directly via `alias`, HTTPS via Let's Encrypt/Certbot (auto HTTP→HTTPS redirect for both apex and `www`)
 - **Firewall:** `ufw`, default deny incoming / allow outgoing, only `22/tcp`, `80/tcp`, `443/tcp` open
-- **Backups:** `~/backup_db.sh` — daily `pg_dump` from the `postgres` container, gzip-compressed, 7-day retention, scheduled via crontab
+- **Disaster Recovery & Backups:**
+  - Automated dual-artifact backups via repository-tracked `scripts/backup.sh` (PostgreSQL `.sql.gz` + media `.tar.gz`), scheduled daily via crontab under `deployer` (`0 2 * * * /home/deployer/app/scripts/backup.sh --env prod --backup-dir /home/deployer/backups --retention-days 7 >> /home/deployer/backups/backup.log 2>&1`).
+  - Safe restoration tooling via `scripts/restore.sh` (defaults to isolated test database `tutor_booking_restore_test`; blocks production restores without `--dangerously-restore-to-production` and typed confirmation).
+  - Automated post-restore verification via `python manage.py verify_database_integrity` (validates migrations, entity counts, referential integrity, password hashers, and on-disk media existence).
+  - Step-by-step drill and emergency recovery procedures documented in `docs/runbooks/disaster-recovery.md`.
 - **Docker log rotation:** configured daemon-wide in `/etc/docker/daemon.json` (`max-size: 50m`, `max-file: 5`) to prevent disk fill-up over time — applies to every container automatically
 
 ### CI/CD
