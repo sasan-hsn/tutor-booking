@@ -1,0 +1,50 @@
+{% load avatar_tags %}
+
+{% for booking in upcoming_bookings %}
+<div class="lesson-card{% if booking.is_awaiting_resolution %} lesson-card-needs-action{% endif %}"
+    data-booking-id="{{ booking.id }}">
+    <div class="lesson-card-date">
+        {% if user.teacher_profile %}
+        <span class="lesson-card-month">{{ booking.teacher_local_start|date:"M" }}</span>
+        <span class="lesson-card-day">{{ booking.teacher_local_start|date:"d" }}</span>
+        <span class="lesson-card-weekday">{{ booking.teacher_local_start|date:"D" }}</span>
+        {% else %}
+        <span class="lesson-card-month">{{ booking.student_local_start|date:"M" }}</span>
+        <span class="lesson-card-day">{{ booking.student_local_start|date:"d" }}</span>
+        <span class="lesson-card-weekday">{{ booking.student_local_start|date:"D" }}</span>
+        {% endif %}
+    </div>
+    <div class="lesson-card-body">
+        {% if user.teacher_profile %}
+        <span class="lesson-card-time">
+            {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
+        </span>
+        {% else %}
+        <span class="lesson-card-time">
+            {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
+        </span>
+        {% endif %}
+        {% if user.teacher_profile %}
+        <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
+        {% else %}
+        <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
+        {% endif %}
+        {% if booking.is_live %}
+        <span class="badge-live">
+            <span class="badge-live-dot"></span> Live Now
+        </span>
+        {% elif booking.is_awaiting_resolution %}
+        <span class="badge-needs-action">Needs Action</span>
+        {% else %}
+        <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
+        {% endif %}
+    </div>
+    <div class="lesson-card-avatar">
+        {% if user.teacher_profile %}
+        {% user_avatar booking.student_display_user 48 %}
+        {% else %}
+        {% user_avatar booking.teacher_display_user 48 %}
+        {% endif %}
+    </div>
+</div>
+{% endfor %}

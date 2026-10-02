@@ -96,4 +96,12 @@ _Avoid_: Dry run, restore simulation, mock recovery
 An automated sanity check validating that a restored database possesses valid schema migrations, relational integrity across users and bookings, and readable password hashes.
 _Avoid_: Health check, smoke test
 
+**Upcoming Lessons**:
+The dashboard collection of confirmed bookings scheduled in the future (`end_at >= now`), including bookings awaiting resolution for teachers.
+_Avoid_: Future bookings, active bookings, scheduled appointments
+
+**Past Lessons**:
+The dashboard collection of lessons that have already taken place, comprising completed bookings and, for students, bookings awaiting teacher resolution.
+_Avoid_: Lesson history, completed classes, archived lessons
+
 

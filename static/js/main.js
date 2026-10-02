@@ -56,16 +56,128 @@ function initLessonCardsScroll() {
         const rightArrow = wrapper.querySelector('.scroll-arrow-right');
         const scrollAmount = 320;
 
+        let sentinel = scrollEl.querySelector('.carousel-sentinel');
+        let hasNext = Boolean(sentinel);
+        let nextPage = sentinel && sentinel.dataset.nextPage ? parseInt(sentinel.dataset.nextPage, 10) : 2;
+        const section = scrollEl.dataset.section || (sentinel && sentinel.dataset.section);
+        const ajaxUrl = scrollEl.dataset.ajaxUrl || window.location.pathname;
+
+        let isLoading = false;
+        let pendingAutoScroll = false;
+        let loadingCard = null;
+
         function updateArrows() {
+            const isAtStart = scrollEl.scrollLeft <= 0;
+            const isAtEnd = scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1;
+            const isRightDisabled = isAtEnd && !hasNext;
+
             if (leftArrow) {
-                leftArrow.classList.toggle('is-hidden', scrollEl.scrollLeft <= 0);
+                leftArrow.disabled = isAtStart;
             }
             if (rightArrow) {
-                rightArrow.classList.toggle(
-                    'is-hidden',
-                    scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1
-                );
+                rightArrow.disabled = isRightDisabled;
             }
+        }
+
+        function checkPrefetch(offset = 0) {
+            if (hasNext && (scrollEl.scrollLeft + scrollEl.clientWidth + offset >= scrollEl.scrollWidth - 250)) {
+                loadNextPage();
+            }
+        }
+
+        function showLoadingIndicator() {
+            if (!loadingCard && sentinel) {
+                loadingCard = document.createElement('div');
+                loadingCard.className = 'lesson-card lesson-card--loading';
+                loadingCard.innerHTML = `
+                    <div class="d-flex align-items-center justify-content-center w-100 py-3">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                `;
+                sentinel.insertAdjacentElement('beforebegin', loadingCard);
+            }
+        }
+
+        function hideLoadingIndicator() {
+            if (loadingCard) {
+                loadingCard.remove();
+                loadingCard = null;
+            }
+        }
+
+        async function loadNextPage() {
+            if (isLoading || !hasNext || !section) return;
+            isLoading = true;
+            showLoadingIndicator();
+
+            const fetchUrl = `${ajaxUrl}?section=${encodeURIComponent(section)}&page=${nextPage}`;
+            try {
+                const response = await fetch(fetchUrl, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}`);
+                }
+
+                const hasNextHeader = response.headers.get('X-Has-Next');
+                hasNext = hasNextHeader === 'true';
+
+                const nextPageHeader = response.headers.get('X-Next-Page');
+                if (nextPageHeader) {
+                    nextPage = parseInt(nextPageHeader, 10);
+                }
+
+                const html = await response.text();
+
+                hideLoadingIndicator();
+
+                if (html.trim() && sentinel) {
+                    sentinel.insertAdjacentHTML('beforebegin', html);
+                }
+
+                if (pendingAutoScroll) {
+                    scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                    pendingAutoScroll = false;
+                }
+
+                if (!hasNext && sentinel) {
+                    if (observer) {
+                        observer.disconnect();
+                    }
+                    sentinel.remove();
+                    sentinel = null;
+                }
+
+                updateArrows();
+            } catch (err) {
+                console.error('Failed to load next lesson cards page:', err);
+                hideLoadingIndicator();
+                pendingAutoScroll = false;
+            } finally {
+                isLoading = false;
+                updateArrows();
+            }
+        }
+
+        let observer = null;
+        if (sentinel && 'IntersectionObserver' in window) {
+            observer = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        loadNextPage();
+                    }
+                });
+            }, {
+                root: scrollEl,
+                rootMargin: '0px 250px 0px 0px',
+                threshold: 0
+            });
+            observer.observe(sentinel);
         }
 
         if (leftArrow) {
@@ -76,7 +188,14 @@ function initLessonCardsScroll() {
 
         if (rightArrow) {
             rightArrow.addEventListener('click', () => {
-                scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                const isAtEnd = scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 10;
+                if (hasNext && isAtEnd) {
+                    pendingAutoScroll = true;
+                    loadNextPage();
+                } else {
+                    scrollEl.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                    checkPrefetch(scrollAmount);
+                }
             });
         }
 
@@ -86,6 +205,7 @@ function initLessonCardsScroll() {
             if (e.deltaY === 0) return;
             e.preventDefault();
             scrollEl.scrollBy({ left: e.deltaY, behavior: 'smooth' });
+            checkPrefetch();
         });
 
         updateArrows();
