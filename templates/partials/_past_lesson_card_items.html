@@ -1,0 +1,32 @@
+{% load avatar_tags %}
+
+{% for booking in past_bookings %}
+<div class="lesson-card" data-booking-id="{{ booking.id }}">
+    <div class="lesson-card-date">
+        <span class="lesson-card-month">{{ booking.student_local_start|date:"M" }}</span>
+        <span class="lesson-card-day">{{ booking.student_local_start|date:"d" }}</span>
+        <span class="lesson-card-weekday">{{ booking.student_local_start|date:"D" }}</span>
+    </div>
+    <div class="lesson-card-body">
+        <span class="lesson-card-time">
+            {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
+        </span>
+        <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
+        {% if booking.is_awaiting_resolution %}
+        <span class="badge-awaiting-resolution">Awaiting Resolution</span>
+        {% elif booking.review %}
+        <span class="review-stars">
+            {% for i in "12345" %}
+            <i
+                class="bi {% if forloop.counter <= booking.review.rating %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+            {% endfor %}
+        </span>
+        {% else %}
+        <span class="badge-leave-review">Leave Review</span>
+        {% endif %}
+    </div>
+    <div class="lesson-card-avatar">
+        {% user_avatar booking.teacher_display_user 48 %}
+    </div>
+</div>
+{% endfor %}

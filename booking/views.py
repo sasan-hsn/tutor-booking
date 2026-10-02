@@ -4,9 +4,10 @@ from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -37,34 +38,83 @@ from .tasks import (
 
 logger = logging.getLogger(__name__)
 
+DASHBOARD_PAGE_SIZE = 6
+
+
+def _get_student_upcoming_queryset(student, now):
+    return (
+        Booking.objects
+        .filter(
+            student=student,
+            status=Booking.Status.CONFIRMED,
+            end_at__gte=now,
+        )
+        .select_related('teacher', 'teacher__user')
+        .order_by('start_at')
+    )
+
+
+def _get_student_past_queryset(student, now):
+    return (
+        Booking.objects
+        .filter(student=student)
+        .filter(
+            Q(status=Booking.Status.COMPLETED)
+            | Q(status=Booking.Status.CONFIRMED, end_at__lt=now)
+        )
+        .select_related('teacher', 'teacher__user', 'review')
+        .order_by('-start_at')
+    )
+
 
 @student_required
 def student_dashboard(request):
     expire_stale_bookings(student=request.user)
 
-    upcoming_bookings = (
-        Booking.objects
-        .filter(
-            student=request.user,
-            status=Booking.Status.CONFIRMED,
-            end_at__gte=timezone.now(),
-        )
-        .select_related('teacher', 'teacher__user')
-        .order_by('start_at')[:10]
-    )
-    past_bookings = (
-        Booking.objects
-        .filter(
-            student=request.user,
-            status=Booking.Status.COMPLETED,
-        )
-        .select_related('teacher', 'teacher__user', 'review')
-        .order_by('-end_at')[:10]
-    )
+    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    now = timezone.now()
+
+    if is_ajax:
+        section = request.GET.get('section')
+        page_number = request.GET.get('page', 1)
+
+        if section == 'upcoming':
+            upcoming_qs = _get_student_upcoming_queryset(request.user, now)
+            paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
+            page_obj = paginator.get_page(page_number)
+            response = render(request, 'partials/_lesson_card_items.html', {
+                'upcoming_bookings': page_obj,
+            })
+            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
+            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            return response
+
+        elif section == 'past':
+            past_qs = _get_student_past_queryset(request.user, now)
+            paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
+            page_obj = paginator.get_page(page_number)
+            response = render(request, 'partials/_past_lesson_card_items.html', {
+                'past_bookings': page_obj,
+            })
+            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
+            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            return response
+
+        return HttpResponseBadRequest('Invalid or missing section parameter.')
+
+    upcoming_qs = _get_student_upcoming_queryset(request.user, now)
+    upcoming_paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
+    upcoming_page = upcoming_paginator.get_page(1)
+
+    past_qs = _get_student_past_queryset(request.user, now)
+    past_paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
+    past_page = past_paginator.get_page(1)
 
     return render(request, 'booking/student_dashboard.html', {
-        'upcoming_bookings': upcoming_bookings,
-        'past_bookings': past_bookings,
+        'upcoming_bookings': upcoming_page,
+        'upcoming_has_next': upcoming_page.has_next(),
+        'past_bookings': past_page,
+        'past_has_next': past_page.has_next(),
     })
 
 
