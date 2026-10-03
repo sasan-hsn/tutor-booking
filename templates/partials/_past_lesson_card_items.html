@@ -3,11 +3,32 @@
 {% for booking in past_bookings %}
 <div class="lesson-card" data-booking-id="{{ booking.id }}">
     <div class="lesson-card-date">
+        {% if user.teacher_profile %}
+        <span class="lesson-card-month">{{ booking.teacher_local_start|date:"M" }}</span>
+        <span class="lesson-card-day">{{ booking.teacher_local_start|date:"d" }}</span>
+        <span class="lesson-card-weekday">{{ booking.teacher_local_start|date:"D" }}</span>
+        {% else %}
         <span class="lesson-card-month">{{ booking.student_local_start|date:"M" }}</span>
         <span class="lesson-card-day">{{ booking.student_local_start|date:"d" }}</span>
         <span class="lesson-card-weekday">{{ booking.student_local_start|date:"D" }}</span>
+        {% endif %}
     </div>
     <div class="lesson-card-body">
+        {% if user.teacher_profile %}
+        <span class="lesson-card-time">
+            {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
+        </span>
+        <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
+        <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
+        {% if booking.review %}
+        <span class="review-stars">
+            {% for i in "12345" %}
+            <i
+                class="bi {% if forloop.counter <= booking.review.rating %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+            {% endfor %}
+        </span>
+        {% endif %}
+        {% else %}
         <span class="lesson-card-time">
             {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
         </span>
@@ -24,9 +45,14 @@
         {% else %}
         <span class="badge-leave-review">Leave Review</span>
         {% endif %}
+        {% endif %}
     </div>
     <div class="lesson-card-avatar">
+        {% if user.teacher_profile %}
+        {% user_avatar booking.student_display_user 48 %}
+        {% else %}
         {% user_avatar booking.teacher_display_user 48 %}
+        {% endif %}
     </div>
 </div>
 {% endfor %}

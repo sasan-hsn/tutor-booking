@@ -67,6 +67,30 @@ def _get_student_past_queryset(student, now):
     )
 
 
+def _get_teacher_upcoming_queryset(teacher_user):
+    return (
+        Booking.objects
+        .filter(
+            teacher__user=teacher_user,
+            status=Booking.Status.CONFIRMED,
+        )
+        .select_related('student')
+        .order_by('start_at')
+    )
+
+
+def _get_teacher_past_queryset(teacher_user):
+    return (
+        Booking.objects
+        .filter(
+            teacher__user=teacher_user,
+            status=Booking.Status.COMPLETED,
+        )
+        .select_related('student', 'review')
+        .order_by('-start_at')
+    )
+
+
 @student_required
 def student_dashboard(request):
     expire_stale_bookings(student=request.user)
@@ -279,15 +303,43 @@ def teacher_dashboard(request):
     teacher = request.user.teacher_profile
     expire_stale_bookings(teacher=teacher)
 
-    upcoming_bookings = (
-        Booking.objects
-        .filter(
-            teacher__user=request.user,
-            status=Booking.Status.CONFIRMED,
-        )
-        .select_related('student')
-        .order_by('start_at')[:10]
-    )
+    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+    if is_ajax:
+        section = request.GET.get('section')
+        page_number = request.GET.get('page', 1)
+
+        if section == 'upcoming':
+            upcoming_qs = _get_teacher_upcoming_queryset(request.user)
+            paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
+            page_obj = paginator.get_page(page_number)
+            response = render(request, 'partials/_lesson_card_items.html', {
+                'upcoming_bookings': page_obj,
+            })
+            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
+            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            return response
+
+        elif section == 'past':
+            past_qs = _get_teacher_past_queryset(request.user)
+            paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
+            page_obj = paginator.get_page(page_number)
+            response = render(request, 'partials/_past_lesson_card_items.html', {
+                'past_bookings': page_obj,
+            })
+            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
+            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            return response
+
+        return HttpResponseBadRequest('Invalid or missing section parameter.')
+
+    upcoming_qs = _get_teacher_upcoming_queryset(request.user)
+    upcoming_paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
+    upcoming_page = upcoming_paginator.get_page(1)
+
+    past_qs = _get_teacher_past_queryset(request.user)
+    past_paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
+    past_page = past_paginator.get_page(1)
 
     lesson_requests_count = Booking.objects.filter(
         Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
@@ -301,7 +353,10 @@ def teacher_dashboard(request):
 
     return render(request, 'booking/teacher_dashboard.html', {
         'teacher': teacher,
-        'upcoming_bookings': upcoming_bookings,
+        'upcoming_bookings': upcoming_page,
+        'upcoming_has_next': upcoming_page.has_next(),
+        'past_bookings': past_page,
+        'past_has_next': past_page.has_next(),
         'lesson_requests_count': lesson_requests_count,
         'pending_reviews_count': pending_reviews_count,
     })
