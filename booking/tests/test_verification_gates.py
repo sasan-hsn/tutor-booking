@@ -252,6 +252,7 @@ class TeacherAvailabilityPublishingGateTests(RoleTestCase):
         post_booking_res = self.teacher_client.post(booking_settings_url, {
             'meeting_link': 'https://meet.google.com/abc-defg-hij',
             'lesson_price': '45.00',
+            'lesson_price_25': '25.00',
             'lesson_duration_minutes': 50,
             'trial_price': '15.00',
             'trial_duration_minutes': 25,
@@ -259,4 +260,5 @@ class TeacherAvailabilityPublishingGateTests(RoleTestCase):
         self.assertEqual(post_booking_res.status_code, 302)
         self.teacher.refresh_from_db()
         self.assertEqual(float(self.teacher.lesson_price), 45.00)
+        self.assertEqual(float(self.teacher.lesson_price_25), 25.00)
         self.assertEqual(self.teacher.meeting_link, 'https://meet.google.com/abc-defg-hij')

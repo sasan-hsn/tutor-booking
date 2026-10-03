@@ -101,12 +101,33 @@ class CertificateForm(forms.ModelForm):
 
 
 class TeacherBookingSettingsForm(forms.ModelForm):
+    lesson_price_25 = forms.DecimalField(
+        required=False,
+        decimal_places=2,
+        label='25-minute Lesson Price ($)',
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+    )
+    lesson_price = forms.DecimalField(
+        required=False,
+        decimal_places=2,
+        label='50-minute Lesson Price ($)',
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+    )
+    trial_price = forms.DecimalField(
+        required=False,
+        decimal_places=2,
+        label='Trial Lesson Price ($)',
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+    )
+
     class Meta:
         model = TeacherProfile
         fields = [
             'meeting_link',
-            'lesson_price', 'lesson_duration_minutes',
-            'offers_trial', 'trial_price', 'trial_duration_minutes',
+            'lesson_price_25',
+            'lesson_price',
+            'offers_trial',
+            'trial_price',
             'instant_tutoring_enabled',
         ]
         widgets = {
@@ -114,11 +135,7 @@ class TeacherBookingSettingsForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
             }),
-            'lesson_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
-            'lesson_duration_minutes': forms.NumberInput(attrs={'class': 'form-control', 'min': '15'}),
             'offers_trial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
-            'trial_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
-            'trial_duration_minutes': forms.NumberInput(attrs={'class': 'form-control', 'min': '15'}),
             'instant_tutoring_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
         }
 
@@ -126,13 +143,41 @@ class TeacherBookingSettingsForm(forms.ModelForm):
         cleaned_data = super().clean()
         offers_trial = cleaned_data.get('offers_trial')
         trial_price = cleaned_data.get('trial_price')
+        lesson_price = cleaned_data.get('lesson_price')
+        lesson_price_25 = cleaned_data.get('lesson_price_25')
 
         # If trial is offered, ensure trial_price is not negative
         if offers_trial and trial_price is not None and trial_price < Decimal('0.00'):
             self.add_error('trial_price', 'Trial price cannot be negative.')
 
-        lesson_price = cleaned_data.get('lesson_price')
+        # Negative checks
         if lesson_price is not None and lesson_price < Decimal('0.00'):
             self.add_error('lesson_price', 'Lesson price cannot be negative.')
 
+        if lesson_price_25 is not None and lesson_price_25 < Decimal('0.00'):
+            self.add_error('lesson_price_25', '25-minute lesson price cannot be negative.')
+
+        # Booking pricing validation
+        has_50m = lesson_price is not None and lesson_price > Decimal('0.00')
+        has_25m = lesson_price_25 is not None and lesson_price_25 > Decimal('0.00')
+
+        if has_50m:
+            if lesson_price_25 is None:
+                self.add_error('lesson_price_25', '25-minute lesson price is required when booking is configured.')
+            elif lesson_price_25 == Decimal('0.00'):
+                self.add_error('lesson_price_25', '25-minute lesson price must be greater than zero.')
+            elif lesson_price_25 > lesson_price:
+                self.add_error('lesson_price_25', '25-minute lesson price cannot exceed the 50-minute lesson price.')
+        elif has_25m:
+            if not lesson_price or lesson_price <= Decimal('0.00'):
+                self.add_error('lesson_price', '50-minute lesson price is required when booking is configured.')
+
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.lesson_duration_minutes = TeacherProfile.LESSON_DURATION_STANDARD
+        instance.trial_duration_minutes = TeacherProfile.TRIAL_DURATION
+        if commit:
+            instance.save()
+        return instance

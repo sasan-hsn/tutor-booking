@@ -197,7 +197,7 @@
 <!-- 5. Rates & Pricing Section -->
 <section class="section-padding border-top pricing-section">
     <div class="container max-w-5xl px-4">
-        <h2 class="section-title">Lesson Rate</h2>
+        <h2 class="section-title">Lesson Rates</h2>
 
         <div class="row align-items-center g-5">
             <div class="col-md-6">
@@ -226,38 +226,73 @@
 
             <div class="col-md-6">
                 <div class="pricing-card p-4">
-                    <h4>PRIVATE SESSIONS</h4>
-                    <span class="pricing-amount">${{ teacher.lesson_price }}</span>
-                    <span class="pricing-duration"> / {{ teacher.lesson_duration_minutes }} min</span>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h4 class="mb-0 text-uppercase fw-bold letter-spacing-1">Private Sessions</h4>
+                        <span class="badge bg-white text-dark fw-semibold px-2 py-1">1-on-1 Lessons</span>
+                    </div>
 
-                    {% if teacher.offers_trial %}
-                    <p class="mt-2 mb-3 pricing-trial">
-                        {% if teacher.trial_price %}
-                        Trial session: ${{ teacher.trial_price }}
-                        {% else %}
-                        First trial session free
+                    <div class="pricing-card-options">
+                        <div class="pricing-card-option-row">
+                            <div>
+                                <span class="fw-bold d-block">25-Minute Lesson</span>
+                                <span class="text-white-50 small">Focused practice session &middot; 25 min</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="fs-3 fw-bold text-white">${{ teacher.lesson_price_25|default:"0.00" }}</span>
+                                <span class="text-white-50 small d-block">/ 25 min</span>
+                            </div>
+                        </div>
+
+                        <div class="pricing-card-option-row">
+                            <div>
+                                <span class="fw-bold d-block">50-Minute Lesson</span>
+                                <span class="text-white-50 small">Standard comprehensive session &middot; 50 min</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="fs-3 fw-bold text-white">${{ teacher.lesson_price }}</span>
+                                <span class="text-white-50 small d-block">/ 50 min</span>
+                            </div>
+                        </div>
+
+                        {% if teacher.offers_trial %}
+                        <div class="pricing-card-option-row-trial">
+                            <div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="fw-bold d-block">Trial Lesson</span>
+                                    <span class="badge bg-warning text-dark px-2 py-0" style="font-size: 0.65rem;">New Students</span>
+                                </div>
+                                <span class="text-white-50 small">Introductory session &middot; 25 min</span>
+                            </div>
+                            <div class="text-end">
+                                {% if teacher.trial_price %}
+                                <span class="fs-3 fw-bold text-white">${{ teacher.trial_price }}</span>
+                                <span class="text-white-50 small d-block">Trial session</span>
+                                {% else %}
+                                <span class="fs-4 fw-bold text-white">Free</span>
+                                <span class="text-white-50 small d-block">First trial session free</span>
+                                {% endif %}
+                            </div>
+                        </div>
                         {% endif %}
-                    </p>
-                    {% endif %}
+                    </div>
 
-                    <ul class="list-unstyled mt-3 mb-4">
-                        <li><i class="bi bi-check-circle-fill me-2"></i>1-on-1 Lessons</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>All Levels</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Flexible Scheduling</li>
-                        <li><i class="bi bi-check-circle-fill me-2"></i>Personalized Feedback</li>
+                    <ul class="list-unstyled mb-4 d-flex flex-column gap-2">
+                        <li><i class="bi bi-check-circle-fill me-2" style="color: var(--accent-amber);"></i>All Levels Welcome</li>
+                        <li><i class="bi bi-check-circle-fill me-2" style="color: var(--accent-amber);"></i>Flexible Scheduling</li>
+                        <li><i class="bi bi-check-circle-fill me-2" style="color: var(--accent-amber);"></i>Personalized Feedback</li>
                     </ul>
 
                     {% if user.is_authenticated and user.role == 'teacher' %}
-                    <a href="{% url 'booking:teacher_dashboard' %}" class="btn-accent shadow-sm">
+                    <a href="{% url 'booking:teacher_dashboard' %}" class="btn-accent shadow-sm w-100 text-center">
                         Go to Dashboard <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% elif user.is_authenticated %}
-                    <a href="{% url 'booking:student_booking' %}" class="btn-accent shadow-sm">
+                    <a href="{% url 'booking:student_booking' %}" class="btn-accent shadow-sm w-100 text-center">
                         Get Started <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% else %}
                     <a href="{% url 'accounts:login' %}?next={% url 'booking:student_booking' %}"
-                        class="btn-accent shadow-sm">
+                        class="btn-accent shadow-sm w-100 text-center">
                         Get Started <span class="btn-arrow">&rarr;</span>
                     </a>
                     {% endif %}

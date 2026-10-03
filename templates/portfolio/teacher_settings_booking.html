@@ -15,27 +15,112 @@
 {% endfor %}
 {% endif %}
 
+{% if form.non_field_errors %}
+<div class="alert alert-danger">{{ form.non_field_errors }}</div>
+{% endif %}
+
 <form method="post">
     {% csrf_token %}
-    {% for field in form %}
-    <div class="mb-3">
-        {% if field.field.widget.input_type == 'checkbox' %}
-        <div class="form-check form-switch">
-            {{ field }}
-            <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body p-4">
+            <h5 class="card-title mb-3">Classroom Video Link</h5>
+            <div class="mb-3">
+                <label for="{{ form.meeting_link.id_for_label }}" class="form-label">Permanent Meeting Link</label>
+                {{ form.meeting_link }}
+                {% if form.meeting_link.help_text %}
+                <div class="form-text text-muted">{{ form.meeting_link.help_text }}</div>
+                {% endif %}
+                {% if form.meeting_link.errors %}
+                <div class="text-danger small mt-1">{{ form.meeting_link.errors }}</div>
+                {% endif %}
+            </div>
         </div>
-        {% else %}
-        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
-        {{ field }}
-        {% endif %}
-        {% if field.help_text %}
-        <div class="form-text text-muted">{{ field.help_text }}</div>
-        {% endif %}
-        {% if field.errors %}
-        <div class="text-danger small mt-1">{{ field.errors }}</div>
-        {% endif %}
     </div>
-    {% endfor %}
-    <button type="submit" class="btn btn-primary">Save</button>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body p-4">
+            <h5 class="card-title mb-1">Regular Lesson Rates</h5>
+            <p class="text-muted small mb-4">Lesson durations are standard fixed intervals (25 min and 50 min).</p>
+
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="p-3 border rounded bg-light-subtle">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label for="{{ form.lesson_price_25.id_for_label }}" class="form-label fw-semibold mb-0">25-minute Lesson</label>
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border">25 min standard</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            {{ form.lesson_price_25 }}
+                        </div>
+                        <div class="form-text text-muted mt-1">Rate for a 25-minute session. Must not exceed 50-minute rate.</div>
+                        {% if form.lesson_price_25.errors %}
+                        <div class="text-danger small mt-1">{{ form.lesson_price_25.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="p-3 border rounded bg-light-subtle">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label for="{{ form.lesson_price.id_for_label }}" class="form-label fw-semibold mb-0">50-minute Lesson</label>
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border">50 min standard</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            {{ form.lesson_price }}
+                        </div>
+                        <div class="form-text text-muted mt-1">Rate for a full 50-minute comprehensive session.</div>
+                        {% if form.lesson_price.errors %}
+                        <div class="text-danger small mt-1">{{ form.lesson_price.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body p-4">
+            <h5 class="card-title mb-1">Trial Lesson</h5>
+            <p class="text-muted small mb-3">Introductory session for new students (fixed duration: 25 min standard).</p>
+
+            <div class="form-check form-switch mb-3">
+                {{ form.offers_trial }}
+                <label class="form-check-label fw-semibold" for="{{ form.offers_trial.id_for_label }}">Offer Trial Lessons to First-Time Students</label>
+            </div>
+
+            <div class="col-md-6">
+                <label for="{{ form.trial_price.id_for_label }}" class="form-label">Trial Lesson Price</label>
+                <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    {{ form.trial_price }}
+                </div>
+                <div class="form-text text-muted mt-1">Set to 0.00 or leave empty for a free introductory session.</div>
+                {% if form.trial_price.errors %}
+                <div class="text-danger small mt-1">{{ form.trial_price.errors }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body p-4">
+            <h5 class="card-title mb-1">Instant Tutoring</h5>
+            <div class="form-check form-switch mt-3">
+                {{ form.instant_tutoring_enabled }}
+                <label class="form-check-label fw-semibold" for="{{ form.instant_tutoring_enabled.id_for_label }}">Enable Instant Tutoring</label>
+            </div>
+            {% if form.instant_tutoring_enabled.help_text %}
+            <div class="form-text text-muted">{{ form.instant_tutoring_enabled.help_text }}</div>
+            {% endif %}
+            {% if form.instant_tutoring_enabled.errors %}
+            <div class="text-danger small mt-1">{{ form.instant_tutoring_enabled.errors }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary px-4 py-2">Save Settings</button>
 </form>
 {% endblock %}
