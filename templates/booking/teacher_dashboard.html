@@ -20,7 +20,7 @@
 {% endif %}
 
 <div class="lessons-header">
-    <h2 class="mb-0">My Lessons</h2>
+    <h2 class="mb-0">Upcoming Lessons</h2>
     <div class="lessons-actions-inline">
         <button type="button" class="btn-minimal position-relative" data-bs-toggle="modal"
             data-bs-target="#lessonRequestsModal" id="openLessonRequestsBtn">
@@ -41,6 +41,13 @@
 
 <div class="lessons-row">
     {% include 'partials/_lesson_cards.html' %}
+</div>
+
+<div class="past-lessons-section">
+    <h2 class="mb-3">Past Lessons <i class="bi bi-clock-history text-muted"></i></h2>
+    <div class="lessons-row">
+        {% include 'partials/_past_lesson_cards.html' %}
+    </div>
 </div>
 
 <div class="teacher-tools-section">
