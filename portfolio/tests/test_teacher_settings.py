@@ -113,32 +113,112 @@ class TeacherBookingSettingsTests(RoleTestCase):
         response = self.teacher_client.post(
             reverse('portfolio:teacher_settings_booking'),
             {
-                'lesson_price': '25.00',
-                'lesson_duration_minutes': '60',
+                'lesson_price': '50.00',
+                'lesson_price_25': '28.00',
                 'offers_trial': 'on',
-                'trial_price': '10.00',
-                'trial_duration_minutes': '30',
+                'trial_price': '15.00',
                 'instant_tutoring_enabled': '',
             },
         )
         self.assertEqual(response.status_code, 302)
         self.teacher.refresh_from_db()
-        self.assertEqual(self.teacher.lesson_price, Decimal('25.00'))
+        self.assertEqual(self.teacher.lesson_price, Decimal('50.00'))
+        self.assertEqual(self.teacher.lesson_price_25, Decimal('28.00'))
+        self.assertEqual(self.teacher.trial_price, Decimal('15.00'))
+        self.assertEqual(self.teacher.lesson_duration_minutes, 50)
+        self.assertEqual(self.teacher.trial_duration_minutes, 25)
+
+    def test_invalid_when_lesson_price_25_exceeds_lesson_price(self):
+        response = self.teacher_client.post(
+            reverse('portfolio:teacher_settings_booking'),
+            {
+                'lesson_price': '30.00',
+                'lesson_price_25': '35.00',
+                'offers_trial': '',
+                'trial_price': '',
+                'instant_tutoring_enabled': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'cannot exceed')
+
+    def test_invalid_when_lesson_price_25_negative(self):
+        response = self.teacher_client.post(
+            reverse('portfolio:teacher_settings_booking'),
+            {
+                'lesson_price': '30.00',
+                'lesson_price_25': '-5.00',
+                'offers_trial': '',
+                'trial_price': '',
+                'instant_tutoring_enabled': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'cannot be negative')
+
+    def test_invalid_when_booking_configured_without_lesson_price_25(self):
+        response = self.teacher_client.post(
+            reverse('portfolio:teacher_settings_booking'),
+            {
+                'lesson_price': '30.00',
+                'lesson_price_25': '',
+                'offers_trial': '',
+                'trial_price': '',
+                'instant_tutoring_enabled': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'required')
+
+    def test_invalid_when_booking_configured_with_zero_lesson_price_25(self):
+        response = self.teacher_client.post(
+            reverse('portfolio:teacher_settings_booking'),
+            {
+                'lesson_price': '30.00',
+                'lesson_price_25': '0.00',
+                'offers_trial': '',
+                'trial_price': '',
+                'instant_tutoring_enabled': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'greater than zero')
+
+    def test_invalid_when_lesson_price_25_provided_without_50m_rate(self):
+        response = self.teacher_client.post(
+            reverse('portfolio:teacher_settings_booking'),
+            {
+                'lesson_price': '0.00',
+                'lesson_price_25': '20.00',
+                'offers_trial': '',
+                'trial_price': '',
+                'instant_tutoring_enabled': '',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'required')
 
     def test_negative_price_shows_form_error_not_500(self):
         response = self.teacher_client.post(
             reverse('portfolio:teacher_settings_booking'),
             {
                 'lesson_price': '-5.00',
-                'lesson_duration_minutes': '60',
+                'lesson_price_25': '',
                 'offers_trial': '',
                 'trial_price': '',
-                'trial_duration_minutes': '30',
                 'instant_tutoring_enabled': '',
             },
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'cannot be negative')
+
+    def test_get_renders_fixed_duration_standards(self):
+        response = self.teacher_client.get(reverse('portfolio:teacher_settings_booking'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '25 min')
+        self.assertContains(response, '50 min')
+        self.assertNotContains(response, 'id_lesson_duration_minutes')
+        self.assertNotContains(response, 'id_trial_duration_minutes')
 
 
 class TeacherProfileCompletionTests(RoleTestCase):
@@ -157,8 +237,27 @@ class TeacherProfileCompletionTests(RoleTestCase):
         self.teacher_user.save()
         self.assertTrue(self.teacher.account_complete)
 
-    def test_booking_complete_requires_positive_price(self):
+    def test_booking_complete_requires_both_rates_positive(self):
+        # Setting only 50m price is incomplete
         self.teacher.lesson_price = Decimal('20.00')
+        self.teacher.lesson_price_25 = None
+        self.teacher.save()
+        self.assertFalse(self.teacher.booking_complete)
+
+        # Setting 25m price to 0 is incomplete
+        self.teacher.lesson_price_25 = Decimal('0.00')
+        self.teacher.save()
+        self.assertFalse(self.teacher.booking_complete)
+
+        # Setting only 25m price is incomplete
+        self.teacher.lesson_price = Decimal('0.00')
+        self.teacher.lesson_price_25 = Decimal('15.00')
+        self.teacher.save()
+        self.assertFalse(self.teacher.booking_complete)
+
+        # Both positive prices makes booking complete
+        self.teacher.lesson_price = Decimal('20.00')
+        self.teacher.lesson_price_25 = Decimal('15.00')
         self.teacher.save()
         self.assertTrue(self.teacher.booking_complete)
 
@@ -226,10 +325,9 @@ class TeacherBookingSettingsFormMeetingLinkTests(RoleTestCase):
             data={
                 'meeting_link': 'https://meet.google.com/xyz-abcd-efg',
                 'lesson_price': '25.00',
-                'lesson_duration_minutes': '50',
+                'lesson_price_25': '15.00',
                 'offers_trial': 'on',
                 'trial_price': '10.00',
-                'trial_duration_minutes': '25',
                 'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
@@ -245,10 +343,9 @@ class TeacherBookingSettingsFormMeetingLinkTests(RoleTestCase):
             data={
                 'meeting_link': '',
                 'lesson_price': '25.00',
-                'lesson_duration_minutes': '50',
+                'lesson_price_25': '15.00',
                 'offers_trial': '',
                 'trial_price': '',
-                'trial_duration_minutes': '25',
                 'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
@@ -262,10 +359,9 @@ class TeacherBookingSettingsFormMeetingLinkTests(RoleTestCase):
             data={
                 'meeting_link': 'not-a-valid-url',
                 'lesson_price': '25.00',
-                'lesson_duration_minutes': '50',
+                'lesson_price_25': '15.00',
                 'offers_trial': '',
                 'trial_price': '',
-                'trial_duration_minutes': '25',
                 'instant_tutoring_enabled': '',
             },
             instance=self.teacher,
@@ -283,10 +379,9 @@ class TeacherBookingSettingsViewMeetingLinkTests(RoleTestCase):
         data = {
             'meeting_link': '',
             'lesson_price': '30.00',
-            'lesson_duration_minutes': '50',
+            'lesson_price_25': '18.00',
             'offers_trial': 'on',
             'trial_price': '15.00',
-            'trial_duration_minutes': '25',
             'instant_tutoring_enabled': '',
         }
         data.update(overrides)

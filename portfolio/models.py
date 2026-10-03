@@ -5,6 +5,10 @@ from django.db import models
 
 
 class TeacherProfile(models.Model):
+    LESSON_DURATION_SHORT = 25
+    LESSON_DURATION_STANDARD = 50
+    TRIAL_DURATION = 25
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -24,6 +28,13 @@ class TeacherProfile(models.Model):
         max_digits=10,
         decimal_places=2,
         default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+    lesson_price_25 = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
         validators=[MinValueValidator(Decimal('0.00'))],
     )
     lesson_duration_minutes = models.PositiveSmallIntegerField(default=50)
@@ -76,7 +87,12 @@ class TeacherProfile(models.Model):
 
     @property
     def booking_complete(self):
-        return self.lesson_price > 0
+        return bool(
+            self.lesson_price
+            and self.lesson_price > 0
+            and self.lesson_price_25
+            and self.lesson_price_25 > 0
+        )
 
     def __str__(self):
         return f"Teacher Profile: {self.display_name}"

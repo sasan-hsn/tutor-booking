@@ -32,12 +32,16 @@ _Avoid_: Finished lesson, done booking
 The state of a confirmed booking after its scheduled end time has passed, during which the teacher must mark it as completed or not held.
 _Avoid_: Unresolved lesson, pending completion
 
+**Lesson Option**:
+A selectable booking package presented to the student on the booking page (`trial`, `regular_25`, `regular_50`) defining a lesson type, duration, and price.
+_Avoid_: Booking tier, product plan, package variant
+
 **Trial Lesson**:
-An introductory, discounted or free lesson offered to first-time students by a teacher.
+An introductory, discounted or free 25-minute lesson offered to first-time students who have no prior bookings (`pending`, `confirmed`, `completed`, or `disputing`) with the teacher.
 _Avoid_: Demo lesson, sample class
 
 **Regular Lesson**:
-A standard-priced lesson booked at the teacher's default rate and duration.
+A standard-priced lesson booked at either a 25-minute or 50-minute duration at the teacher's established rates.
 _Avoid_: Standard lesson, paid lesson
 
 **Lesson Reminder**:
