@@ -272,6 +272,7 @@ def book_slot(request):
                 end_at=end_at_val,
                 lesson_type=lesson_type,
                 price=price,
+                duration_minutes=duration_minutes,
             )
 
             booking_id = booking.id
@@ -295,6 +296,7 @@ def book_slot(request):
         'booking_id': booking.id,
         'lesson_type': booking.get_lesson_type_display(),
         'price': str(booking.price) if booking.price is not None else 'Free',
+        'duration_minutes': booking.duration_minutes,
     })
 
 

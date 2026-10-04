@@ -115,3 +115,41 @@ class BookingModelTests(TestCase):
         second_booking.save()  # should NOT raise
 
         self.assertEqual(Booking.objects.filter(status=Booking.Status.PENDING).count(), 1)
+
+    # 6. Duration minutes default and explicit values
+    def test_booking_default_duration_is_50(self):
+        """Test that duration_minutes defaults to 50 when omitted."""
+        booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=self.start_at,
+            end_at=self.end_at,
+        )
+        self.assertEqual(booking.duration_minutes, 50)
+        self.assertEqual(booking.duration_display, "50 min")
+
+    def test_booking_explicit_duration_minutes(self):
+        """Test that explicit duration_minutes is preserved."""
+        booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=self.start_at,
+            end_at=self.end_at,
+            duration_minutes=25,
+            lesson_type=Booking.LessonType.TRIAL,
+        )
+        self.assertEqual(booking.duration_minutes, 25)
+        self.assertEqual(booking.duration_display, "25 min")
+
+    def test_booking_duration_minutes_must_be_positive(self):
+        """Test that duration_minutes must be greater than zero."""
+        booking = Booking(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=self.start_at,
+            end_at=self.end_at,
+            duration_minutes=0,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            booking.full_clean()
+        self.assertIn('duration_minutes', ctx.exception.message_dict)

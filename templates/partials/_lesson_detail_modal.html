@@ -22,6 +22,12 @@
             <span class="lesson-detail-value">{{ booking.get_lesson_type_display }}</span>
         </div>
         <div class="lesson-detail-row">
+            <span class="lesson-detail-label">Duration</span>
+            <span class="lesson-detail-value">
+                <span class="badge-duration">{{ booking.duration_display }}</span>
+            </span>
+        </div>
+        <div class="lesson-detail-row">
             <span class="lesson-detail-label">Date & Time</span>
             <span class="lesson-detail-value">{{ date_time_label }}</span>
         </div>
