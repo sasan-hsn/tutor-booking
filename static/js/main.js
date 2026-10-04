@@ -224,9 +224,13 @@ function initWeekNav() {
     const label = document.getElementById('weekRangeLabel');
     const weekAjaxUrl = dayPicker.dataset.weekAjaxUrl;
 
-    async function loadWeek(weekStart) {
-        const url = `${weekAjaxUrl}?week_start=${weekStart}`;
+    async function loadWeek(weekStart, duration) {
+        if (!duration) {
+            duration = dayPicker.dataset.currentDuration || 50;
+        }
+        const url = `${weekAjaxUrl}?week_start=${encodeURIComponent(weekStart)}&duration=${encodeURIComponent(duration)}`;
         try {
+            dayPicker.style.opacity = '0.5';
             const response = await fetch(url);
             if (!response.ok) return;
             const data = await response.json();
@@ -238,13 +242,59 @@ function initWeekNav() {
             prevBtn.disabled = !data.can_go_prev;
 
             nextBtn.dataset.weekStart = data.next_week_start;
+            dayPicker.dataset.currentWeekStart = weekStart;
+            dayPicker.dataset.currentDuration = data.duration_minutes || duration;
         } catch (err) {
             console.error('Error loading week slots:', err);
+        } finally {
+            dayPicker.style.opacity = '1';
         }
     }
 
-    if (prevBtn) prevBtn.addEventListener('click', () => loadWeek(prevBtn.dataset.weekStart));
-    if (nextBtn) nextBtn.addEventListener('click', () => loadWeek(nextBtn.dataset.weekStart));
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            loadWeek(prevBtn.dataset.weekStart, dayPicker.dataset.currentDuration);
+        });
+    }
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            loadWeek(nextBtn.dataset.weekStart, dayPicker.dataset.currentDuration);
+        });
+    }
+
+    // Lesson Option Cards Selection & Duration Reload
+    const optionCards = document.querySelectorAll('.lesson-option-card');
+    function selectOptionCard(card) {
+        if (!card || card.classList.contains('selected')) return;
+
+        optionCards.forEach(c => {
+            c.classList.remove('selected');
+            c.setAttribute('aria-checked', 'false');
+        });
+
+        card.classList.add('selected');
+        card.setAttribute('aria-checked', 'true');
+
+        const newDuration = parseInt(card.dataset.duration, 10);
+        const newOption = card.dataset.lessonOption;
+        dayPicker.dataset.selectedLessonOption = newOption;
+
+        const currentLoadedDuration = parseInt(dayPicker.dataset.currentDuration, 10);
+        if (newDuration !== currentLoadedDuration) {
+            const currentWeekStart = dayPicker.dataset.currentWeekStart || '';
+            loadWeek(currentWeekStart, newDuration);
+        }
+    }
+
+    optionCards.forEach(card => {
+        card.addEventListener('click', () => selectOptionCard(card));
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                selectOptionCard(card);
+            }
+        });
+    });
 }
 
 function initBookingModal() {
@@ -263,7 +313,6 @@ function initBookingModal() {
     const teacherInitial = dayPicker.dataset.teacherInitial;
     const teacherAvatarUrl = dayPicker.dataset.teacherAvatarUrl;
     const teacherAvatarColor = dayPicker.dataset.teacherAvatarColor;
-    const lessonTypeDisplay = dayPicker.dataset.lessonTypeDisplay;
     const bookSlotUrl = dayPicker.dataset.bookSlotUrl;
 
     function resetVerificationAlert() {
@@ -330,6 +379,14 @@ function initBookingModal() {
 
         resetVerificationAlert();
 
+        const selectedCard = document.querySelector('.lesson-option-card.selected') ||
+            document.querySelector('.lesson-option-card');
+        const lessonOption = selectedCard ? selectedCard.dataset.lessonOption : (dayPicker.dataset.selectedLessonOption || 'trial');
+        const lessonTypeDisplay = selectedCard ? selectedCard.dataset.lessonTypeDisplay : 'Lesson';
+        const lessonTitle = selectedCard ? selectedCard.dataset.title : lessonTypeDisplay;
+        const durationDisplay = selectedCard ? selectedCard.dataset.durationDisplay : '';
+        const priceDisplay = selectedCard ? selectedCard.dataset.priceDisplay : '';
+
         const avatarEl = document.getElementById('modalTeacherAvatar');
         if (avatarEl) {
             if (teacherAvatarUrl) {
@@ -339,12 +396,29 @@ function initBookingModal() {
             }
         }
 
-        document.getElementById('modalTeacherName').textContent = teacherName;
-        document.getElementById('modalLessonTypeBadge').textContent = lessonTypeDisplay;
-        document.getElementById('modalLessonDate').textContent = slotBtn.dataset.weekday;
-        document.getElementById('modalLessonTime').textContent = `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
+        const nameEl = document.getElementById('modalTeacherName');
+        if (nameEl) nameEl.textContent = teacherName;
+
+        const badgeEl = document.getElementById('modalLessonTypeBadge');
+        if (badgeEl) badgeEl.textContent = lessonTypeDisplay;
+
+        const typeEl = document.getElementById('modalLessonType');
+        if (typeEl) typeEl.textContent = lessonTitle;
+
+        const durationEl = document.getElementById('modalLessonDuration');
+        if (durationEl) durationEl.textContent = durationDisplay;
+
+        const priceEl = document.getElementById('modalLessonPrice');
+        if (priceEl) priceEl.textContent = priceDisplay;
+
+        const dateEl = document.getElementById('modalLessonDate');
+        if (dateEl) dateEl.textContent = slotBtn.dataset.weekday;
+
+        const timeEl = document.getElementById('modalLessonTime');
+        if (timeEl) timeEl.textContent = `${slotBtn.dataset.start} - ${slotBtn.dataset.end}`;
 
         confirmBtn.dataset.startAt = slotBtn.dataset.startAt;
+        confirmBtn.dataset.lessonOption = lessonOption;
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Next';
 
@@ -357,7 +431,8 @@ function initBookingModal() {
 
     confirmBtn.addEventListener('click', async () => {
         const startAtVal = confirmBtn.dataset.startAt;
-        if (!startAtVal) return;
+        const lessonOptionVal = confirmBtn.dataset.lessonOption;
+        if (!startAtVal || !lessonOptionVal) return;
 
         confirmBtn.disabled = true;
         confirmBtn.textContent = 'Booking...';
@@ -366,7 +441,7 @@ function initBookingModal() {
             const response = await csrfFetch(bookSlotUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `start_at=${encodeURIComponent(startAtVal)}`,
+                body: `start_at=${encodeURIComponent(startAtVal)}&lesson_option=${encodeURIComponent(lessonOptionVal)}`,
             });
 
             let data = null;

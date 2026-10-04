@@ -792,7 +792,7 @@ class BookSlotViewNotificationTests(RoleTestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.student_client.post(
                 reverse('booking:book_slot'),
-                {'start_at': self.valid_start.isoformat()},
+                {'start_at': self.valid_start.isoformat(), 'lesson_option': 'trial'},
             )
 
         self.assertEqual(response.status_code, 200)

@@ -10,8 +10,11 @@ from booking.models import RegularAvailability, WeeklyOverride, Booking
 from booking.services import (
     get_availability_windows,
     get_available_start_times,
+    get_eligible_lesson_options,
     get_lesson_type_and_price,
     get_week_data,
+    is_trial_eligible,
+    resolve_lesson_option,
 )
 
 User = get_user_model()
@@ -405,4 +408,157 @@ class LessonTypeAndPriceServiceTest(TestCase):
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, self.teacher.lesson_duration_minutes)
+
+
+class MultiDurationBookingServicesTest(TestCase):
+    def setUp(self):
+        from decimal import Decimal
+        from django.core.exceptions import ValidationError
+        self.ValidationError = ValidationError
+
+        self.teacher_user = User.objects.create_user(
+            username='teacher_multiduration', password='password123', role=User.Role.TEACHER
+        )
+        self.teacher = self.teacher_user.teacher_profile
+        self.teacher.lesson_price = Decimal('40.00')
+        self.teacher.lesson_price_25 = Decimal('22.00')
+        self.teacher.offers_trial = True
+        self.teacher.trial_price = Decimal('10.00')
+        self.teacher.trial_duration_minutes = 25
+        self.teacher.lesson_duration_minutes = 50
+        self.teacher.save()
+
+        self.student = User.objects.create_user(
+            username='student_multiduration', password='password123', role=User.Role.STUDENT
+        )
+
+    def test_is_trial_eligible_first_time_student(self):
+        self.assertTrue(is_trial_eligible(self.teacher, self.student))
+
+    def test_is_trial_eligible_false_when_teacher_does_not_offer_trial(self):
+        self.teacher.offers_trial = False
+        self.teacher.save()
+        self.assertFalse(is_trial_eligible(self.teacher, self.student))
+
+    def test_is_trial_eligible_false_with_pending_booking(self):
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now + timedelta(days=2),
+            end_at=now + timedelta(days=2, minutes=25),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.PENDING,
+        )
+        self.assertFalse(is_trial_eligible(self.teacher, self.student))
+
+    def test_is_trial_eligible_true_with_cancelled_or_expired_booking(self):
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now - timedelta(days=5),
+            end_at=now - timedelta(days=5) + timedelta(minutes=25),
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.CANCELLED,
+        )
+        self.assertTrue(is_trial_eligible(self.teacher, self.student))
+
+    def test_get_eligible_lesson_options_first_time_student(self):
+        options = get_eligible_lesson_options(self.teacher, self.student)
+        self.assertEqual(len(options), 3)
+
+        trial_opt = options[0]
+        self.assertEqual(trial_opt['key'], 'trial')
+        self.assertEqual(trial_opt['title'], 'Trial Lesson')
+        self.assertEqual(trial_opt['duration_minutes'], 25)
+        self.assertEqual(trial_opt['duration_display'], '25 min')
+        self.assertEqual(trial_opt['price_display'], '$10.00')
+        self.assertTrue(trial_opt['is_selected'])
+
+        reg_25_opt = options[1]
+        self.assertEqual(reg_25_opt['key'], 'regular_25')
+        self.assertEqual(reg_25_opt['title'], 'Regular Lesson (25m)')
+        self.assertEqual(reg_25_opt['duration_minutes'], 25)
+        self.assertEqual(reg_25_opt['duration_display'], '25 min')
+        self.assertEqual(reg_25_opt['price_display'], '$22.00')
+        self.assertFalse(reg_25_opt['is_selected'])
+
+        reg_50_opt = options[2]
+        self.assertEqual(reg_50_opt['key'], 'regular_50')
+        self.assertEqual(reg_50_opt['title'], 'Regular Lesson (50m)')
+        self.assertEqual(reg_50_opt['duration_minutes'], 50)
+        self.assertEqual(reg_50_opt['duration_display'], '50 min')
+        self.assertEqual(reg_50_opt['price_display'], '$40.00')
+        self.assertFalse(reg_50_opt['is_selected'])
+
+    def test_get_eligible_lesson_options_returning_student_hides_trial(self):
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now - timedelta(days=2),
+            end_at=now - timedelta(days=2) + timedelta(minutes=50),
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.COMPLETED,
+        )
+
+        options = get_eligible_lesson_options(self.teacher, self.student)
+        self.assertEqual(len(options), 2)
+        keys = [opt['key'] for opt in options]
+        self.assertNotIn('trial', keys)
+        self.assertEqual(keys, ['regular_25', 'regular_50'])
+
+        # 50m regular is pre-selected for returning student
+        reg_50_opt = next(opt for opt in options if opt['key'] == 'regular_50')
+        self.assertTrue(reg_50_opt['is_selected'])
+
+        reg_25_opt = next(opt for opt in options if opt['key'] == 'regular_25')
+        self.assertFalse(reg_25_opt['is_selected'])
+
+    def test_resolve_lesson_option_trial_for_eligible_student(self):
+        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'trial')
+        self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
+        self.assertEqual(price, self.teacher.trial_price)
+        self.assertEqual(duration, 25)
+
+    def test_resolve_lesson_option_trial_for_returning_student_raises(self):
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student,
+            teacher=self.teacher,
+            start_at=now - timedelta(days=2),
+            end_at=now - timedelta(days=2) + timedelta(minutes=50),
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.COMPLETED,
+        )
+        with self.assertRaises(self.ValidationError):
+            resolve_lesson_option(self.teacher, self.student, 'trial')
+
+    def test_resolve_lesson_option_regular_25(self):
+        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'regular_25')
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price_25)
+        self.assertEqual(duration, 25)
+
+    def test_resolve_lesson_option_regular_50(self):
+        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'regular_50')
+        self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
+        self.assertEqual(price, self.teacher.lesson_price)
+        self.assertEqual(duration, 50)
+
+    def test_resolve_lesson_option_invalid_key_raises(self):
+        with self.assertRaises(self.ValidationError):
+            resolve_lesson_option(self.teacher, self.student, 'invalid_key')
+
+    def test_resolve_lesson_option_missing_price_raises(self):
+        self.teacher.lesson_price_25 = None
+        self.teacher.save()
+        with self.assertRaises(self.ValidationError):
+            resolve_lesson_option(self.teacher, self.student, 'regular_25')
+
         

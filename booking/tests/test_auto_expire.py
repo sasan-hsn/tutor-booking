@@ -204,7 +204,7 @@ class AutoExpireCoreTests(RoleTestCase):
 
         response = self.student_client.post(
             reverse('booking:book_slot'),
-            {'start_at': slot_dt.isoformat()},
+            {'start_at': slot_dt.isoformat(), 'lesson_option': 'trial'},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()

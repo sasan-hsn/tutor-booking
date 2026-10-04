@@ -1012,6 +1012,78 @@ h1, h2, h3, h4, h5, h6,
     text-decoration: underline;
 }
 
+/* Lesson Option Selector Cards */
+.lesson-option-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.lesson-option-card {
+    background-color: var(--bg-card);
+    border: 1.5px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    padding: 1.15rem 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    user-select: none;
+}
+
+.lesson-option-card:hover {
+    border-color: var(--primary-blue);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.lesson-option-card:focus-visible {
+    outline: none;
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(44, 95, 124, 0.2);
+}
+
+.lesson-option-card.selected {
+    border-color: var(--primary-blue);
+    background-color: var(--primary-blue-light);
+    box-shadow: 0 0 0 1.5px var(--primary-blue);
+}
+
+.lesson-option-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.lesson-option-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-main);
+}
+
+.lesson-option-price-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.lesson-option-price {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-main);
+}
+
+.lesson-option-subtitle {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
 .booking-week-nav {
     display: flex;
     align-items: center;
