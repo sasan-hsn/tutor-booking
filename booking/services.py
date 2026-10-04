@@ -2,6 +2,7 @@ import calendar
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .models import Booking, RegularAvailability, WeeklyOverride
@@ -126,13 +127,15 @@ def get_available_start_times(teacher, date_val: date, duration_minutes: int):
     return sorted(set(available_times))
 
 
-def get_lesson_type_and_price(teacher, student):
+def is_trial_eligible(teacher, student) -> bool:
     """
-    Returns (lesson_type, price, duration_minutes) for a given student.
-    First-time students receive trial settings if offered by teacher.
-    Pending, confirmed, and completed bookings count towards previous lessons
-    to prevent duplicate trial requests while one is pending.
+    Returns True if the student is eligible to book a trial lesson with the teacher.
+    Requires that the teacher offers trials, and the student has no active or past
+    bookings in PENDING, CONFIRMED, COMPLETED, or DISPUTING statuses.
     """
+    if not teacher or not teacher.offers_trial:
+        return False
+
     expire_stale_bookings(teacher=teacher, student=student)
 
     has_previous_lesson = Booking.objects.filter(
@@ -146,7 +149,105 @@ def get_lesson_type_and_price(teacher, student):
         ],
     ).exists()
 
-    if teacher.offers_trial and not has_previous_lesson:
+    return not has_previous_lesson
+
+
+def get_eligible_lesson_options(teacher, student):
+    """
+    Returns the list of selectable lesson options for a student based on eligibility.
+    First-time eligible students receive Trial (25m), Regular (25m), and Regular (50m)
+    with Trial pre-selected.
+    Returning students (or when trial is not offered) receive Regular (25m) and Regular (50m)
+    with Regular (50m) pre-selected.
+    """
+    trial_eligible = is_trial_eligible(teacher, student)
+    options = []
+
+    if trial_eligible:
+        trial_price_display = f"${teacher.trial_price}" if teacher.trial_price else "Free"
+        options.append({
+            'key': 'trial',
+            'title': 'Trial Lesson',
+            'duration_minutes': 25,
+            'duration_display': '25 min',
+            'price': teacher.trial_price,
+            'price_display': trial_price_display,
+            'lesson_type': Booking.LessonType.TRIAL,
+            'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.TRIAL],
+            'is_selected': True,
+            'subtitle': 'Introductory session',
+        })
+
+    price_25_display = f"${teacher.lesson_price_25}" if (teacher and teacher.lesson_price_25 is not None) else "$0.00"
+    options.append({
+        'key': 'regular_25',
+        'title': 'Regular Lesson (25m)',
+        'duration_minutes': 25,
+        'duration_display': '25 min',
+        'price': teacher.lesson_price_25 if teacher else None,
+        'price_display': price_25_display,
+        'lesson_type': Booking.LessonType.REGULAR,
+        'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.REGULAR],
+        'is_selected': False,
+        'subtitle': 'Quick focused session',
+    })
+
+    price_50_display = f"${teacher.lesson_price}" if (teacher and teacher.lesson_price is not None) else "$0.00"
+    options.append({
+        'key': 'regular_50',
+        'title': 'Regular Lesson (50m)',
+        'duration_minutes': 50,
+        'duration_display': '50 min',
+        'price': teacher.lesson_price if teacher else None,
+        'price_display': price_50_display,
+        'lesson_type': Booking.LessonType.REGULAR,
+        'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.REGULAR],
+        'is_selected': not trial_eligible,
+        'subtitle': 'Standard comprehensive session',
+    })
+
+    return options
+
+
+def resolve_lesson_option(teacher, student, lesson_option: str):
+    """
+    Validates and resolves a lesson_option key ('trial', 'regular_25', 'regular_50')
+    against teacher rates and student eligibility.
+    Returns (lesson_type, price, duration_minutes).
+    Raises ValidationError on invalid option or ineligibility.
+    """
+    if not lesson_option:
+        raise ValidationError('lesson_option is required.')
+
+    if lesson_option == 'trial':
+        if not teacher or not teacher.offers_trial:
+            raise ValidationError('Trial lessons are not offered by this teacher.')
+        if not is_trial_eligible(teacher, student):
+            raise ValidationError('You are not eligible for a trial lesson.')
+        return Booking.LessonType.TRIAL, teacher.trial_price, 25
+
+    elif lesson_option == 'regular_25':
+        if not teacher or teacher.lesson_price_25 is None:
+            raise ValidationError('25-minute lesson pricing is not configured.')
+        return Booking.LessonType.REGULAR, teacher.lesson_price_25, 25
+
+    elif lesson_option == 'regular_50':
+        if not teacher or teacher.lesson_price is None:
+            raise ValidationError('50-minute lesson pricing is not configured.')
+        return Booking.LessonType.REGULAR, teacher.lesson_price, 50
+
+    else:
+        raise ValidationError(f"Invalid lesson option: '{lesson_option}'.")
+
+
+def get_lesson_type_and_price(teacher, student):
+    """
+    Returns (lesson_type, price, duration_minutes) for a given student.
+    First-time students receive trial settings if offered by teacher.
+    Pending, confirmed, and completed bookings count towards previous lessons
+    to prevent duplicate trial requests while one is pending.
+    """
+    if is_trial_eligible(teacher, student):
         return Booking.LessonType.TRIAL, teacher.trial_price, teacher.trial_duration_minutes
     return Booking.LessonType.REGULAR, teacher.lesson_price, teacher.lesson_duration_minutes
 

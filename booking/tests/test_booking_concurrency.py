@@ -50,6 +50,7 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             client.login(username=username, password='test123')
             response = client.post(self.book_url, {
                 'start_at': self.slot_start_at.isoformat(),
+                'lesson_option': 'trial',
             })
             status_codes.append(response.status_code)
             connection.close()

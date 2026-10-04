@@ -122,7 +122,7 @@ class StudentBookingSoftGateTests(RoleTestCase):
 
         response = self.student_client.post(
             reverse('booking:book_slot'),
-            {'start_at': self.valid_start.isoformat()}
+            {'start_at': self.valid_start.isoformat(), 'lesson_option': 'trial'}
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json(), {'error': 'email_unverified'})
@@ -134,7 +134,7 @@ class StudentBookingSoftGateTests(RoleTestCase):
 
         response = self.student_client.post(
             reverse('booking:book_slot'),
-            {'start_at': self.valid_start.isoformat()}
+            {'start_at': self.valid_start.isoformat(), 'lesson_option': 'trial'}
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Booking.objects.count(), 1)

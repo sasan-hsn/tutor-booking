@@ -25,8 +25,9 @@ from .services import (
     get_available_start_times,
     get_calendar_grid,
     get_calendar_navigation,
-    get_lesson_type_and_price,
+    get_eligible_lesson_options,
     get_week_data,
+    resolve_lesson_option,
 )
 from .tasks import (
     safe_send_booking_cancelled_email,
@@ -162,7 +163,9 @@ def student_booking(request):
     week_days = [week_start + timedelta(days=i) for i in range(7)]
     teacher = TeacherProfile.objects.select_related('user').first()
 
-    lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
+    lesson_options = get_eligible_lesson_options(teacher, request.user)
+    selected_option = next((opt for opt in lesson_options if opt['is_selected']), None)
+    duration_minutes = selected_option['duration_minutes'] if selected_option else 50
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
@@ -178,8 +181,9 @@ def student_booking(request):
         'can_go_prev': can_go_prev,
         'today': today,
         'teacher': teacher,
-        'lesson_type': lesson_type,
-        'lesson_type_display': dict(Booking.LessonType.choices)[lesson_type],
+        'lesson_options': lesson_options,
+        'selected_option': selected_option,
+        'duration_minutes': duration_minutes,
         'teacher_avatar_color': get_avatar_color(teacher.user.id) if teacher else '#4F7A62',
         'teacher_profile_picture': teacher_profile_picture,
         'viewer_timezone': request.user.timezone,
@@ -204,7 +208,29 @@ def student_booking_week_ajax(request):
     week_days = [week_start + timedelta(days=i) for i in range(7)]
     teacher = TeacherProfile.objects.select_related('user').first()
 
-    lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
+    duration_param = request.GET.get('duration')
+    lesson_option_param = request.GET.get('lesson_option')
+
+    duration_minutes = None
+    if duration_param:
+        try:
+            val = int(duration_param)
+            if val in (25, 50):
+                duration_minutes = val
+        except (ValueError, TypeError):
+            pass
+
+    if duration_minutes is None and lesson_option_param:
+        try:
+            _, _, duration_minutes = resolve_lesson_option(teacher, request.user, lesson_option_param)
+        except ValidationError:
+            pass
+
+    if duration_minutes is None:
+        lesson_options = get_eligible_lesson_options(teacher, request.user)
+        selected_option = next((opt for opt in lesson_options if opt['is_selected']), None)
+        duration_minutes = selected_option['duration_minutes'] if selected_option else 50
+
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
@@ -219,6 +245,7 @@ def student_booking_week_ajax(request):
         'next_week_start': (week_start + timedelta(days=7)).isoformat(),
         'can_go_prev': can_go_prev,
         'viewer_timezone': request.user.timezone,
+        'duration_minutes': duration_minutes,
     })
 
 
@@ -231,6 +258,10 @@ def book_slot(request):
     start_at_str = request.POST.get('start_at')
     if not start_at_str:
         return JsonResponse({'error': 'start_at is required.'}, status=400)
+
+    lesson_option = request.POST.get('lesson_option')
+    if not lesson_option:
+        return JsonResponse({'error': 'lesson_option is required.'}, status=400)
 
     try:
         start_at_val = datetime.fromisoformat(start_at_str)
@@ -254,7 +285,12 @@ def book_slot(request):
                 .get(pk=teacher.pk)
             )
 
-            lesson_type, price, duration_minutes = get_lesson_type_and_price(teacher, request.user)
+            try:
+                lesson_type, price, duration_minutes = resolve_lesson_option(
+                    teacher, request.user, lesson_option
+                )
+            except ValidationError as e:
+                return JsonResponse({'error': e.message if hasattr(e, 'message') else str(e)}, status=400)
 
             teacher_tz = ZoneInfo(teacher.user.timezone)
             teacher_local_date = timezone.localtime(start_at_val, teacher_tz).date()

@@ -9,6 +9,33 @@
     (<a href="{% url 'accounts:profile_settings' %}">change</a>)
 </div>
 
+<div class="lesson-option-cards mb-4" id="lessonOptionCards" role="radiogroup" aria-label="Select lesson option">
+    {% for option in lesson_options %}
+    <div class="lesson-option-card {% if option.is_selected %}selected{% endif %}"
+        role="radio"
+        aria-checked="{% if option.is_selected %}true{% else %}false{% endif %}"
+        tabindex="0"
+        data-lesson-option="{{ option.key }}"
+        data-duration="{{ option.duration_minutes }}"
+        data-lesson-type="{{ option.lesson_type }}"
+        data-lesson-type-display="{{ option.lesson_type_display }}"
+        data-price-display="{{ option.price_display }}"
+        data-duration-display="{{ option.duration_display }}"
+        data-title="{{ option.title }}">
+        <div class="lesson-option-card-header">
+            <span class="lesson-option-title">{{ option.title }}</span>
+            <span class="badge-duration">{{ option.duration_display }}</span>
+        </div>
+        <div class="lesson-option-price-row">
+            <span class="lesson-option-price">{{ option.price_display }}</span>
+            {% if option.subtitle %}
+            <span class="lesson-option-subtitle">{{ option.subtitle }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
 <div class="booking-week-nav">
     <button type="button" class="week-nav-arrow" id="weekPrevBtn" data-week-start="{{ prev_week_start|date:'Y-m-d' }}"
         {% if not can_go_prev %}disabled{% endif %} aria-label="Previous week">
@@ -29,10 +56,13 @@
     data-teacher-name="{{ teacher.user.get_full_name|default:teacher.user.username }}"
     data-teacher-initial="{{ teacher.user.first_name|first|upper }}"
     data-teacher-avatar-url="{{ teacher_profile_picture|default:'' }}"
-    data-teacher-avatar-color="{{ teacher_avatar_color }}" data-lesson-type-display="{{ lesson_type_display }}"
+    data-teacher-avatar-color="{{ teacher_avatar_color }}"
     data-week-ajax-url="{% url 'booking:student_booking_week_ajax' %}"
     data-book-slot-url="{% url 'booking:book_slot' %}"
-    data-resend-verification-url="{% url 'accounts:resend_verification_email' %}">
+    data-resend-verification-url="{% url 'accounts:resend_verification_email' %}"
+    data-current-week-start="{{ week_start|date:'Y-m-d' }}"
+    data-current-duration="{{ duration_minutes }}"
+    data-selected-lesson-option="{{ selected_option.key }}">
     {% include "partials/_day_picker_columns.html" %}
 </div>
 
@@ -65,15 +95,25 @@
                     </div>
                 </div>
                 <table class="table mb-0">
-                    <thead>
-                        <tr>
-                            <th>Lesson date</th>
-                            <th>Lesson time</th>
-                        </tr>
-                    </thead>
                     <tbody>
                         <tr>
+                            <th class="text-muted fw-normal" style="width: 40%;">Lesson Type</th>
+                            <td class="fw-semibold" id="modalLessonType"></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted fw-normal">Duration</th>
+                            <td><span class="badge-duration" id="modalLessonDuration"></span></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted fw-normal">Price</th>
+                            <td class="fw-semibold" id="modalLessonPrice"></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted fw-normal">Lesson Date</th>
                             <td id="modalLessonDate"></td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted fw-normal">Lesson Time</th>
                             <td id="modalLessonTime"></td>
                         </tr>
                     </tbody>
