@@ -243,6 +243,23 @@ STATICFILES_DIRS = [
 ]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Static files storage configuration
+# Cache-busting via content-hashed filenames in production
+default_staticfiles_backend = (
+    "django.contrib.staticfiles.storage.StaticFilesStorage"
+    if DEBUG or ("test" in sys.argv)
+    else "tutor_booking.storage.ResilientManifestStaticFilesStorage"
+)
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": os.getenv("STATICFILES_STORAGE_BACKEND", default_staticfiles_backend),
+    },
+}
+
 # Media files (user-uploaded content)
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
