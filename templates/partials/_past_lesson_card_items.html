@@ -14,10 +14,19 @@
         {% endif %}
     </div>
     <div class="lesson-card-body">
+        <div class="lesson-card-time-row">
+            {% if user.teacher_profile %}
+            <span class="lesson-card-time">
+                {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
+            </span>
+            {% else %}
+            <span class="lesson-card-time">
+                {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
+            </span>
+            {% endif %}
+            <span class="badge-duration">{{ booking.duration_display }}</span>
+        </div>
         {% if user.teacher_profile %}
-        <span class="lesson-card-time">
-            {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
-        </span>
         <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
         <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
         {% if booking.review %}
@@ -29,9 +38,6 @@
         </span>
         {% endif %}
         {% else %}
-        <span class="lesson-card-time">
-            {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
-        </span>
         <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
         {% if booking.is_awaiting_resolution %}
         <span class="badge-awaiting-resolution">Awaiting Resolution</span>

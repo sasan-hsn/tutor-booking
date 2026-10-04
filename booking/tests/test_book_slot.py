@@ -50,10 +50,12 @@ class BookSlotViewTests(RoleTestCase):
         self.assertEqual(booking.start_at, self.valid_start)
 
     def test_first_time_student_gets_trial_pricing(self):
-        self._book(self.student_client, self.valid_start)
+        response = self._book(self.student_client, self.valid_start)
         booking = Booking.objects.first()
         self.assertEqual(booking.lesson_type, Booking.LessonType.TRIAL)
         self.assertEqual(booking.price, self.teacher.trial_price)
+        self.assertEqual(booking.duration_minutes, self.teacher.trial_duration_minutes)
+        self.assertEqual(response.json()['duration_minutes'], self.teacher.trial_duration_minutes)
 
     def test_returning_student_gets_regular_pricing(self):
         # simulate a previous completed lesson
@@ -64,10 +66,12 @@ class BookSlotViewTests(RoleTestCase):
             end_at=timezone.now() - timedelta(days=10) + timedelta(hours=1),
             status=Booking.Status.COMPLETED,
         )
-        self._book(self.student_client, self.valid_start)
+        response = self._book(self.student_client, self.valid_start)
         booking = Booking.objects.get(start_at=self.valid_start)
         self.assertEqual(booking.lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(booking.price, self.teacher.lesson_price)
+        self.assertEqual(booking.duration_minutes, self.teacher.lesson_duration_minutes)
+        self.assertEqual(response.json()['duration_minutes'], self.teacher.lesson_duration_minutes)
 
     def test_student_with_pending_booking_gets_regular_pricing(self):
         # simulate an existing pending trial booking at another time

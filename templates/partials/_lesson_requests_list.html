@@ -17,6 +17,7 @@
             </span>
             <span class="request-datetime">
                 {{ booking.local_date|date:"M d" }}, {{ booking.time_range }}
+                <span class="badge-duration">{{ booking.duration_display }}</span>
             </span>
         </div>
         <div class="request-actions">

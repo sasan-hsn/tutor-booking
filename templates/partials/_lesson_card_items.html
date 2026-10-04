@@ -15,15 +15,18 @@
         {% endif %}
     </div>
     <div class="lesson-card-body">
-        {% if user.teacher_profile %}
-        <span class="lesson-card-time">
-            {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
-        </span>
-        {% else %}
-        <span class="lesson-card-time">
-            {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
-        </span>
-        {% endif %}
+        <div class="lesson-card-time-row">
+            {% if user.teacher_profile %}
+            <span class="lesson-card-time">
+                {{ booking.teacher_local_start|time:"H:i" }} – {{ booking.teacher_local_end|time:"H:i" }}
+            </span>
+            {% else %}
+            <span class="lesson-card-time">
+                {{ booking.student_local_start|time:"H:i" }} – {{ booking.student_local_end|time:"H:i" }}
+            </span>
+            {% endif %}
+            <span class="badge-duration">{{ booking.duration_display }}</span>
+        </div>
         {% if user.teacher_profile %}
         <span class="lesson-card-teacher">{{ booking.student_display_name }}</span>
         {% else %}

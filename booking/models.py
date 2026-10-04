@@ -149,6 +149,10 @@ class Booking(models.Model):
     teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE, related_name='bookings')
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
+    duration_minutes = models.PositiveSmallIntegerField(
+        default=50,
+        validators=[MinValueValidator(1)],
+    )
     lesson_type = models.CharField(max_length=10, choices=LessonType.choices, default=LessonType.REGULAR)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     cancellation_requested = models.BooleanField(default=False)
@@ -185,6 +189,9 @@ class Booking(models.Model):
 
         if self.start_at and self.end_at and self.start_at >= self.end_at:
             raise ValidationError({'end_at': 'End time must be after start time.'})
+
+        if self.duration_minutes is not None and self.duration_minutes <= 0:
+            raise ValidationError({'duration_minutes': 'Duration must be greater than zero.'})
 
         if self.teacher_id and self.student_id and self.teacher.user_id == self.student_id:
             raise ValidationError({'student': 'A teacher cannot book their own availability.'})
@@ -245,6 +252,10 @@ class Booking(models.Model):
     @property
     def teacher_local_end(self):
         return timezone.localtime(self.end_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
+
+    @property
+    def duration_display(self):
+        return f"{self.duration_minutes} min"
 
     def __str__(self):
         return (
