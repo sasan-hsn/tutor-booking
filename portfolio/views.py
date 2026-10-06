@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from accounts.decorators import teacher_required
@@ -121,11 +122,14 @@ def teacher_certificate_delete(request, certificate_id):
 @teacher_required
 def teacher_settings_booking(request):
     teacher = request.user.teacher_profile
+    next_url = request.POST.get('next') or request.GET.get('next')
     if request.method == 'POST':
         form = TeacherBookingSettingsForm(request.POST, instance=teacher)
         if form.is_valid():
             form.save()
             messages.success(request, 'Booking settings updated.')
+            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                return redirect(next_url)
             return redirect('portfolio:teacher_settings_booking')
     else:
         form = TeacherBookingSettingsForm(instance=teacher)
@@ -133,4 +137,5 @@ def teacher_settings_booking(request):
     return render(request, 'portfolio/teacher_settings_booking.html', {
         'form': form,
         'active': 'booking',
+        'next': next_url,
     })

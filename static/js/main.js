@@ -496,6 +496,7 @@ function initLessonDetailModalManager() {
 
     // Open detail from lesson card (Dashboard)
     document.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-join-lesson, .btn-set-meeting-link')) return;
         const card = e.target.closest('.lesson-card');
         if (!card) return;
 

@@ -8,6 +8,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [x] Student can submit duplicate trial requests while one is already pending (#150)
 
 ## 🎨 Unfinished features / UI polish
+- [ ] "Join Lesson" direct meeting access on lesson cards for teacher and student (activates during the Lesson Join Window, 10 minutes before start through 10 minutes after end of lesson, linking directly to the teacher's meeting link) (#221)
 - [x] Pagination for the Upcoming/Past sections in both dashboards (#207, #208, #209)
 - [ ] Teacher-configurable Instant Tutoring buffer (currently hardcoded to 1 hour — see CLAUDE.md)
 - [ ] Visual/styling pass on `profile_settings.html`
@@ -30,7 +31,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 
 ## 🚀 Major planned features (rough priority order)
 - [x] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep, teacher daily digest, Brevo HTTP API integration, resilient broker dispatch) (#160, #178, #180)
-- [ ] In-platform notifications (Deferred: transactional email via Brevo covers primary student/teacher alerts for current single-tenant scale)
+- [ ] In-platform notifications & dashboard alerts — notify teacher in real time (e.g. via polling or toast/badge) when new lesson or cancellation requests arrive without requiring manual page refresh (Transactional email via Brevo currently covers baseline alerts)
 - [ ] Student↔teacher messaging (decide up front: real-time via Django Channels/WebSockets, or simple polling/refresh — this decision significantly affects implementation complexity)
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
 - [ ] Payments/financial section (last, after everything above)
