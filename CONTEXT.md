@@ -52,6 +52,10 @@ _Avoid_: Lesson alert, booking notification, calendar ping
 A video conference URL (e.g., Google Meet, Zoom) associated with a teacher where the online lesson takes place.
 _Avoid_: Classroom URL, video room, lesson link
 
+**Lesson Join Window**:
+The active time window starting prior to a confirmed booking's scheduled start time and extending past its scheduled conclusion, during which the meeting link is accessible to the student and teacher.
+_Avoid_: Class window, meeting window, call access period, live room session
+
 **Verified User**:
 An account whose email address has been confirmed through an email verification link.
 _Avoid_: Activated account, confirmed user

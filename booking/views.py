@@ -43,12 +43,13 @@ DASHBOARD_PAGE_SIZE = 6
 
 
 def _get_student_upcoming_queryset(student, now):
+    grace_cutoff = now - timedelta(minutes=Booking.JOIN_WINDOW_POST_END_MINUTES)
     return (
         Booking.objects
         .filter(
             student=student,
             status=Booking.Status.CONFIRMED,
-            end_at__gte=now,
+            end_at__gte=grace_cutoff,
         )
         .select_related('teacher', 'teacher__user')
         .order_by('start_at')
@@ -56,12 +57,13 @@ def _get_student_upcoming_queryset(student, now):
 
 
 def _get_student_past_queryset(student, now):
+    grace_cutoff = now - timedelta(minutes=Booking.JOIN_WINDOW_POST_END_MINUTES)
     return (
         Booking.objects
         .filter(student=student)
         .filter(
             Q(status=Booking.Status.COMPLETED)
-            | Q(status=Booking.Status.CONFIRMED, end_at__lt=now)
+            | Q(status=Booking.Status.CONFIRMED, end_at__lt=grace_cutoff)
         )
         .select_related('teacher', 'teacher__user', 'review')
         .order_by('-start_at')
@@ -75,7 +77,7 @@ def _get_teacher_upcoming_queryset(teacher_user):
             teacher__user=teacher_user,
             status=Booking.Status.CONFIRMED,
         )
-        .select_related('student')
+        .select_related('student', 'teacher')
         .order_by('start_at')
     )
 
@@ -739,7 +741,7 @@ def teacher_calendar_ajax(request):
 def lesson_detail(request, booking_id):
     teacher = get_object_or_404(TeacherProfile, user=request.user)
     booking = get_object_or_404(
-        Booking.objects.select_related("student"),
+        Booking.objects.select_related("student", "teacher"),
         pk=booking_id,
         teacher=teacher,
     )
@@ -862,7 +864,7 @@ def student_calendar_ajax(request):
 @student_required
 def lesson_detail_student(request, booking_id):
     booking = get_object_or_404(
-        Booking.objects.select_related("teacher__user"),
+        Booking.objects.select_related("teacher__user", "teacher"),
         pk=booking_id,
         student=request.user,
     )

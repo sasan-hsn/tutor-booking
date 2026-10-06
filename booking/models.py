@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from django.conf import settings
@@ -145,6 +146,9 @@ class Booking(models.Model):
         DISPUTING = 'disputing', 'Disputing'
         EXPIRED = 'expired', 'Expired'
 
+    JOIN_WINDOW_PRE_START_MINUTES = 10
+    JOIN_WINDOW_POST_END_MINUTES = 10
+
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings')
     teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE, related_name='bookings')
     start_at = models.DateTimeField()
@@ -230,12 +234,32 @@ class Booking(models.Model):
         return self.teacher.user
 
     @property
+    def join_window_starts_at(self):
+        return self.start_at - timedelta(minutes=self.JOIN_WINDOW_PRE_START_MINUTES)
+
+    @property
+    def join_window_ends_at(self):
+        return self.end_at + timedelta(minutes=self.JOIN_WINDOW_POST_END_MINUTES)
+
+    @property
+    def is_joinable(self):
+        now = timezone.now()
+        return (
+            self.status == self.Status.CONFIRMED
+            and self.join_window_starts_at <= now <= self.join_window_ends_at
+        )
+
+    @property
     def is_live(self):
         return self.status == self.Status.CONFIRMED and self.start_at <= timezone.now() < self.end_at
 
     @property
     def is_awaiting_resolution(self):
         return self.status == self.Status.CONFIRMED and self.end_at < timezone.now()
+
+    @property
+    def meeting_link(self):
+        return self.teacher.meeting_link
 
     @property
     def student_local_start(self):

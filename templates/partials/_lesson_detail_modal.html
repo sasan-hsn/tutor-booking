@@ -52,6 +52,32 @@
         {% endif %}
     </div>
 
+    {% if booking.status == 'confirmed' %}
+        {% if booking.is_joinable %}
+        <div class="lesson-detail-join my-3">
+            {% if booking.meeting_link %}
+            <a href="{{ booking.meeting_link }}" target="_blank" rel="noopener noreferrer"
+                class="btn-accent btn-join-lesson w-100 text-center d-block py-2">
+                <i class="bi bi-camera-video-fill me-2"></i>Join Lesson
+            </a>
+            {% elif user.teacher_profile %}
+            <a href="{% url 'portfolio:teacher_settings_booking' %}?next={% url 'booking:teacher_dashboard' %}"
+                class="btn-set-meeting-link w-100 text-center d-block py-2 text-decoration-none">
+                ⚠️ Set Meeting Link
+            </a>
+            {% else %}
+            <div class="lesson-detail-notice">
+                Teacher hasn't added a meeting link yet. It will appear here once configured.
+            </div>
+            {% endif %}
+        </div>
+        {% elif not booking.is_awaiting_resolution %}
+        <div class="lesson-detail-notice my-3">
+            <i class="bi bi-clock me-1"></i>Meeting link accessible 10 minutes before lesson
+        </div>
+        {% endif %}
+    {% endif %}
+
     {% if booking.status == 'completed' %}
     <div class="lesson-detail-review">
         {% if booking.review %}

@@ -2,7 +2,12 @@
 
 {% for booking in upcoming_bookings %}
 <div class="lesson-card{% if booking.is_awaiting_resolution %} lesson-card-needs-action{% endif %}"
-    data-booking-id="{{ booking.id }}">
+    data-booking-id="{{ booking.id }}"
+    data-start-at="{{ booking.start_at.isoformat }}"
+    data-end-at="{{ booking.end_at.isoformat }}"
+    data-meeting-link="{{ booking.meeting_link|default:'' }}"
+    data-status="{{ booking.status }}"
+    data-is-teacher="{% if user.teacher_profile %}true{% else %}false{% endif %}">
     <div class="lesson-card-date">
         {% if user.teacher_profile %}
         <span class="lesson-card-month">{{ booking.teacher_local_start|date:"M" }}</span>
@@ -40,6 +45,21 @@
         <span class="badge-needs-action">Needs Action</span>
         {% else %}
         <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
+        {% endif %}
+        {% if booking.is_joinable %}
+            {% if booking.meeting_link %}
+            <a href="{{ booking.meeting_link }}" target="_blank" rel="noopener noreferrer"
+                class="btn-accent btn-sm btn-join-lesson text-center text-decoration-none"
+                onclick="event.stopPropagation();">
+                <i class="bi bi-camera-video-fill me-1"></i>Join Lesson
+            </a>
+            {% elif user.teacher_profile %}
+            <a href="{% url 'portfolio:teacher_settings_booking' %}?next={% url 'booking:teacher_dashboard' %}"
+                class="btn-set-meeting-link btn-sm text-center text-decoration-none"
+                onclick="event.stopPropagation();">
+                ⚠️ Set Meeting Link
+            </a>
+            {% endif %}
         {% endif %}
     </div>
     <div class="lesson-card-avatar">

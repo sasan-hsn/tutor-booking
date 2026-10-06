@@ -21,6 +21,9 @@
 
 <form method="post">
     {% csrf_token %}
+    {% if next %}
+    <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
 
     <div class="card mb-4 border-0 shadow-sm">
         <div class="card-body p-4">
