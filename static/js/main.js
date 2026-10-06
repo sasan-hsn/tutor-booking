@@ -138,6 +138,9 @@ function initLessonCardsScroll() {
 
                 if (html.trim() && sentinel) {
                     sentinel.insertAdjacentHTML('beforebegin', html);
+                    if (typeof updateLessonJoinWindows === 'function') {
+                        updateLessonJoinWindows();
+                    }
                 }
 
                 if (pendingAutoScroll) {
@@ -1509,7 +1512,162 @@ function initVerificationBanner() {
 }
 
 /* --------------------------------------------------------------------------
-   11. Single Application Bootstrap
+   11. Real-Time Lesson Join Window Watcher (#221, #223)
+   -------------------------------------------------------------------------- */
+const JOIN_WINDOW_PRE_START_MS = 10 * 60 * 1000;
+const JOIN_WINDOW_POST_END_MS = 10 * 60 * 1000;
+
+function updateLessonJoinWindows(currentTime = new Date()) {
+    const cards = document.querySelectorAll('.lesson-card[data-start-at][data-end-at]');
+    if (!cards || cards.length === 0) return;
+
+    const nowMs = currentTime.getTime();
+
+    cards.forEach((card) => {
+        const startAtStr = card.dataset.startAt;
+        const endAtStr = card.dataset.endAt;
+        if (!startAtStr || !endAtStr) return;
+
+        const startAt = new Date(startAtStr);
+        const endAt = new Date(endAtStr);
+        if (isNaN(startAt.getTime()) || isNaN(endAt.getTime())) return;
+
+        const status = card.dataset.status;
+        const cardBody = card.querySelector('.lesson-card-body');
+        if (!cardBody) return;
+
+        // Non-confirmed bookings do not participate in the join window
+        if (status && status !== 'confirmed') {
+            card.classList.remove('lesson-card-joinable');
+            const existingBtn = cardBody.querySelector('.btn-join-lesson, .btn-set-meeting-link');
+            if (existingBtn) existingBtn.remove();
+            return;
+        }
+
+        const isTeacher = card.dataset.isTeacher === 'true';
+        const meetingLink = (card.dataset.meetingLink || '').trim();
+        const settingsUrl = card.dataset.settingsUrl || '/teacher/settings/booking/?next=/teacher/';
+        const lessonType = card.dataset.lessonType || 'Regular Lesson';
+
+        const windowStartsAtMs = startAt.getTime() - JOIN_WINDOW_PRE_START_MS;
+        const windowEndsAtMs = endAt.getTime() + JOIN_WINDOW_POST_END_MS;
+
+        const isJoinable = nowMs >= windowStartsAtMs && nowMs <= windowEndsAtMs;
+        const isLive = nowMs >= startAt.getTime() && nowMs < endAt.getTime();
+        const hasPassedGracePeriod = nowMs > windowEndsAtMs;
+        const hasEnded = nowMs >= endAt.getTime();
+
+        // 1. Join button & joinable styling
+        let existingBtn = cardBody.querySelector('.btn-join-lesson, .btn-set-meeting-link');
+
+        if (isJoinable) {
+            card.classList.add('lesson-card-joinable');
+
+            if (!existingBtn) {
+                if (meetingLink) {
+                    const joinBtn = document.createElement('a');
+                    joinBtn.href = meetingLink;
+                    joinBtn.target = '_blank';
+                    joinBtn.rel = 'noopener noreferrer';
+                    joinBtn.className = 'btn-accent btn-sm btn-join-lesson text-center text-decoration-none';
+                    joinBtn.innerHTML = '<i class="bi bi-camera-video-fill me-1"></i>Join Lesson';
+                    joinBtn.setAttribute('onclick', 'event.stopPropagation();');
+                    joinBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                    });
+                    cardBody.appendChild(joinBtn);
+                } else if (isTeacher) {
+                    const setLinkBtn = document.createElement('a');
+                    setLinkBtn.href = settingsUrl;
+                    setLinkBtn.className = 'btn-set-meeting-link btn-sm text-center text-decoration-none';
+                    setLinkBtn.textContent = '⚠️ Set Meeting Link';
+                    setLinkBtn.setAttribute('onclick', 'event.stopPropagation();');
+                    setLinkBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                    });
+                    cardBody.appendChild(setLinkBtn);
+                }
+            }
+        } else {
+            card.classList.remove('lesson-card-joinable');
+            if (existingBtn) {
+                existingBtn.remove();
+            }
+        }
+
+        // 2. Badge & Card Status Transitions
+        let badge = cardBody.querySelector('.badge-live, .badge-needs-action, .badge-awaiting-resolution, .badge-lesson-type');
+
+        if (isLive) {
+            if (!cardBody.querySelector('.badge-live')) {
+                const liveBadge = document.createElement('span');
+                liveBadge.className = 'badge-live';
+                liveBadge.innerHTML = '<span class="badge-live-dot"></span> Live Now';
+                if (badge) {
+                    badge.replaceWith(liveBadge);
+                } else {
+                    const teacherName = cardBody.querySelector('.lesson-card-teacher');
+                    if (teacherName) {
+                        teacherName.insertAdjacentElement('afterend', liveBadge);
+                    } else {
+                        cardBody.appendChild(liveBadge);
+                    }
+                }
+            }
+        } else if (hasEnded) {
+            // Once scheduled end_at arrives, Live Now transitions
+            if (isTeacher) {
+                card.classList.add('lesson-card-needs-action');
+                if (badge && !badge.classList.contains('badge-needs-action')) {
+                    const needsActionBadge = document.createElement('span');
+                    needsActionBadge.className = 'badge-needs-action';
+                    needsActionBadge.textContent = 'Needs Action';
+                    badge.replaceWith(needsActionBadge);
+                }
+            } else {
+                if (cardBody.querySelector('.badge-live')) {
+                    const currentLiveBadge = cardBody.querySelector('.badge-live');
+                    const regularBadge = document.createElement('span');
+                    regularBadge.className = 'badge-lesson-type';
+                    regularBadge.textContent = lessonType;
+                    currentLiveBadge.replaceWith(regularBadge);
+                }
+            }
+        } else {
+            // Before start_at: if badge was badge-live, restore lesson type
+            if (cardBody.querySelector('.badge-live')) {
+                const currentLiveBadge = cardBody.querySelector('.badge-live');
+                const regularBadge = document.createElement('span');
+                regularBadge.className = 'badge-lesson-type';
+                regularBadge.textContent = lessonType;
+                currentLiveBadge.replaceWith(regularBadge);
+            }
+        }
+    });
+}
+
+function initLessonJoinWindowWatcher() {
+    const hasLessonContainers = document.querySelector('.lesson-cards-scroll, .lesson-card');
+    if (!hasLessonContainers) return null;
+
+    if (typeof window !== 'undefined' && window._lessonJoinWatcherInterval) {
+        clearInterval(window._lessonJoinWatcherInterval);
+        window._lessonJoinWatcherInterval = null;
+    }
+
+    updateLessonJoinWindows();
+    const intervalId = setInterval(() => {
+        updateLessonJoinWindows();
+    }, 30000);
+
+    if (typeof window !== 'undefined') {
+        window._lessonJoinWatcherInterval = intervalId;
+    }
+    return intervalId;
+}
+
+/* --------------------------------------------------------------------------
+   12. Single Application Bootstrap
    -------------------------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
     initSignupTimezoneDetection();
@@ -1524,4 +1682,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initCalendarView();
     initCertificateManager();
     initPendingReviewsManager();
+    initLessonJoinWindowWatcher();
 });
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        initLessonJoinWindowWatcher,
+        updateLessonJoinWindows,
+    };
+}

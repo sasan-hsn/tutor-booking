@@ -45,12 +45,16 @@ class TeacherDashboardJoinWindowTests(RoleTestCase):
         self.assertContains(response, 'target="_blank"')
         self.assertContains(response, 'rel="noopener noreferrer"')
 
-        # Check data attributes on card
+        # Check data attributes and classes on card
         self.assertContains(response, f'data-start-at="{self.joinable_booking.start_at.isoformat()}"')
         self.assertContains(response, f'data-end-at="{self.joinable_booking.end_at.isoformat()}"')
         self.assertContains(response, 'data-meeting-link="https://meet.google.com/abc-defg-hij"')
         self.assertContains(response, 'data-status="confirmed"')
         self.assertContains(response, 'data-is-teacher="true"')
+        self.assertContains(response, 'data-lesson-type="Regular Lesson"')
+        expected_settings_url = f"{reverse('portfolio:teacher_settings_booking')}?next={reverse('booking:teacher_dashboard')}"
+        self.assertContains(response, f'data-settings-url="{expected_settings_url}"')
+        self.assertContains(response, 'lesson-card-joinable')
 
     def test_teacher_dashboard_shows_set_meeting_link_warning_when_link_missing(self):
         """When teacher has no meeting link, teacher card renders warning link to booking settings."""
@@ -149,6 +153,17 @@ class StudentDashboardJoinWindowTests(RoleTestCase):
         self.assertContains(response, 'target="_blank"')
         self.assertContains(response, 'rel="noopener noreferrer"')
         self.assertContains(response, 'data-is-teacher="false"')
+        self.assertContains(response, 'data-lesson-type="Regular Lesson"')
+        self.assertContains(response, 'lesson-card-joinable')
+
+    def test_student_dashboard_renders_awaiting_resolution_during_post_end_grace_period(self):
+        """During post-end grace period, student card renders Awaiting Resolution badge, not Needs Action."""
+        post_end_time = self.joinable_booking.end_at + timedelta(minutes=5)
+        with patch('django.utils.timezone.now', return_value=post_end_time):
+            response = self.student_client.get(reverse('booking:student_dashboard'))
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'Awaiting Resolution')
+            self.assertNotContains(response, 'Needs Action')
 
     def test_student_dashboard_omits_button_when_teacher_has_no_meeting_link(self):
         """Student card renders NO button when teacher has no meeting link (clean card layout)."""
