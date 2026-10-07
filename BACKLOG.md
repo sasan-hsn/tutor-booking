@@ -8,7 +8,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [x] Student can submit duplicate trial requests while one is already pending (#150)
 
 ## 🎨 Unfinished features / UI polish
-- [ ] "Join Lesson" direct meeting access on lesson cards for teacher and student (activates during the Lesson Join Window, 10 minutes before start through 10 minutes after end of lesson, linking directly to the teacher's meeting link) (#221)
+- [x] "Join Lesson" direct meeting access on lesson cards for teacher and student (activates during the Lesson Join Window, 10 minutes before start through 10 minutes after end of lesson, linking directly to the teacher's meeting link) (#221)
 - [x] Pagination for the Upcoming/Past sections in both dashboards (#207, #208, #209)
 - [ ] Teacher-configurable Instant Tutoring buffer (currently hardcoded to 1 hour — see CLAUDE.md)
 - [ ] Visual/styling pass on `profile_settings.html`
