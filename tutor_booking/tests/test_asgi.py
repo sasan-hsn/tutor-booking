@@ -65,3 +65,13 @@ class ASGIRoutingAndHealthCheckTests(SimpleTestCase):
         response = self.client.get("/health/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"OK")
+
+    def test_uvicorn_loads_websocket_protocol_class(self):
+        from uvicorn.config import Config
+
+        config = Config("tutor_booking.asgi:application", ws="auto")
+        config.load()
+        self.assertIsNotNone(
+            config.ws_protocol_class,
+            "Uvicorn must detect an installed WebSocket library (e.g. websockets) to handle upgrade requests.",
+        )
