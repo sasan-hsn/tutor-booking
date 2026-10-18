@@ -112,4 +112,20 @@ _Avoid_: Future bookings, active bookings, scheduled appointments
 The dashboard collection of lessons that have already taken place, comprising completed bookings and, for students, bookings awaiting teacher resolution.
 _Avoid_: Lesson history, completed classes, archived lessons
 
+**In-Platform Notification**:
+A persistent alert entity stored in the database informing a specific user (student or teacher) of an actionable event or status change.
+_Avoid_: System alert, push alert, flash notification
+
+**Notification Channel**:
+An authenticated real-time WebSocket connection scoped to a specific user through which newly emitted in-platform notifications are pushed to active browser sessions.
+_Avoid_: Event stream, socket pipe, notification socket
+
+**Unread Notification Count**:
+The tally of active notifications for a user that have not yet been marked as read or dismissed, surfaced as a badge count on the topbar bell icon.
+_Avoid_: Pending badge, alert tally, unread counter
+
+**Notification Dropdown**:
+The dashboard topbar interface listing the user's recent notifications, unread state, direct action links, and bulk read actions.
+_Avoid_: Notification center, alert box, notification drawer
+
 

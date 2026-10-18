@@ -20,7 +20,7 @@ This document is a full history/context handoff for an AI coding assistant picki
 - **Frontend:** Vanilla JS (Fetch API/DOM), Bootstrap-based styling, custom CSS design tokens (Inter + Outfit fonts, `--primary-blue`/`--accent-amber` CSS variables)
 - **Database:** PostgreSQL (via Docker; SQLite fallback via `dj_database_url` for portability/CS50 grading)
 - **Auth:** Django's built-in session-based auth (deliberately NOT JWT — see Architecture Decisions below)
-- **Deployment:** Docker Compose on a VPS, Nginx (host-level, not containerized) as reverse proxy, Gunicorn as WSGI server, Let's Encrypt/Certbot for HTTPS
+- **Deployment:** Docker Compose on a VPS, Nginx (host-level, not containerized) as reverse proxy, Gunicorn with Uvicorn worker as ASGI server, Let's Encrypt/Certbot for HTTPS
 
 ## Data model summary
 - Custom `User` model (`accounts.User`) with a `role` field (student/teacher) and a `timezone` CharField (IANA timezone string, validated via `zoneinfo.available_timezones()`)
@@ -72,7 +72,7 @@ Chose a manual VPS + Docker Compose (over PaaS like Railway/Render) deliberately
 - **VPS:** provisioned with a non-root `deployer` user (sudo + `docker` group membership, so Docker commands don't need sudo — required for CI automation), SSH key-only auth (`PermitRootLogin no`, `PasswordAuthentication no` in sshd_config)
 - **Containers (`docker-compose.prod.yml`):**
   - `postgres` — Postgres 16-alpine, healthcheck via `pg_isready`, **no exposed host port** (only reachable inside the Docker network, for security)
-  - `web` — Django + Gunicorn, built from a project `Dockerfile`, command runs `migrate` + `collectstatic` then launches Gunicorn on `0.0.0.0:8000` (only `expose`d internally, not published to the host — Nginx is the only thing that talks to it)
+  - `web` — Django + Gunicorn (with Uvicorn workers for ASGI), built from a project `Dockerfile`, command runs `migrate` + `collectstatic` then launches Gunicorn on `0.0.0.0:8000` (only `expose`d internally, not published to the host — Nginx is the only thing that talks to it)
   - `autoheal` (willfarrell/autoheal image) — watches containers labeled `autoheal=true` and restarts them if Docker reports them `unhealthy` (a healthcheck alone only changes container *status*, it doesn't restart anything by itself — `autoheal` is what actually does the restart)
 - **Static/media files:** `docker-compose.prod.yml` uses **bind mounts** (`./staticfiles:/app/staticfiles`, `./media:/app/media`), NOT named volumes. **Important history:** this was originally a named volume, which caused a production bug — Nginx (running on the host as `www-data`) couldn't read Docker's internally-managed volume storage (root-only permissions), causing uploaded teacher photos to 403. Fixed by switching to bind mounts pointing at a known host path (`~/app/staticfiles`, `~/app/media`), plus `chmod o+x` on `/home/deployer` and `~/app` (execute-only, not read — needed for Nginx to traverse into the bind-mount path without being able to list/browse the rest of the home directory).
 - **Nginx** (installed directly on the VPS host, not containerized — deliberate choice: unnecessary complexity for a single-project server, would reconsider if multiple projects were hosted on the same box): reverse proxy to `127.0.0.1:8000`, serves `/static/` and `/media/` directly via `alias`, HTTPS via Let's Encrypt/Certbot (auto HTTP→HTTPS redirect for both apex and `www`)

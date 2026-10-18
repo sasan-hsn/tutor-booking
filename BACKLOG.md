@@ -31,8 +31,8 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 
 ## 🚀 Major planned features (rough priority order)
 - [x] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep, teacher daily digest, Brevo HTTP API integration, resilient broker dispatch) (#160, #178, #180)
-- [ ] In-platform notifications & dashboard alerts — notify teacher in real time (e.g. via polling or toast/badge) when new lesson or cancellation requests arrive without requiring manual page refresh (Transactional email via Brevo currently covers baseline alerts)
-- [ ] Student↔teacher messaging (decide up front: real-time via Django Channels/WebSockets, or simple polling/refresh — this decision significantly affects implementation complexity)
+- [ ] In-platform notifications & dashboard alerts — real-time WebSocket alerts & topbar dropdown via Django Channels, ASGI, and Redis (see ADR 0007) (#226)
+- [ ] Student↔teacher messaging — real-time chat via Django Channels/WebSockets built on top of the ASGI foundation established in ADR 0007
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
 - [ ] Payments/financial section (last, after everything above)
 

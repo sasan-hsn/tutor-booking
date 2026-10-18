@@ -11,3 +11,7 @@ sqlparse==0.5.5
 tzdata==2026.3
 gunicorn==23.0.0
 sentry-sdk==2.70.0
+channels==4.3.2
+channels-redis==4.3.0
+daphne==4.2.3
+uvicorn==0.54.0
