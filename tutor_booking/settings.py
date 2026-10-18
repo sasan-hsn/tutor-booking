@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "anymail",
 
     # Local apps
@@ -88,6 +89,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "tutor_booking.wsgi.application"
+ASGI_APPLICATION = "tutor_booking.asgi.application"
 
 
 # Database
@@ -213,6 +215,25 @@ else:
                 'protocol': REDIS_PROTOCOL,
             },
         }
+    }
+
+# Redis Channel Layer configuration (Redis DB 2 for channels, isolated from Celery DB 0 and Cache DB 1)
+REDIS_CHANNEL_LAYER_URL = os.getenv('REDIS_CHANNEL_LAYER_URL', f'redis://{default_redis_host}:6379/2')
+
+if 'test' in sys.argv:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_CHANNEL_LAYER_URL],
+            },
+        },
     }
 
 # Celery Beat schedule for periodic background tasks
