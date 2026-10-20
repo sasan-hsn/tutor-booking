@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'accounts',
     'booking',
     'portfolio',
+    'notifications',
 ]
 
 MIDDLEWARE = [
