@@ -14,6 +14,7 @@ def _build_booking_metadata(booking, participant_name: str) -> dict:
         "lesson_duration": booking.duration_minutes,
         "start_time": booking.start_at.isoformat(),
         "participant_name": participant_name,
+        "lesson_type": booking.lesson_type,
     }
 
 
@@ -23,13 +24,14 @@ def notify_booking_requested(booking):
         teacher_user = booking.teacher.user
         action_url = reverse("booking:teacher_dashboard")
         metadata = _build_booking_metadata(booking, booking.student_display_name)
+        lesson_type = booking.get_lesson_type_display()
         return create_and_send_notification(
             recipient=teacher_user,
             actor=booking.student,
             event_type=Notification.EventType.BOOKING_REQUESTED,
             level=Notification.Level.INFO,
             title="New Lesson Request",
-            message=f"{booking.student_display_name} requested a {booking.duration_minutes}-minute lesson.",
+            message=f"{booking.student_display_name} requested a {booking.duration_minutes}-minute {lesson_type}.",
             action_url=action_url,
             metadata=metadata,
         )
@@ -43,13 +45,14 @@ def notify_booking_confirmed(booking):
     try:
         action_url = reverse("booking:student_dashboard")
         metadata = _build_booking_metadata(booking, booking.teacher_display_name)
+        lesson_type = booking.get_lesson_type_display()
         return create_and_send_notification(
             recipient=booking.student,
             actor=booking.teacher.user,
             event_type=Notification.EventType.BOOKING_CONFIRMED,
             level=Notification.Level.SUCCESS,
             title="Lesson Confirmed",
-            message=f"Your lesson with {booking.teacher_display_name} has been confirmed.",
+            message=f"Your {lesson_type} with {booking.teacher_display_name} has been confirmed.",
             action_url=action_url,
             metadata=metadata,
         )
@@ -63,13 +66,14 @@ def notify_booking_declined(booking):
     try:
         action_url = reverse("booking:student_dashboard")
         metadata = _build_booking_metadata(booking, booking.teacher_display_name)
+        lesson_type = booking.get_lesson_type_display()
         return create_and_send_notification(
             recipient=booking.student,
             actor=booking.teacher.user,
             event_type=Notification.EventType.BOOKING_DECLINED,
             level=Notification.Level.WARNING,
             title="Lesson Request Declined",
-            message=f"{booking.teacher_display_name} was unable to accept your lesson request.",
+            message=f"{booking.teacher_display_name} was unable to accept your {lesson_type} request.",
             action_url=action_url,
             metadata=metadata,
         )
@@ -84,13 +88,14 @@ def notify_cancellation_requested(booking):
         teacher_user = booking.teacher.user
         action_url = reverse("booking:teacher_dashboard")
         metadata = _build_booking_metadata(booking, booking.student_display_name)
+        lesson_type = booking.get_lesson_type_display()
         return create_and_send_notification(
             recipient=teacher_user,
             actor=booking.student,
             event_type=Notification.EventType.CANCELLATION_REQUESTED,
             level=Notification.Level.WARNING,
             title="Cancellation Requested",
-            message=f"{booking.student_display_name} requested to cancel their upcoming lesson.",
+            message=f"{booking.student_display_name} requested to cancel their upcoming {lesson_type}.",
             action_url=action_url,
             metadata=metadata,
         )
@@ -105,13 +110,14 @@ def notify_booking_cancelled(booking, cancelled_by=None):
         action_url = reverse("booking:student_dashboard")
         metadata = _build_booking_metadata(booking, booking.teacher_display_name)
         actor = cancelled_by if cancelled_by is not None else booking.teacher.user
+        lesson_type = booking.get_lesson_type_display()
         return create_and_send_notification(
             recipient=booking.student,
             actor=actor,
             event_type=Notification.EventType.BOOKING_CANCELLED,
             level=Notification.Level.WARNING,
             title="Lesson Cancelled",
-            message=f"Your lesson with {booking.teacher_display_name} has been cancelled.",
+            message=f"Your {lesson_type} with {booking.teacher_display_name} has been cancelled.",
             action_url=action_url,
             metadata=metadata,
         )
@@ -123,6 +129,7 @@ def notify_booking_cancelled(booking, cancelled_by=None):
 def notify_booking_expired(booking):
     """Notify both student and teacher when a pending booking expires."""
     notifications = []
+    lesson_type = booking.get_lesson_type_display()
     # 1. Notify student
     try:
         action_url_student = reverse("booking:student_dashboard")
@@ -133,7 +140,7 @@ def notify_booking_expired(booking):
             event_type=Notification.EventType.BOOKING_EXPIRED,
             level=Notification.Level.WARNING,
             title="Lesson Request Expired",
-            message=f"Your lesson request with {booking.teacher_display_name} has expired.",
+            message=f"Your {lesson_type} request with {booking.teacher_display_name} has expired.",
             action_url=action_url_student,
             metadata=student_metadata,
         )
@@ -152,7 +159,7 @@ def notify_booking_expired(booking):
             event_type=Notification.EventType.BOOKING_EXPIRED,
             level=Notification.Level.WARNING,
             title="Lesson Request Expired",
-            message=f"The lesson request from {booking.student_display_name} has expired.",
+            message=f"The {lesson_type} request from {booking.student_display_name} has expired.",
             action_url=action_url_teacher,
             metadata=teacher_metadata,
         )

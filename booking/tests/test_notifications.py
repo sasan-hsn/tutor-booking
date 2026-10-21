@@ -11,6 +11,15 @@ from django.utils import timezone
 
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking, RegularAvailability
+from booking.notifications import (
+    notify_booking_cancelled,
+    notify_booking_confirmed,
+    notify_booking_declined,
+    notify_booking_expired,
+    notify_booking_requested,
+    notify_cancellation_requested,
+)
+from notifications.models import Notification
 from booking.tasks import (
     safe_send_booking_cancelled_email,
     safe_send_booking_confirmed_email,
@@ -1008,4 +1017,174 @@ class RequestCancellationNotificationTests(RoleTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(len(mail.outbox), 0)
+
+
+class BookingInPlatformNotificationCopyTests(RoleTestCase):
+    """
+    Unit tests asserting exact copy formatting and metadata for in-platform notifications
+    across all booking lifecycle events (requested, confirmed, declined, cancellation requested,
+    cancelled, expired) for both Trial and Regular lesson types.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.teacher.lesson_price = 25
+        cls.teacher.lesson_duration_minutes = 50
+        cls.teacher.offers_trial = True
+        cls.teacher.trial_price = 10
+        cls.teacher.trial_duration_minutes = 25
+        cls.teacher.save()
+
+        cls.teacher_user.first_name = 'Mary'
+        cls.teacher_user.last_name = 'Smith'
+        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.save()
+
+        cls.student_user.first_name = 'John'
+        cls.student_user.last_name = 'Doe'
+        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.save()
+
+    def setUp(self):
+        super().setUp()
+        future_date = timezone.localdate() + timedelta(days=2)
+        start_at = timezone.datetime.combine(future_date, time(10, 0), tzinfo=dt_timezone.utc)
+
+        self.trial_booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=start_at,
+            end_at=start_at + timedelta(minutes=25),
+            duration_minutes=25,
+            lesson_type=Booking.LessonType.TRIAL,
+            price=self.teacher.trial_price,
+            status=Booking.Status.PENDING,
+        )
+
+        future_date_2 = timezone.localdate() + timedelta(days=3)
+        start_at_2 = timezone.datetime.combine(future_date_2, time(14, 0), tzinfo=dt_timezone.utc)
+        self.regular_booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=start_at_2,
+            end_at=start_at_2 + timedelta(minutes=50),
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.PENDING,
+        )
+
+    def test_notify_booking_requested_trial_copy(self):
+        notif = notify_booking_requested(self.trial_booking)
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.recipient, self.teacher_user)
+        self.assertEqual(notif.actor, self.student_user)
+        self.assertEqual(notif.event_type, Notification.EventType.BOOKING_REQUESTED)
+        self.assertEqual(notif.title, "New Lesson Request")
+        self.assertEqual(notif.message, "John Doe requested a 25-minute Trial Lesson.")
+        self.assertEqual(notif.metadata["lesson_type"], "trial")
+        self.assertEqual(notif.metadata["lesson_duration"], 25)
+
+    def test_notify_booking_requested_regular_copy(self):
+        notif = notify_booking_requested(self.regular_booking)
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.recipient, self.teacher_user)
+        self.assertEqual(notif.actor, self.student_user)
+        self.assertEqual(notif.event_type, Notification.EventType.BOOKING_REQUESTED)
+        self.assertEqual(notif.title, "New Lesson Request")
+        self.assertEqual(notif.message, "John Doe requested a 50-minute Regular Lesson.")
+        self.assertEqual(notif.metadata["lesson_type"], "regular")
+        self.assertEqual(notif.metadata["lesson_duration"], 50)
+
+    def test_notify_booking_confirmed_trial_and_regular_copy(self):
+        trial_notif = notify_booking_confirmed(self.trial_booking)
+        self.assertIsNotNone(trial_notif)
+        self.assertEqual(trial_notif.recipient, self.student_user)
+        self.assertEqual(trial_notif.actor, self.teacher_user)
+        self.assertEqual(trial_notif.title, "Lesson Confirmed")
+        self.assertEqual(trial_notif.message, "Your Trial Lesson with Mary Smith has been confirmed.")
+        self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
+
+        regular_notif = notify_booking_confirmed(self.regular_booking)
+        self.assertIsNotNone(regular_notif)
+        self.assertEqual(regular_notif.recipient, self.student_user)
+        self.assertEqual(regular_notif.actor, self.teacher_user)
+        self.assertEqual(regular_notif.title, "Lesson Confirmed")
+        self.assertEqual(regular_notif.message, "Your Regular Lesson with Mary Smith has been confirmed.")
+        self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
+
+    def test_notify_booking_declined_trial_and_regular_copy(self):
+        trial_notif = notify_booking_declined(self.trial_booking)
+        self.assertIsNotNone(trial_notif)
+        self.assertEqual(trial_notif.recipient, self.student_user)
+        self.assertEqual(trial_notif.actor, self.teacher_user)
+        self.assertEqual(trial_notif.title, "Lesson Request Declined")
+        self.assertEqual(trial_notif.message, "Mary Smith was unable to accept your Trial Lesson request.")
+        self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
+
+        regular_notif = notify_booking_declined(self.regular_booking)
+        self.assertIsNotNone(regular_notif)
+        self.assertEqual(regular_notif.recipient, self.student_user)
+        self.assertEqual(regular_notif.actor, self.teacher_user)
+        self.assertEqual(regular_notif.title, "Lesson Request Declined")
+        self.assertEqual(regular_notif.message, "Mary Smith was unable to accept your Regular Lesson request.")
+        self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
+
+    def test_notify_cancellation_requested_trial_and_regular_copy(self):
+        trial_notif = notify_cancellation_requested(self.trial_booking)
+        self.assertIsNotNone(trial_notif)
+        self.assertEqual(trial_notif.recipient, self.teacher_user)
+        self.assertEqual(trial_notif.actor, self.student_user)
+        self.assertEqual(trial_notif.title, "Cancellation Requested")
+        self.assertEqual(trial_notif.message, "John Doe requested to cancel their upcoming Trial Lesson.")
+        self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
+
+        regular_notif = notify_cancellation_requested(self.regular_booking)
+        self.assertIsNotNone(regular_notif)
+        self.assertEqual(regular_notif.recipient, self.teacher_user)
+        self.assertEqual(regular_notif.actor, self.student_user)
+        self.assertEqual(regular_notif.title, "Cancellation Requested")
+        self.assertEqual(regular_notif.message, "John Doe requested to cancel their upcoming Regular Lesson.")
+        self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
+
+    def test_notify_booking_cancelled_trial_and_regular_copy(self):
+        trial_notif = notify_booking_cancelled(self.trial_booking)
+        self.assertIsNotNone(trial_notif)
+        self.assertEqual(trial_notif.recipient, self.student_user)
+        self.assertEqual(trial_notif.actor, self.teacher_user)
+        self.assertEqual(trial_notif.title, "Lesson Cancelled")
+        self.assertEqual(trial_notif.message, "Your Trial Lesson with Mary Smith has been cancelled.")
+        self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
+
+        regular_notif = notify_booking_cancelled(self.regular_booking)
+        self.assertIsNotNone(regular_notif)
+        self.assertEqual(regular_notif.recipient, self.student_user)
+        self.assertEqual(regular_notif.actor, self.teacher_user)
+        self.assertEqual(regular_notif.title, "Lesson Cancelled")
+        self.assertEqual(regular_notif.message, "Your Regular Lesson with Mary Smith has been cancelled.")
+        self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
+
+    def test_notify_booking_expired_trial_and_regular_copy(self):
+        trial_notifs = notify_booking_expired(self.trial_booking)
+        self.assertEqual(len(trial_notifs), 2)
+        trial_student_notif, trial_teacher_notif = trial_notifs
+        self.assertEqual(trial_student_notif.title, "Lesson Request Expired")
+        self.assertEqual(trial_student_notif.message, "Your Trial Lesson request with Mary Smith has expired.")
+        self.assertEqual(trial_student_notif.metadata["lesson_type"], "trial")
+        self.assertEqual(trial_teacher_notif.title, "Lesson Request Expired")
+        self.assertEqual(trial_teacher_notif.message, "The Trial Lesson request from John Doe has expired.")
+        self.assertEqual(trial_teacher_notif.metadata["lesson_type"], "trial")
+
+        regular_notifs = notify_booking_expired(self.regular_booking)
+        self.assertEqual(len(regular_notifs), 2)
+        regular_student_notif, regular_teacher_notif = regular_notifs
+        self.assertEqual(regular_student_notif.title, "Lesson Request Expired")
+        self.assertEqual(regular_student_notif.message, "Your Regular Lesson request with Mary Smith has expired.")
+        self.assertEqual(regular_student_notif.metadata["lesson_type"], "regular")
+        self.assertEqual(regular_teacher_notif.title, "Lesson Request Expired")
+        self.assertEqual(regular_teacher_notif.message, "The Regular Lesson request from John Doe has expired.")
+        self.assertEqual(regular_teacher_notif.metadata["lesson_type"], "regular")
+
 
