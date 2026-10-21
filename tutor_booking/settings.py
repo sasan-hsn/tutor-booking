@@ -45,12 +45,14 @@ if SENTRY_DSN and 'test' not in sys.argv:
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.humanize",
     "channels",
     "anymail",
 
@@ -84,6 +86,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 'portfolio.context_processors.global_teacher_context',
+                'notifications.context_processors.notification_context',
             ],
         },
     },

@@ -1,7 +1,10 @@
+import logging
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from .models import Notification
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationConsumer(AsyncJsonWebsocketConsumer):
@@ -16,13 +19,21 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
 
-        self.group_name = Notification.get_group_name(user.id)
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
+        try:
+            self.group_name = Notification.get_group_name(user.id)
+            if self.channel_layer:
+                await self.channel_layer.group_add(self.group_name, self.channel_name)
+            await self.accept()
+        except Exception:
+            logger.exception("Failed to connect notification consumer for user #%s", user.id)
+            await self.close()
 
     async def disconnect(self, close_code):
-        if hasattr(self, "group_name") and self.group_name:
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if hasattr(self, "group_name") and self.group_name and self.channel_layer:
+            try:
+                await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            except Exception:
+                logger.exception("Failed to discard notification group for user on disconnect")
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
