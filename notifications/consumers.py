@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -19,21 +20,37 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
 
-        try:
-            self.group_name = Notification.get_group_name(user.id)
-            if self.channel_layer:
-                await self.channel_layer.group_add(self.group_name, self.channel_name)
-            await self.accept()
-        except Exception:
-            logger.exception("Failed to connect notification consumer for user #%s", user.id)
-            await self.close()
+        # Complete WebSocket handshake before external channel layer operations
+        # so delays or timeouts in Redis do not abort the handshake.
+        await self.accept()
+
+        self.group_name = Notification.get_group_name(user.id)
+        if self.channel_layer:
+            try:
+                await asyncio.wait_for(
+                    self.channel_layer.group_add(self.group_name, self.channel_name),
+                    timeout=2.0,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Channel layer group_add failed or timed out for user #%s: %s",
+                    user.id,
+                    e,
+                )
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name") and self.group_name and self.channel_layer:
             try:
-                await self.channel_layer.group_discard(self.group_name, self.channel_name)
-            except Exception:
-                logger.exception("Failed to discard notification group for user on disconnect")
+                await asyncio.wait_for(
+                    self.channel_layer.group_discard(self.group_name, self.channel_name),
+                    timeout=2.0,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Channel layer group_discard failed or timed out for group %s: %s",
+                    self.group_name,
+                    e,
+                )
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):

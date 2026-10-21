@@ -163,3 +163,23 @@ class NotificationConsumerTests(TransactionTestCase):
         self.assertEqual(frame['unread_count'], 1)
 
         await communicator.disconnect()
+
+    async def test_channel_layer_timeout_or_error_does_not_abort_handshake(self):
+        from unittest.mock import patch
+
+        channel_layer = get_channel_layer()
+
+        async def failing_group_add(*args, **kwargs):
+            raise TimeoutError("Timeout reading from localhost:6379")
+
+        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        with patch.object(channel_layer, "group_add", side_effect=failing_group_add):
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            # Can still communicate with the consumer (e.g. database-backed actions)
+            await communicator.send_json_to({"action": "get_unread_count"})
+            response = await communicator.receive_json_from()
+            self.assertEqual(response, {"type": "unread_count", "count": 0})
+
+        await communicator.disconnect()
