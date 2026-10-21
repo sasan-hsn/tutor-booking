@@ -99,7 +99,7 @@
         }
 
         const item = document.createElement('div');
-        item.className = 'notification-item p-3 border-bottom d-flex gap-3 align-items-start notification-unread bg-light-subtle';
+        item.className = 'notification-item p-3 border-bottom d-flex gap-3 align-items-start notification-unread';
         item.dataset.id = String(data.id);
         if (data.action_url) {
             item.dataset.actionUrl = data.action_url;

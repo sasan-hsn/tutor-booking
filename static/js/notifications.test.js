@@ -506,7 +506,7 @@ describe('Notifications Client Module', () => {
         const client = notifications.initNotifications({ autoConnectWs: false });
 
         const item = global.document.createElement('div');
-        item.classList.add('notification-item', 'notification-unread', 'bg-light-subtle');
+        item.classList.add('notification-item', 'notification-unread');
         item.dataset.id = '77';
         item.dataset.actionUrl = '/dashboard/lesson/77/';
 
@@ -549,7 +549,7 @@ describe('Notifications Client Module', () => {
 
         for (let i = 1; i <= 3; i++) {
             const item = global.document.createElement('div');
-            item.classList.add('notification-item', 'notification-unread', 'bg-light-subtle');
+            item.classList.add('notification-item', 'notification-unread');
             item.dataset.id = `${i}`;
             const dot = global.document.createElement('span');
             dot.classList.add('notification-dot');

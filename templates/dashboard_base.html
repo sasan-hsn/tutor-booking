@@ -112,7 +112,7 @@
                         </div>
                         <div class="notification-list" id="notificationList">
                             {% for notif in recent_notifications %}
-                            <div class="notification-item p-3 border-bottom d-flex gap-3 align-items-start {% if not notif.is_read %}notification-unread bg-light-subtle{% endif %}"
+                            <div class="notification-item p-3 border-bottom d-flex gap-3 align-items-start {% if not notif.is_read %}notification-unread{% endif %}"
                                 data-id="{{ notif.id }}" {% if notif.action_url %}data-action-url="{{ notif.action_url }}"{% endif %} role="button" tabindex="0">
                                 <div class="notification-icon-wrapper flex-shrink-0 mt-1">
                                     {% if notif.level == 'success' %}
