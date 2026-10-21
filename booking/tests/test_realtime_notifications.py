@@ -119,8 +119,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_REQUESTED)
         self.assertEqual(frame['level'], Notification.Level.INFO)
         self.assertEqual(frame['title'], 'New Lesson Request')
-        self.assertIn('John Doe', frame['message'])
-        self.assertIn('25-minute', frame['message'])
+        self.assertEqual(frame['message'], 'John Doe requested a 25-minute Trial Lesson.')
         self.assertEqual(frame['action_url'], reverse('booking:teacher_dashboard'))
         self.assertEqual(frame['unread_count'], 1)
 
@@ -131,10 +130,51 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
             self.assertEqual(notif.recipient, self.teacher_user)
             self.assertEqual(notif.actor, self.student_user)
             self.assertEqual(notif.event_type, Notification.EventType.BOOKING_REQUESTED)
+            self.assertEqual(notif.message, 'John Doe requested a 25-minute Trial Lesson.')
             self.assertEqual(notif.metadata['lesson_duration'], 25)
             self.assertEqual(notif.metadata['participant_name'], 'John Doe')
             self.assertEqual(notif.metadata['start_time'], slot_dt.isoformat())
+            self.assertEqual(notif.metadata['lesson_type'], 'trial')
             self.assertFalse(notif.is_read)
+
+        await verify_db()
+        await teacher_ws.disconnect()
+
+    async def test_book_regular_slot_emits_booking_requested_notification_to_teacher(self):
+        teacher_ws = await get_authenticated_communicator(application, "/ws/notifications/", self.teacher_user)
+        connected, _ = await teacher_ws.connect()
+        self.assertTrue(connected)
+
+        target_dt = timezone.now() + timedelta(days=2)
+        teacher_tz = ZoneInfo(self.teacher_user.timezone)
+        local_date = timezone.localtime(target_dt, teacher_tz).date()
+        slot_dt = timezone.datetime.combine(local_date, timezone.datetime.strptime("16:00", "%H:%M").time(), tzinfo=teacher_tz)
+
+        @database_sync_to_async
+        def perform_booking():
+            self.client.login(username='john_student', password='password123')
+            response = self.client.post(
+                reverse('booking:book_slot'),
+                {
+                    'start_at': slot_dt.isoformat(),
+                    'lesson_option': 'regular_50',
+                },
+            )
+            return response
+
+        response = await perform_booking()
+        self.assertEqual(response.status_code, 200)
+
+        frame = await teacher_ws.receive_json_from()
+        self.assertEqual(frame['type'], 'notification_message')
+        self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_REQUESTED)
+        self.assertEqual(frame['message'], 'John Doe requested a 50-minute Regular Lesson.')
+
+        @database_sync_to_async
+        def verify_db():
+            notif = Notification.objects.get(id=frame['id'])
+            self.assertEqual(notif.message, 'John Doe requested a 50-minute Regular Lesson.')
+            self.assertEqual(notif.metadata['lesson_type'], 'regular')
 
         await verify_db()
         await teacher_ws.disconnect()
@@ -172,7 +212,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CONFIRMED)
         self.assertEqual(frame['level'], Notification.Level.SUCCESS)
         self.assertEqual(frame['title'], 'Lesson Confirmed')
-        self.assertIn('Mary Smith', frame['message'])
+        self.assertEqual(frame['message'], 'Your Regular Lesson with Mary Smith has been confirmed.')
         self.assertEqual(frame['action_url'], reverse('booking:student_dashboard'))
         self.assertEqual(frame['unread_count'], 1)
 
@@ -221,7 +261,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_DECLINED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
         self.assertEqual(frame['title'], 'Lesson Request Declined')
-        self.assertIn('Mary Smith', frame['message'])
+        self.assertEqual(frame['message'], 'Mary Smith was unable to accept your Regular Lesson request.')
         self.assertEqual(frame['action_url'], reverse('booking:student_dashboard'))
 
         @database_sync_to_async
@@ -266,7 +306,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['event_type'], Notification.EventType.CANCELLATION_REQUESTED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
         self.assertEqual(frame['title'], 'Cancellation Requested')
-        self.assertIn('John Doe', frame['message'])
+        self.assertEqual(frame['message'], 'John Doe requested to cancel their upcoming Regular Lesson.')
         self.assertEqual(frame['action_url'], reverse('booking:teacher_dashboard'))
 
         @database_sync_to_async
@@ -311,7 +351,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CANCELLED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
         self.assertEqual(frame['title'], 'Lesson Cancelled')
-        self.assertIn('Mary Smith', frame['message'])
+        self.assertEqual(frame['message'], 'Your Regular Lesson with Mary Smith has been cancelled.')
         self.assertEqual(frame['action_url'], reverse('booking:student_dashboard'))
 
         @database_sync_to_async
@@ -357,6 +397,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CANCELLED)
         self.assertEqual(frame['title'], 'Lesson Cancelled')
+        self.assertEqual(frame['message'], 'Your Regular Lesson with Mary Smith has been cancelled.')
 
         await student_ws.disconnect()
 
@@ -392,6 +433,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(student_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
         self.assertEqual(student_frame['level'], Notification.Level.WARNING)
         self.assertEqual(student_frame['title'], 'Lesson Request Expired')
+        self.assertEqual(student_frame['message'], 'Your Regular Lesson request with Mary Smith has expired.')
         self.assertEqual(student_frame['action_url'], reverse('booking:student_dashboard'))
 
         # Teacher receives booking_expired frame
@@ -400,6 +442,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(teacher_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
         self.assertEqual(teacher_frame['level'], Notification.Level.WARNING)
         self.assertEqual(teacher_frame['title'], 'Lesson Request Expired')
+        self.assertEqual(teacher_frame['message'], 'The Regular Lesson request from John Doe has expired.')
         self.assertEqual(teacher_frame['action_url'], reverse('booking:teacher_dashboard'))
 
         # Verify persistent records
