@@ -45,12 +45,14 @@ if SENTRY_DSN and 'test' not in sys.argv:
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.humanize",
     "channels",
     "anymail",
 
@@ -84,6 +86,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 'portfolio.context_processors.global_teacher_context',
+                'notifications.context_processors.notification_context',
             ],
         },
     },
@@ -179,7 +182,7 @@ AUTH_USER_MODEL = 'accounts.User'
 
 
 # Celery configuration
-default_redis_host = 'localhost' if DEBUG else 'redis'
+default_redis_host = '127.0.0.1' if DEBUG else 'redis'
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', f'redis://{default_redis_host}:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
 CELERY_ACCEPT_CONTENT = ['json']
@@ -219,7 +222,10 @@ else:
     }
 
 # Redis Channel Layer configuration (Redis DB 2 for channels, isolated from Celery DB 0 and Cache DB 1)
-REDIS_CHANNEL_LAYER_URL = os.getenv('REDIS_CHANNEL_LAYER_URL', f'redis://{default_redis_host}:6379/2')
+REDIS_CHANNEL_LAYER_URL = os.getenv(
+    'REDIS_CHANNEL_LAYER_URL',
+    os.getenv('REDIS_URL', f'redis://{default_redis_host}:6379/2')
+)
 
 if 'test' in sys.argv:
     CHANNEL_LAYERS = {
@@ -232,7 +238,15 @@ else:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                'hosts': [REDIS_CHANNEL_LAYER_URL],
+                'hosts': [
+                    {
+                        'address': REDIS_CHANNEL_LAYER_URL,
+                        'protocol': REDIS_PROTOCOL,
+                        'socket_timeout': None,
+                        'socket_connect_timeout': 5,
+                        'health_check_interval': 30,
+                    }
+                ],
             },
         },
     }

@@ -163,3 +163,66 @@ class NotificationConsumerTests(TransactionTestCase):
         self.assertEqual(frame['unread_count'], 1)
 
         await communicator.disconnect()
+
+    async def test_channel_layer_timeout_or_error_does_not_abort_handshake(self):
+        from unittest.mock import patch
+
+        channel_layer = get_channel_layer()
+
+        async def failing_group_add(*args, **kwargs):
+            raise TimeoutError("Timeout reading from localhost:6379")
+
+        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        with patch.object(channel_layer, "group_add", side_effect=failing_group_add):
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            # Can still communicate with the consumer (e.g. database-backed actions)
+            await communicator.send_json_to({"action": "get_unread_count"})
+            response = await communicator.receive_json_from()
+            self.assertEqual(response, {"type": "unread_count", "count": 0})
+
+        await communicator.disconnect()
+
+    async def test_channel_layer_receive_timeout_resilience_preserves_connection(self):
+        import asyncio
+        from unittest.mock import patch
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        channel_layer = get_channel_layer()
+        original_receive = channel_layer.receive
+        timed_out_once = False
+
+        async def failing_receive_once(channel_name):
+            nonlocal timed_out_once
+            if not timed_out_once:
+                timed_out_once = True
+                raise RedisTimeoutError("Timeout reading from 127.0.0.1:6379")
+            return await original_receive(channel_name)
+
+        with patch.object(channel_layer, "receive", side_effect=failing_receive_once):
+            communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+
+            # Wait briefly for the first receive call to timeout and recover
+            await asyncio.sleep(0.3)
+
+            # Broadcast a notification to verify consumer receives it after the timeout recovery
+            payload = {
+                "type": "notification_message",
+                "id": 100,
+                "event_type": "booking_confirmed",
+                "level": "success",
+                "title": "Recovered Lesson",
+                "message": "Message after timeout",
+                "action_url": "",
+                "created_at": "2026-10-21T10:00:00Z",
+                "unread_count": 1,
+            }
+            await channel_layer.group_send(Notification.get_group_name(self.user.id), payload)
+
+            response = await communicator.receive_json_from()
+            self.assertEqual(response, payload)
+
+            await communicator.disconnect()
