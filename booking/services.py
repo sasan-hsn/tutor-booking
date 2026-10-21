@@ -3,9 +3,11 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
 
 from .models import Booking, RegularAvailability, WeeklyOverride
+from .notifications import notify_booking_expired
 
 INSTANT_TUTORING_BUFFER = timedelta(hours=1)
 
@@ -14,21 +16,34 @@ def expire_stale_bookings(teacher=None, student=None, now=None):
     """
     Finds all PENDING bookings with start_at <= now and transitions them to EXPIRED.
     Optionally scoped by teacher and/or student.
+    Emits real-time booking_expired notifications to both student and teacher.
     Returns the count of bookings updated.
     """
     if now is None:
         now = timezone.now()
 
-    qs = Booking.objects.filter(
-        status=Booking.Status.PENDING,
-        start_at__lte=now,
-    )
-    if teacher is not None:
-        qs = qs.filter(teacher=teacher)
-    if student is not None:
-        qs = qs.filter(student=student)
+    with transaction.atomic():
+        qs = Booking.objects.select_for_update(of=('self',)).select_related('student', 'teacher__user').filter(
+            status=Booking.Status.PENDING,
+            start_at__lte=now,
+        )
+        if teacher is not None:
+            qs = qs.filter(teacher=teacher)
+        if student is not None:
+            qs = qs.filter(student=student)
 
-    return qs.update(status=Booking.Status.EXPIRED)
+        stale_bookings = list(qs)
+        if not stale_bookings:
+            return 0
+
+        stale_ids = [b.id for b in stale_bookings]
+        count = Booking.objects.filter(id__in=stale_ids).update(status=Booking.Status.EXPIRED)
+
+        for booking in stale_bookings:
+            booking.status = Booking.Status.EXPIRED
+            notify_booking_expired(booking)
+
+    return count
 
 
 def get_availability_windows(teacher, date_val: date):

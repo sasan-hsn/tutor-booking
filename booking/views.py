@@ -36,6 +36,14 @@ from .tasks import (
     safe_send_cancellation_requested_email,
     send_booking_request_notifications,
 )
+from .notifications import (
+    notify_booking_cancelled,
+    notify_booking_confirmed,
+    notify_booking_declined,
+    notify_booking_expired,
+    notify_booking_requested,
+    notify_cancellation_requested,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +322,7 @@ def book_slot(request):
             )
 
             booking_id = booking.id
+            notify_booking_requested(booking)
             transaction.on_commit(
                 lambda: send_booking_request_notifications(booking_id)
             )
@@ -450,6 +459,7 @@ def respond_to_booking(request, booking_id):
             booking.save()
             if action == 'accept' and was_confirmed:
                 booking_id = booking.id
+                notify_booking_cancelled(booking, cancelled_by=request.user)
                 transaction.on_commit(
                     lambda: safe_send_booking_cancelled_email(booking_id)
                 )
@@ -457,18 +467,19 @@ def respond_to_booking(request, booking_id):
         return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
     elif booking.status == Booking.Status.PENDING:
         if booking.start_at <= timezone.now():
-            booking.status = Booking.Status.EXPIRED
-            booking.save()
+            expire_stale_bookings(teacher=booking.teacher)
             return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
         with transaction.atomic():
             booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
             booking.save()
             booking_id = booking.id
             if action == 'accept':
+                notify_booking_confirmed(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_confirmed_email(booking_id)
                 )
             elif action == 'decline':
+                notify_booking_declined(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_declined_email(booking_id)
                 )
@@ -778,6 +789,7 @@ def cancel_lesson(request, booking_id):
         booking.save()
         booking_id = booking.id
         if was_confirmed:
+            notify_booking_cancelled(booking, cancelled_by=request.user)
             transaction.on_commit(
                 lambda: safe_send_booking_cancelled_email(booking_id)
             )
@@ -906,6 +918,7 @@ def request_cancellation(request, booking_id):
         booking.cancellation_requested = True
         booking.save()
         booking_id = booking.id
+        notify_cancellation_requested(booking)
         transaction.on_commit(
             lambda: safe_send_cancellation_requested_email(booking_id)
         )
