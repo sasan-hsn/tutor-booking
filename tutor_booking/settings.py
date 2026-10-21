@@ -238,7 +238,12 @@ else:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                'hosts': [REDIS_CHANNEL_LAYER_URL],
+                'hosts': [
+                    {
+                        'address': REDIS_CHANNEL_LAYER_URL,
+                        'protocol': REDIS_PROTOCOL,
+                    }
+                ],
             },
         },
     }
