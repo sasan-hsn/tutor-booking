@@ -242,6 +242,9 @@ else:
                     {
                         'address': REDIS_CHANNEL_LAYER_URL,
                         'protocol': REDIS_PROTOCOL,
+                        'socket_timeout': None,
+                        'socket_connect_timeout': 5,
+                        'health_check_interval': 30,
                     }
                 ],
             },

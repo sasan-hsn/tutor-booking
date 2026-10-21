@@ -1,7 +1,20 @@
 import asyncio
 import logging
+from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
+from channels.exceptions import StopConsumer
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.layers import get_channel_layer
+from channels.utils import await_many_dispatch
+
+try:
+    from redis.exceptions import TimeoutError as RedisTimeoutError, RedisError
+except ImportError:
+    class RedisTimeoutError(Exception):
+        pass
+
+    class RedisError(Exception):
+        pass
 
 from .models import Notification
 
@@ -12,7 +25,54 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
     """
     WebSocket consumer for streaming real-time notifications to authenticated users.
     Rejects unauthenticated sessions during handshake.
+    Resilient to Redis connection and channel layer timeouts.
     """
+
+    async def __call__(self, scope, receive, send):
+        """
+        Dispatches incoming messages to type-based handlers asynchronously.
+        Wraps channel layer receive in resilient retry logic so that Redis stream
+        timeouts or transient connection drops do not abort the active WebSocket connection.
+        """
+        self.scope = scope
+
+        self.channel_layer = get_channel_layer(self.channel_layer_alias)
+        if self.channel_layer is not None:
+            self.channel_name = await self.channel_layer.new_channel()
+
+            async def resilient_channel_receive():
+                while True:
+                    try:
+                        return await self.channel_layer.receive(self.channel_name)
+                    except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+                        logger.debug("Channel layer read timeout; resuming listener: %s", e)
+                        await asyncio.sleep(0.2)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        logger.warning("Channel layer read error; resuming listener: %s", e)
+                        await asyncio.sleep(1.0)
+
+            self.channel_receive = resilient_channel_receive
+
+        if self._sync:
+            self.base_send = async_to_sync(send)
+        else:
+            self.base_send = send
+
+        try:
+            if self.channel_layer is not None:
+                await await_many_dispatch(
+                    [receive, self.channel_receive], self.dispatch
+                )
+            else:
+                await await_many_dispatch([receive], self.dispatch)
+        except StopConsumer:
+            pass
+        except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
+            logger.warning("Consumer dispatch loop caught timeout: %s", e)
+        except asyncio.CancelledError:
+            pass
 
     async def connect(self):
         user = self.scope.get("user")
@@ -31,7 +91,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                     self.channel_layer.group_add(self.group_name, self.channel_name),
                     timeout=2.0,
                 )
-            except Exception as e:
+            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
                 logger.warning(
                     "Channel layer group_add failed or timed out for user #%s: %s",
                     user.id,
@@ -45,7 +105,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                     self.channel_layer.group_discard(self.group_name, self.channel_name),
                     timeout=2.0,
                 )
-            except Exception as e:
+            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
                 logger.warning(
                     "Channel layer group_discard failed or timed out for group %s: %s",
                     self.group_name,
