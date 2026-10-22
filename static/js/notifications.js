@@ -377,6 +377,10 @@
                         if (toastContainerEl) {
                             showNotificationToast(data, toastContainerEl, { elements });
                         }
+
+                        if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+                            document.dispatchEvent(new CustomEvent('tutor:notification', { detail: data }));
+                        }
                     }
                 } catch (err) {
                     console.error('Error handling notification message:', err);
