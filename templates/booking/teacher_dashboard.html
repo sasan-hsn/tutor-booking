@@ -25,9 +25,7 @@
         <button type="button" class="btn-minimal position-relative" data-bs-toggle="modal"
             data-bs-target="#lessonRequestsModal" id="openLessonRequestsBtn">
             <i class="bi bi-calendar-check"></i> Lesson Requests
-            {% if lesson_requests_count > 0 %}
-            <span class="badge-count">{{ lesson_requests_count }}</span>
-            {% endif %}
+            <span class="badge-count{% if lesson_requests_count == 0 %} d-none{% endif %}" id="lessonRequestsBadge" aria-live="polite">{{ lesson_requests_count }}</span>
         </button>
         <button class="btn-minimal position-relative" type="button" data-bs-toggle="modal"
             data-bs-target="#pendingReviewsModal">
