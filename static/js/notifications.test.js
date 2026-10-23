@@ -160,7 +160,11 @@ class MockElement {
     dispatchEvent(event) {
         const type = typeof event === 'string' ? event : event.type;
         const evtObj = typeof event === 'string' ? { type: event, target: this, preventDefault: () => {}, stopPropagation: () => {} } : event;
-        if (!evtObj.target) evtObj.target = this;
+        try {
+            if (!evtObj.target) {
+                Object.defineProperty(evtObj, 'target', { value: this, configurable: true });
+            }
+        } catch (_) {}
         if (!evtObj.preventDefault) evtObj.preventDefault = () => {};
         if (!evtObj.stopPropagation) evtObj.stopPropagation = () => {};
 
@@ -449,6 +453,67 @@ describe('Notifications Client Module', () => {
 
         assert.strictEqual(badgeCount.textContent, '3');
         client.disconnect();
+    });
+
+    test('connectNotificationWebSocket dispatches tutor:notification CustomEvent on document with message payload', () => {
+        let dispatchedEvent = null;
+        global.document.addEventListener('tutor:notification', (e) => {
+            dispatchedEvent = e;
+        });
+
+        const client = notifications.connectNotificationWebSocket({
+            WebSocketClass: MockWebSocket,
+        });
+
+        const ws = MockWebSocket.instances[0];
+        ws.simulateOpen();
+
+        const payload = {
+            type: 'notification_message',
+            event_type: 'booking_requested',
+            id: 88,
+            title: 'New Booking',
+            message: 'A student requested a lesson',
+            action_url: '/dashboard/teacher/',
+            level: 'info',
+            unread_count: 5,
+        };
+
+        ws.simulateMessage(payload);
+
+        assert.notStrictEqual(dispatchedEvent, null);
+        assert.strictEqual(dispatchedEvent.type, 'tutor:notification');
+        assert.deepStrictEqual(dispatchedEvent.detail, payload);
+
+        client.disconnect();
+    });
+
+    test('connectNotificationWebSocket safely no-ops without error when document is undefined', () => {
+        const originalDocument = global.document;
+        delete global.document;
+        try {
+            const client = notifications.connectNotificationWebSocket({
+                WebSocketClass: MockWebSocket,
+            });
+
+            const ws = MockWebSocket.instances[0];
+            ws.simulateOpen();
+
+            assert.doesNotThrow(() => {
+                ws.simulateMessage({
+                    type: 'notification_message',
+                    event_type: 'booking_requested',
+                    id: 89,
+                    title: 'New Booking',
+                    message: 'Test message',
+                    level: 'info',
+                });
+            });
+
+            client.disconnect();
+        } finally {
+            global.document = originalDocument;
+        }
     });
 
     test('WebSocket reconnect uses backoff intervals: 1s, 2s, 5s, 10s', () => {

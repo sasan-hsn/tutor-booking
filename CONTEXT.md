@@ -12,6 +12,10 @@ _Avoid_: Appointment, session, reservation
 A booking created by a student that awaits teacher review to be accepted or declined.
 _Avoid_: Pending reservation, appointment inquiry
 
+**Cancellation Request**:
+A formal request initiated by a student to cancel a confirmed booking, awaiting teacher review and resolution (approve or decline/keep).
+_Avoid_: Cancellation inquiry, drop request, refund ticket
+
 **Confirmed Booking**:
 A booking accepted by the teacher that is scheduled to take place.
 _Avoid_: Approved lesson, booked appointment
@@ -123,6 +127,10 @@ _Avoid_: Event stream, socket pipe, notification socket
 **Unread Notification Count**:
 The tally of active notifications for a user that have not yet been marked as read or dismissed, surfaced as a badge count on the topbar bell icon.
 _Avoid_: Pending badge, alert tally, unread counter
+
+**Lesson Request Badge Count**:
+The visible tally of actionable pending items awaiting teacher attention on the teacher dashboard, comprising pending lesson requests and student cancellation requests.
+_Avoid_: Request counter, pending badge, alert tally
 
 **Notification Dropdown**:
 The dashboard topbar interface listing the user's recent notifications, unread state, direct action links, and bulk read actions.

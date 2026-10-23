@@ -16,6 +16,10 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [ ] WeeklyOverride "mark whole day off" toggle (currently requires filling Start/End inputs)
 - [x] Teacher dashboard Past Lessons section (#207, #209)
 - [ ] Visual polish pass on the landing page (pricing card section + hero section flagged specifically)
+- [ ] feat(dashboard): real-time lesson request badge counter sync for teacher dashboard
+  - When a student submits, cancels, or reschedules a lesson request, real-time WebSocket events currently update the notification bell, but the teacher's "Lesson Requests" tab/button badge count requires a manual page refresh.
+  - Listen to incoming booking-related WebSocket notification frames in `notifications.js` or dispatch a custom DOM event.
+  - Dynamically increment/decrement or update the badge count on the teacher dashboard "Lesson Requests" button without requiring a full page refresh.
 
 ## 🔒 Security & infrastructure (recommended priority: before new user-facing features)
 - [x] Email verification & address lifecycle (#181, #182, #183, #184, #185, #186)
@@ -31,7 +35,13 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 
 ## 🚀 Major planned features (rough priority order)
 - [x] Celery + Redis background task infrastructure & automated email notifications (Booking confirmations, reminders, cancellations, auto-expire sweep, teacher daily digest, Brevo HTTP API integration, resilient broker dispatch) (#160, #178, #180)
-- [ ] In-platform notifications & dashboard alerts — real-time WebSocket alerts & topbar dropdown via Django Channels, ASGI, and Redis (see ADR 0007) (#226)
+- [x] In-platform notifications & dashboard alerts — real-time WebSocket alerts & topbar dropdown via Django Channels, ASGI, and Redis (see ADR 0007) (#226)
+- [ ] feat(booking): scheduled in-platform lesson reminders via Celery Beat
+  - Extend the notification system to emit in-platform real-time reminders alongside existing reminder emails:
+    - 24 hours before lesson start: Send reminder notification to student with action_url linking to dashboard/lesson detail.
+    - 1 hour before lesson start: Send urgent reminder notification with direct meeting link.
+  - Integration point: Hook into existing Celery periodic reminder tasks using `create_and_send_notification`.
+  - Ensure idempotency so duplicate notifications are never emitted for the same lesson.
 - [ ] Student↔teacher messaging — real-time chat via Django Channels/WebSockets built on top of the ASGI foundation established in ADR 0007
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
 - [ ] Payments/financial section (last, after everything above)
