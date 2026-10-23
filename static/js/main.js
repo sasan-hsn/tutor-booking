@@ -619,72 +619,166 @@ function initLessonDetailModalManager() {
 /* --------------------------------------------------------------------------
    6. Teacher Requests Modal & Badges
    -------------------------------------------------------------------------- */
-function initLessonRequestsManager() {
-    const modalEl = document.getElementById('lessonRequestsModal');
+const processedLessonRequestNotificationIds = new Set();
+
+function resetProcessedNotificationIds() {
+    processedLessonRequestNotificationIds.clear();
+}
+
+function getLessonRequestsBadge(doc = typeof document !== 'undefined' ? document : null) {
+    if (!doc) return null;
+    return doc.getElementById('lessonRequestsBadge') || doc.querySelector('#openLessonRequestsBtn .badge-count');
+}
+
+function getLessonRequestsBadgeCount(customBadgeEl) {
+    const badge = customBadgeEl || getLessonRequestsBadge();
+    if (!badge) return 0;
+    const num = parseInt(badge.textContent, 10);
+    return Math.max(0, isNaN(num) ? 0 : num);
+}
+
+function updateLessonRequestsBadge(count, customBadgeEl) {
+    const badge = customBadgeEl || getLessonRequestsBadge();
+    if (!badge) return 0;
+
+    const num = parseInt(count, 10);
+    const boundedCount = Math.max(0, isNaN(num) ? 0 : num);
+    badge.textContent = String(boundedCount);
+
+    if (boundedCount > 0) {
+        badge.classList.remove('d-none');
+    } else {
+        badge.classList.add('d-none');
+    }
+    return boundedCount;
+}
+
+function handleLessonRequestNotification(payload, options = {}) {
+    const notification = (payload && payload.detail) ? payload.detail : payload;
+    if (!notification) return;
+
+    const eventType = notification.event_type;
+    const isIncrement = eventType === 'booking_requested' || eventType === 'cancellation_requested';
+    const isDecrement = eventType === 'booking_expired';
+    if (!isIncrement && !isDecrement) return;
+
+    const processedIds = options.processedIds || processedLessonRequestNotificationIds;
+    if (notification.id !== undefined && notification.id !== null) {
+        if (processedIds.has(notification.id)) {
+            return;
+        }
+        processedIds.add(notification.id);
+    }
+
+    const badge = options.badgeEl || getLessonRequestsBadge();
+    const currentCount = getLessonRequestsBadgeCount(badge);
+
+    if (isIncrement) {
+        updateLessonRequestsBadge(currentCount + 1, badge);
+    } else if (isDecrement) {
+        updateLessonRequestsBadge(currentCount - 1, badge);
+    }
+}
+
+function initLessonRequestsManager(doc = typeof document !== 'undefined' ? document : null) {
+    const documentRef = doc || (typeof document !== 'undefined' ? document : null);
+    if (!documentRef) return;
+
+    const modalEl = documentRef.getElementById('lessonRequestsModal');
+    const badge = getLessonRequestsBadge(documentRef);
+
+    if (typeof documentRef.addEventListener === 'function' && !documentRef._lessonRequestsNotificationListenerAttached) {
+        documentRef.addEventListener('tutor:notification', (event) => {
+            handleLessonRequestNotification(event && event.detail ? event.detail : null, {
+                badgeEl: getLessonRequestsBadge(documentRef),
+            });
+        });
+        documentRef._lessonRequestsNotificationListenerAttached = true;
+    }
+
     if (!modalEl) return;
 
-    const modalBody = document.getElementById('lessonRequestsModalBody');
+    const modalBody = documentRef.getElementById('lessonRequestsModalBody') || modalEl.querySelector('#lessonRequestsModalBody');
     const url = modalEl.dataset.url;
     const respondUrlTemplate = modalEl.dataset.respondUrl;
     let hasChanges = false;
 
     modalEl.addEventListener('show.bs.modal', () => {
-        modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        if (modalBody) {
+            modalBody.innerHTML = '<p class="text-muted text-center py-3">Loading...</p>';
+        }
         fetch(url)
             .then(res => res.text())
-            .then(html => { modalBody.innerHTML = html; })
-            .catch(() => {
-                modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
-            });
-    });
-
-    modalBody.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.btn-accept, .btn-decline');
-        if (!btn) return;
-
-        const isDecline = btn.classList.contains('btn-decline');
-        if (isDecline && !confirm('Are you sure you want to decline this lesson request?')) return;
-
-        const bookingId = btn.dataset.bookingId;
-        const action = isDecline ? 'decline' : 'accept';
-        const item = btn.closest('.request-item');
-        const reqUrl = respondUrlTemplate.replace('/0/', `/${bookingId}/`);
-
-        btn.disabled = true;
-
-        try {
-            const response = await csrfFetch(reqUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `action=${action}`,
-            });
-
-            if (!response.ok) {
-                alert('Something went wrong. Please try again.');
-                btn.disabled = false;
-                return;
-            }
-
-            item.remove();
-            hasChanges = true;
-
-            const badge = document.querySelector('#openLessonRequestsBtn .badge-count');
-            if (badge) {
-                const newCount = parseInt(badge.textContent, 10) - 1;
-                if (newCount > 0) {
-                    badge.textContent = newCount;
-                } else {
-                    badge.remove();
+            .then(html => {
+                if (modalBody) {
+                    modalBody.innerHTML = html;
+                    const count = modalBody.querySelectorAll('.request-item').length;
+                    const currentBadge = getLessonRequestsBadge(documentRef);
+                    updateLessonRequestsBadge(count, currentBadge);
                 }
-            }
-        } catch (err) {
-            alert('Network error. Please try again.');
-            btn.disabled = false;
-        }
+            })
+            .catch(() => {
+                if (modalBody) {
+                    modalBody.innerHTML = '<p class="text-danger text-center py-3">Something went wrong. Please try again.</p>';
+                }
+            });
     });
+
+    if (modalBody) {
+        modalBody.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.btn-accept, .btn-decline');
+            if (!btn) return;
+
+            const confirmFn = typeof window !== 'undefined' && typeof window.confirm === 'function'
+                ? window.confirm
+                : (typeof confirm === 'function' ? confirm : () => true);
+            const alertFn = typeof window !== 'undefined' && typeof window.alert === 'function'
+                ? window.alert
+                : (typeof alert === 'function' ? alert : () => {});
+
+            const isDecline = btn.classList.contains('btn-decline');
+            if (isDecline && !confirmFn('Are you sure you want to decline this lesson request?')) return;
+
+            const bookingId = btn.dataset.bookingId;
+            const action = isDecline ? 'decline' : 'accept';
+            const item = btn.closest('.request-item');
+            const reqUrl = respondUrlTemplate ? respondUrlTemplate.replace('/0/', `/${bookingId}/`) : '';
+
+            btn.disabled = true;
+
+            try {
+                const response = await csrfFetch(reqUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `action=${action}`,
+                });
+
+                if (!response.ok) {
+                    alertFn('Something went wrong. Please try again.');
+                    btn.disabled = false;
+                    return;
+                }
+
+                item.remove();
+                hasChanges = true;
+
+                const currentBadge = getLessonRequestsBadge(documentRef);
+                const currentCount = getLessonRequestsBadgeCount(currentBadge);
+                updateLessonRequestsBadge(currentCount - 1, currentBadge);
+
+                const remainingItems = modalBody.querySelectorAll('.request-item');
+                if (remainingItems.length === 0) {
+                    modalBody.innerHTML = '<div class="empty-state"><p>No pending lesson requests.</p></div>';
+                }
+            } catch (err) {
+                alertFn('Network error. Please try again.');
+                btn.disabled = false;
+            }
+        });
+    }
 
     modalEl.addEventListener('hidden.bs.modal', () => {
-        if (hasChanges) window.location.reload();
+        if (hasChanges && typeof window !== 'undefined' && window.location) window.location.reload();
     });
 }
 
@@ -1669,25 +1763,33 @@ function initLessonJoinWindowWatcher() {
 /* --------------------------------------------------------------------------
    12. Single Application Bootstrap
    -------------------------------------------------------------------------- */
-document.addEventListener('DOMContentLoaded', () => {
-    initSignupTimezoneDetection();
-    initLessonCardsScroll();
-    initWeekNav();
-    initBookingModal();
-    initVerificationBanner();
-    initLessonDetailModalManager();
-    initLessonRequestsManager();
-    initScheduleModal();
-    initOverrideScheduleModal();
-    initCalendarView();
-    initCertificateManager();
-    initPendingReviewsManager();
-    initLessonJoinWindowWatcher();
-});
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initSignupTimezoneDetection();
+        initLessonCardsScroll();
+        initWeekNav();
+        initBookingModal();
+        initVerificationBanner();
+        initLessonDetailModalManager();
+        initLessonRequestsManager();
+        initScheduleModal();
+        initOverrideScheduleModal();
+        initCalendarView();
+        initCertificateManager();
+        initPendingReviewsManager();
+        initLessonJoinWindowWatcher();
+    });
+}
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         initLessonJoinWindowWatcher,
         updateLessonJoinWindows,
+        updateLessonRequestsBadge,
+        getLessonRequestsBadgeCount,
+        handleLessonRequestNotification,
+        initLessonRequestsManager,
+        resetProcessedNotificationIds,
+        processedLessonRequestNotificationIds,
     };
 }
