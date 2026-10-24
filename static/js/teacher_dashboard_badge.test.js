@@ -560,5 +560,49 @@ describe('Teacher Dashboard Lesson Requests Badge Controller', () => {
             assert.strictEqual(badgeEl.textContent, '0');
             assert.strictEqual(badgeEl.classList.contains('d-none'), true);
         });
+
+        test('accepting or declining modal item dispatches tutor:notification:read event with server payload', async () => {
+            badgeEl.textContent = '1';
+            badgeEl.className = 'badge-count';
+
+            const requestItem = mockDoc.createElement('div');
+            requestItem.className = 'request-item';
+            requestItem.dataset.bookingId = '99';
+
+            const acceptBtn = mockDoc.createElement('button');
+            acceptBtn.className = 'btn-accept';
+            acceptBtn.dataset.bookingId = '99';
+            requestItem.appendChild(acceptBtn);
+            modalBodyEl.appendChild(requestItem);
+
+            let dispatchedEvent = null;
+            mockDoc.addEventListener('tutor:notification:read', (e) => {
+                dispatchedEvent = e;
+            });
+
+            global.fetch = async () => ({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    success: true,
+                    unread_notifications_count: 0,
+                    marked_notification_ids: [505],
+                }),
+            });
+
+            modalBodyEl.dispatchEvent({
+                type: 'click',
+                target: acceptBtn,
+            });
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            assert.notStrictEqual(dispatchedEvent, null);
+            assert.strictEqual(dispatchedEvent.type, 'tutor:notification:read');
+            assert.deepStrictEqual(dispatchedEvent.detail, {
+                type: 'notification_read',
+                notification_ids: [505],
+                unread_count: 0,
+            });
+        });
     });
 });

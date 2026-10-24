@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from booking.models import Booking, RegularAvailability
+from booking.notifications import notify_booking_requested
 from booking.services import expire_stale_bookings
 from notifications.models import Notification
 from portfolio.models import TeacherProfile
@@ -546,6 +547,51 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(teacher_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
 
         await student_ws.disconnect()
+        await teacher_ws.disconnect()
+
+    async def test_respond_to_booking_broadcasts_notification_read_frame_to_teacher(self):
+        target_dt = timezone.now() + timedelta(days=2)
+        booking = await Booking.objects.acreate(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=target_dt,
+            end_at=target_dt + timedelta(minutes=50),
+            duration_minutes=50,
+            status=Booking.Status.PENDING,
+        )
+
+        @database_sync_to_async
+        def create_notification():
+            return notify_booking_requested(booking)
+
+        notif = await create_notification()
+        self.assertIsNotNone(notif)
+
+        teacher_ws = await get_authenticated_communicator(application, "/ws/notifications/", self.teacher_user)
+        connected, _ = await teacher_ws.connect()
+        self.assertTrue(connected)
+
+        @database_sync_to_async
+        def perform_accept():
+            self.client.login(username='mary_teacher', password='password123')
+            return self.client.post(
+                reverse('booking:respond_to_booking', kwargs={'booking_id': booking.id}),
+                {'action': 'accept'},
+            )
+
+        response = await perform_accept()
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertIn(notif.id, data['marked_notification_ids'])
+        self.assertEqual(data['unread_notifications_count'], 0)
+
+        # Teacher receives notification_read frame
+        read_frame = await teacher_ws.receive_json_from()
+        self.assertEqual(read_frame['type'], 'notification_read')
+        self.assertIn(notif.id, read_frame['notification_ids'])
+        self.assertEqual(read_frame['unread_count'], 0)
+
         await teacher_ws.disconnect()
 
 

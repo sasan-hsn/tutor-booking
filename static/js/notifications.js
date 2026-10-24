@@ -236,20 +236,42 @@
         return toastEl;
     }
 
+    function markNotificationItemReadInDom(id, listEl) {
+        if (!id) return;
+        const container = listEl || (typeof document !== 'undefined' ? document : null);
+        if (!container) return;
+        const item = container.querySelector(`.notification-item[data-id="${id}"]`);
+        if (item) {
+            item.classList.remove('notification-unread', 'bg-light-subtle');
+            const dot = item.querySelector('.notification-dot');
+            if (dot) dot.remove();
+        }
+    }
+
+    function handleNotificationReadEvent(payload, options = {}) {
+        const data = (payload && payload.detail) ? payload.detail : payload;
+        if (!data) return;
+        const elements = options.elements || {};
+        const listEl = options.listEl || elements.list || (typeof document !== 'undefined' ? document.getElementById('notificationList') : null);
+
+        if (typeof data.unread_count !== 'undefined') {
+            updateUnreadCount(data.unread_count, elements);
+        }
+
+        if (Array.isArray(data.notification_ids)) {
+            data.notification_ids.forEach(id => {
+                markNotificationItemReadInDom(id, listEl);
+            });
+        }
+    }
+
     async function markNotificationAsRead(id, options = {}) {
         if (!id) return;
         const elements = options.elements || {};
         const url = `/notifications/${id}/read/`;
 
         // Update UI immediately (optimistic update)
-        if (typeof document !== 'undefined') {
-            const item = document.querySelector(`.notification-item[data-id="${id}"]`);
-            if (item) {
-                item.classList.remove('notification-unread', 'bg-light-subtle');
-                const dot = item.querySelector('.notification-dot');
-                if (dot) dot.remove();
-            }
-        }
+        markNotificationItemReadInDom(id, elements.list);
 
         try {
             const response = await fetch(url, {
@@ -381,6 +403,12 @@
                         if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
                             document.dispatchEvent(new CustomEvent('tutor:notification', { detail: data }));
                         }
+                    } else if (data && data.type === 'notification_read') {
+                        handleNotificationReadEvent(data, { elements, listEl });
+
+                        if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+                            document.dispatchEvent(new CustomEvent('tutor:notification:read', { detail: data }));
+                        }
                     }
                 } catch (err) {
                     console.error('Error handling notification message:', err);
@@ -470,6 +498,14 @@
             });
         }
 
+        // Attach listener for tutor:notification:read DOM events to reconcile UI
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !document._notificationReadListenerAttached) {
+            document.addEventListener('tutor:notification:read', (event) => {
+                handleNotificationReadEvent(event && event.detail ? event.detail : null, { elements });
+            });
+            document._notificationReadListenerAttached = true;
+        }
+
         // WebSocket connection
         let clientWs = null;
         if (options.autoConnectWs !== false) {
@@ -507,6 +543,8 @@
         updateUnreadCount,
         prependNotificationItem,
         showNotificationToast,
+        markNotificationItemReadInDom,
+        handleNotificationReadEvent,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         handleNotificationClick,

@@ -645,4 +645,81 @@ describe('Notifications Client Module', () => {
         assert.strictEqual(badge.classList.contains('d-none'), true);
         assert.strictEqual(markAllBtn.disabled, true);
     });
+
+    test('markNotificationItemReadInDom strips notification-unread class and removes notification dot', () => {
+        const item = global.document.createElement('div');
+        item.classList.add('notification-item', 'notification-unread', 'bg-light-subtle');
+        item.dataset.id = '101';
+        const dot = global.document.createElement('span');
+        dot.classList.add('notification-dot');
+        item.appendChild(dot);
+        list.appendChild(item);
+
+        assert.strictEqual(item.classList.contains('notification-unread'), true);
+        assert.notStrictEqual(item.querySelector('.notification-dot'), null);
+
+        notifications.markNotificationItemReadInDom('101', list);
+
+        assert.strictEqual(item.classList.contains('notification-unread'), false);
+        assert.strictEqual(item.classList.contains('bg-light-subtle'), false);
+        assert.strictEqual(item.querySelector('.notification-dot'), null);
+    });
+
+    test('WebSocket notification_read event updates badge count, marks item read in DOM, and dispatches tutor:notification:read', () => {
+        badgeCount.textContent = '3';
+        badge.classList.remove('d-none');
+
+        const item1 = global.document.createElement('div');
+        item1.classList.add('notification-item', 'notification-unread');
+        item1.dataset.id = '42';
+        const dot1 = global.document.createElement('span');
+        dot1.classList.add('notification-dot');
+        item1.appendChild(dot1);
+        list.appendChild(item1);
+
+        const item2 = global.document.createElement('div');
+        item2.classList.add('notification-item', 'notification-unread');
+        item2.dataset.id = '43';
+        const dot2 = global.document.createElement('span');
+        dot2.classList.add('notification-dot');
+        item2.appendChild(dot2);
+        list.appendChild(item2);
+
+        let dispatchedReadEvent = null;
+        global.document.addEventListener('tutor:notification:read', (e) => {
+            dispatchedReadEvent = e;
+        });
+
+        const client = notifications.initNotifications({
+            autoConnectWs: true,
+            WebSocketClass: MockWebSocket,
+        });
+
+        const ws = MockWebSocket.instances[0];
+        ws.simulateOpen();
+
+        const readPayload = {
+            type: 'notification_read',
+            notification_ids: [42],
+            unread_count: 2,
+        };
+        ws.simulateMessage(readPayload);
+
+        // Badge updated
+        assert.strictEqual(badgeCount.textContent, '2');
+        assert.strictEqual(badge.classList.contains('d-none'), false);
+
+        // item1 marked read, item2 remains unread
+        assert.strictEqual(item1.classList.contains('notification-unread'), false);
+        assert.strictEqual(item1.querySelector('.notification-dot'), null);
+        assert.strictEqual(item2.classList.contains('notification-unread'), true);
+        assert.notStrictEqual(item2.querySelector('.notification-dot'), null);
+
+        // Event dispatched
+        assert.notStrictEqual(dispatchedReadEvent, null);
+        assert.strictEqual(dispatchedReadEvent.type, 'tutor:notification:read');
+        assert.deepStrictEqual(dispatchedReadEvent.detail, readPayload);
+
+        client.disconnect();
+    });
 });

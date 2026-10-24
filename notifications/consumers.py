@@ -130,6 +130,13 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
         """
         await self.send_json(event)
 
+    async def notification_read(self, event):
+        """
+        Handler invoked when a message with type='notification_read'
+        is broadcast to the user's private channel layer group.
+        """
+        await self.send_json(event)
+
     @database_sync_to_async
     def _get_unread_count(self, user_id):
         return Notification.objects.unread_count_for(user_id)

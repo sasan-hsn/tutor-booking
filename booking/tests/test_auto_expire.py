@@ -140,7 +140,7 @@ class AutoExpireCoreTests(RoleTestCase):
             {'action': 'accept'},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'success': True})
+        self.assertTrue(response.json()['success'])
 
         future_booking.refresh_from_db()
         self.assertEqual(future_booking.status, Booking.Status.CONFIRMED)

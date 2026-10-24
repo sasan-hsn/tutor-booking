@@ -52,6 +52,14 @@ _Avoid_: Standard lesson, paid lesson
 An automated notification sent to a student and teacher prior to a confirmed booking's scheduled start time.
 _Avoid_: Lesson alert, booking notification, calendar ping
 
+**In-Platform Notification**:
+A persistent, real-time alert delivered to a user's notification bell and dropdown, triggered by booking lifecycle transitions (e.g. `booking_requested`, `cancellation_requested`, `booking_confirmed`).
+_Avoid_: Bell alert, popup notice, system message
+
+**Request Resolution**:
+The definitive action taken by a teacher to resolve a student request (accepting or declining a pending lesson request, or approving or declining a cancellation request). Resolving a request consumes the student's submission and automatically marks all corresponding actionable in-platform notifications as read.
+_Avoid_: Dismissal, request closing, manual read marking
+
 **Meeting Link**:
 A video conference URL (e.g., Google Meet, Zoom) associated with a teacher where the online lesson takes place.
 _Avoid_: Classroom URL, video room, lesson link

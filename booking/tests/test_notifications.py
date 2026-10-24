@@ -12,6 +12,7 @@ from django.utils import timezone
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking, RegularAvailability
 from booking.notifications import (
+    mark_booking_requests_read,
     notify_booking_cancelled,
     notify_booking_confirmed,
     notify_booking_declined,
@@ -628,6 +629,10 @@ class RespondToBookingNotificationTests(RoleTestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertIn('unread_notifications_count', data)
+        self.assertIn('marked_notification_ids', data)
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
 
@@ -733,6 +738,62 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
         self.assertFalse(self.booking.cancellation_requested)
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_respond_to_booking_accept_marks_request_notification_as_read(self):
+        notif = notify_booking_requested(self.booking)
+        self.assertFalse(notif.is_read)
+
+        response = self.teacher_client.post(
+            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
+            {'action': 'accept'},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertIn(notif.id, data['marked_notification_ids'])
+        self.assertEqual(data['unread_notifications_count'], 0)
+
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
+        self.assertIsNotNone(notif.read_at)
+
+    def test_respond_to_booking_decline_marks_request_notification_as_read(self):
+        notif = notify_booking_requested(self.booking)
+        self.assertFalse(notif.is_read)
+
+        response = self.teacher_client.post(
+            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
+            {'action': 'decline'},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertIn(notif.id, data['marked_notification_ids'])
+        self.assertEqual(data['unread_notifications_count'], 0)
+
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
+        self.assertIsNotNone(notif.read_at)
+
+    def test_respond_to_cancellation_marks_cancellation_notification_as_read(self):
+        self.booking.status = Booking.Status.CONFIRMED
+        self.booking.cancellation_requested = True
+        self.booking.save()
+
+        notif = notify_cancellation_requested(self.booking)
+        self.assertFalse(notif.is_read)
+
+        response = self.teacher_client.post(
+            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
+            {'action': 'accept'},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertIn(notif.id, data['marked_notification_ids'])
+
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
 
     def test_respond_to_expired_booking_does_not_dispatch_confirmation_email(self):
         # Create a stale booking in the past
@@ -1186,5 +1247,40 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(regular_teacher_notif.title, "Lesson Request Expired")
         self.assertEqual(regular_teacher_notif.message, "The Regular Lesson request from John Doe has expired.")
         self.assertEqual(regular_teacher_notif.metadata["lesson_type"], "regular")
+
+    def test_notify_booking_expired_marks_teacher_request_notification_as_read(self):
+        # Create an unread booking_requested notification for the teacher
+        notif_requested = notify_booking_requested(self.trial_booking)
+        self.assertIsNotNone(notif_requested)
+        self.assertFalse(notif_requested.is_read)
+
+        notify_booking_expired(self.trial_booking)
+
+        notif_requested.refresh_from_db()
+        self.assertTrue(notif_requested.is_read)
+        self.assertIsNotNone(notif_requested.read_at)
+
+    def test_mark_booking_requests_read_marks_requested_and_cancellation_notifications(self):
+        notif_requested = notify_booking_requested(self.regular_booking)
+        notif_cancelled = notify_cancellation_requested(self.regular_booking)
+
+        # Create another notification for a different booking
+        notif_other = notify_booking_requested(self.trial_booking)
+
+        self.assertFalse(notif_requested.is_read)
+        self.assertFalse(notif_cancelled.is_read)
+        self.assertFalse(notif_other.is_read)
+
+        marked_ids, unread_count = mark_booking_requests_read(self.regular_booking)
+
+        notif_requested.refresh_from_db()
+        notif_cancelled.refresh_from_db()
+        notif_other.refresh_from_db()
+
+        self.assertTrue(notif_requested.is_read)
+        self.assertTrue(notif_cancelled.is_read)
+        self.assertFalse(notif_other.is_read)
+        self.assertCountEqual(marked_ids, [notif_requested.id, notif_cancelled.id])
+        self.assertEqual(unread_count, 1)
 
 

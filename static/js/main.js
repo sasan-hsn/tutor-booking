@@ -759,12 +759,28 @@ function initLessonRequestsManager(doc = typeof document !== 'undefined' ? docum
                     return;
                 }
 
+                let responseData = null;
+                try {
+                    responseData = await response.json();
+                } catch (_) {}
+
                 item.remove();
                 hasChanges = true;
 
                 const currentBadge = getLessonRequestsBadge(documentRef);
                 const currentCount = getLessonRequestsBadgeCount(currentBadge);
                 updateLessonRequestsBadge(currentCount - 1, currentBadge);
+
+                // Reconcile topbar notification bell & dropdown via decoupled event
+                if (responseData && typeof documentRef.dispatchEvent === 'function') {
+                    documentRef.dispatchEvent(new CustomEvent('tutor:notification:read', {
+                        detail: {
+                            type: 'notification_read',
+                            notification_ids: responseData.marked_notification_ids || [],
+                            unread_count: responseData.unread_notifications_count,
+                        },
+                    }));
+                }
 
                 const remainingItems = modalBody.querySelectorAll('.request-item');
                 if (remainingItems.length === 0) {
