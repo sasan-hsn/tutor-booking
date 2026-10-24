@@ -2,7 +2,10 @@ import logging
 from django.urls import reverse
 
 from notifications.models import Notification
-from notifications.services import create_and_send_notification
+from notifications.services import (
+    create_and_send_notification,
+    mark_booking_notifications_as_read,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,4 +170,26 @@ def notify_booking_expired(booking):
     except Exception:
         logger.exception("Failed to emit booking_expired notification to teacher for booking #%s", booking.id)
 
+    # 3. Auto-mark teacher's stale booking_requested notification as read
+    mark_booking_notifications_as_read(
+        recipient=booking.teacher.user,
+        booking_id=booking.id,
+        event_types=[Notification.EventType.BOOKING_REQUESTED],
+    )
+
     return notifications
+
+
+def mark_booking_requests_read(booking):
+    """
+    Mark actionable teacher notifications for this booking (booking_requested,
+    cancellation_requested) as read.
+    """
+    return mark_booking_notifications_as_read(
+        recipient=booking.teacher.user,
+        booking_id=booking.id,
+        event_types=[
+            Notification.EventType.BOOKING_REQUESTED,
+            Notification.EventType.CANCELLATION_REQUESTED,
+        ],
+    )

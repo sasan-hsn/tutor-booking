@@ -37,6 +37,7 @@ from .tasks import (
     send_booking_request_notifications,
 )
 from .notifications import (
+    mark_booking_requests_read,
     notify_booking_cancelled,
     notify_booking_confirmed,
     notify_booking_declined,
@@ -450,9 +451,23 @@ def respond_to_booking(request, booking_id):
     if action not in ('accept', 'decline'):
         return JsonResponse({'error': 'Invalid action.'}, status=400)
 
+    marked_notification_ids = []
+    unread_notifications_count = 0
+
     if booking.cancellation_requested:
-        was_confirmed = (booking.status == Booking.Status.CONFIRMED)
-        with transaction.atomic():
+        pass
+    elif booking.status == Booking.Status.EXPIRED:
+        return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
+    elif booking.status == Booking.Status.PENDING:
+        if booking.start_at <= timezone.now():
+            expire_stale_bookings(teacher=booking.teacher)
+            return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
+    else:
+        return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
+
+    with transaction.atomic():
+        if booking.cancellation_requested:
+            was_confirmed = (booking.status == Booking.Status.CONFIRMED)
             if action == 'accept':
                 booking.status = Booking.Status.CANCELLED
             booking.cancellation_requested = False
@@ -463,13 +478,7 @@ def respond_to_booking(request, booking_id):
                 transaction.on_commit(
                     lambda: safe_send_booking_cancelled_email(booking_id)
                 )
-    elif booking.status == Booking.Status.EXPIRED:
-        return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
-    elif booking.status == Booking.Status.PENDING:
-        if booking.start_at <= timezone.now():
-            expire_stale_bookings(teacher=booking.teacher)
-            return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
-        with transaction.atomic():
+        elif booking.status == Booking.Status.PENDING:
             booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
             booking.save()
             booking_id = booking.id
@@ -483,10 +492,14 @@ def respond_to_booking(request, booking_id):
                 transaction.on_commit(
                     lambda: safe_send_booking_declined_email(booking_id)
                 )
-    else:
-        return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
 
-    return JsonResponse({'success': True})
+        marked_notification_ids, unread_notifications_count = mark_booking_requests_read(booking)
+
+    return JsonResponse({
+        'success': True,
+        'unread_notifications_count': unread_notifications_count,
+        'marked_notification_ids': marked_notification_ids,
+    })
 
 
 @teacher_required
