@@ -16,7 +16,8 @@
                 {% endif %}
             </span>
             <span class="request-datetime">
-                {{ booking.local_date|date:"M d" }}, {{ booking.time_range }}
+                {{ booking.local_date|date:"D, M d" }}, {{ booking.time_range }}
+                <span class="badge-lesson-type">{{ booking.get_lesson_type_display }}</span>
                 <span class="badge-duration">{{ booking.duration_display }}</span>
             </span>
         </div>
