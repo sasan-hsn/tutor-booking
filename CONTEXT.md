@@ -36,6 +36,10 @@ _Avoid_: Finished lesson, done booking
 The state of a confirmed booking after its scheduled end time has passed, during which the teacher must mark it as completed or not held.
 _Avoid_: Unresolved lesson, pending completion
 
+**Lesson Note**:
+A written summary, homework assignment, or feedback provided by the teacher for a completed booking, visible to both the teacher and the student on the lesson detail view.
+_Avoid_: Completion note, teacher remark, class memo, lesson comment
+
 **Lesson Option**:
 A selectable booking package presented to the student on the booking page (`trial`, `regular_25`, `regular_50`) defining a lesson type, duration, and price.
 _Avoid_: Booking tier, product plan, package variant

@@ -24,6 +24,7 @@ class TeacherOnlyViewsAccessTests(RoleTestCase):
             reverse('booking:cancel_lesson', kwargs={'booking_id': 1}),
             reverse('booking:complete_lesson', kwargs={'booking_id': 1}),
             reverse('booking:mark_lesson_not_held', kwargs={'booking_id': 1}),
+            reverse('booking:update_lesson_note', kwargs={'booking_id': 1}),
             reverse('booking:teacher_pending_reviews'),
             reverse('booking:approve_review', kwargs={'review_id': 1}),
             reverse('booking:reject_review', kwargs={'review_id': 1}),

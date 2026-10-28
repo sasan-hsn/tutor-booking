@@ -1592,6 +1592,60 @@ h1, h2, h3, h4, h5, h6,
     white-space: pre-wrap;
 }
 
+.lesson-note-action-btn {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--primary-blue);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.lesson-note-action-btn:hover {
+    color: var(--primary-blue-hover);
+    text-decoration: underline;
+}
+
+.lesson-note-btn-cancel {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid var(--border-soft);
+    background: transparent;
+    color: var(--text-main);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.lesson-note-btn-cancel:hover:not(:disabled) {
+    background-color: var(--bg-hover, #F3F4F6);
+}
+
+.lesson-note-btn-save {
+    padding: 0.35rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background-color: var(--primary-blue);
+    border: 1px solid var(--primary-blue);
+    color: #ffffff;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.lesson-note-btn-save:hover:not(:disabled) {
+    background-color: var(--primary-blue-hover);
+}
+
+.lesson-note-btn-save:disabled,
+.lesson-note-btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .lesson-detail-resolution textarea {
     resize: vertical;
     min-height: 60px;

@@ -555,6 +555,171 @@ function initLessonDetailModalManager() {
             await handleModalPostAction(notHeldBtn, notHeldBtn.dataset.notHeldUrl);
             return;
         }
+
+        // 5. Toggle Lesson Note edit mode
+        const editNoteTrigger = e.target.closest('#editLessonNoteBtn, #addLessonNoteBtn');
+        if (editNoteTrigger) {
+            const editForm = document.getElementById('lessonNoteEditForm');
+            const noteDisplayEl = document.getElementById('lessonNoteDisplay');
+            const noteEmptyEl = document.getElementById('lessonNoteEmptyPrompt');
+            const editBtn = document.getElementById('editLessonNoteBtn');
+            const errorEl = document.getElementById('lessonNoteError');
+            const noteInput = document.getElementById('lessonNoteInput');
+            const noteTextEl = document.getElementById('lessonNoteText');
+
+            if (editForm) {
+                editForm.classList.remove('d-none');
+                if (noteDisplayEl) noteDisplayEl.classList.add('d-none');
+                if (noteEmptyEl) noteEmptyEl.classList.add('d-none');
+                if (editBtn) editBtn.classList.add('d-none');
+                if (errorEl) {
+                    errorEl.classList.add('d-none');
+                    errorEl.textContent = '';
+                }
+                if (noteInput) {
+                    noteInput.value = noteTextEl ? noteTextEl.textContent.trim() : '';
+                    noteInput.focus();
+                }
+            }
+            return;
+        }
+
+        // 6. Cancel Lesson Note edit
+        const cancelNoteBtn = e.target.closest('#cancelLessonNoteBtn');
+        if (cancelNoteBtn) {
+            const editForm = document.getElementById('lessonNoteEditForm');
+            const noteDisplayEl = document.getElementById('lessonNoteDisplay');
+            const noteEmptyEl = document.getElementById('lessonNoteEmptyPrompt');
+            const editBtn = document.getElementById('editLessonNoteBtn');
+            const errorEl = document.getElementById('lessonNoteError');
+            const noteInput = document.getElementById('lessonNoteInput');
+            const noteTextEl = document.getElementById('lessonNoteText');
+
+            const currentNote = noteTextEl ? noteTextEl.textContent.trim() : '';
+            if (noteInput) noteInput.value = currentNote;
+            if (errorEl) {
+                errorEl.classList.add('d-none');
+                errorEl.textContent = '';
+            }
+            if (editForm) editForm.classList.add('d-none');
+
+            if (currentNote) {
+                if (noteDisplayEl) noteDisplayEl.classList.remove('d-none');
+                if (editBtn) editBtn.classList.remove('d-none');
+                if (noteEmptyEl) noteEmptyEl.classList.add('d-none');
+            } else {
+                if (noteDisplayEl) noteDisplayEl.classList.add('d-none');
+                if (editBtn) editBtn.classList.add('d-none');
+                if (noteEmptyEl) noteEmptyEl.classList.remove('d-none');
+            }
+            return;
+        }
+
+        // 7. Save Lesson Note
+        const saveNoteBtn = e.target.closest('#saveLessonNoteBtn');
+        if (saveNoteBtn) {
+            const noteSection = document.getElementById('lessonNoteSection');
+            if (!noteSection) return;
+            const updateUrl = noteSection.dataset.updateUrl;
+            const noteInput = document.getElementById('lessonNoteInput');
+            const note = noteInput ? noteInput.value.trim() : '';
+            const errorEl = document.getElementById('lessonNoteError');
+            const cancelBtn = document.getElementById('cancelLessonNoteBtn');
+
+            if (errorEl) {
+                errorEl.classList.add('d-none');
+                errorEl.textContent = '';
+            }
+
+            if (note.length > 2000) {
+                if (errorEl) {
+                    errorEl.textContent = 'Lesson note cannot exceed 2,000 characters.';
+                    errorEl.classList.remove('d-none');
+                }
+                return;
+            }
+
+            saveNoteBtn.disabled = true;
+            if (cancelBtn) cancelBtn.disabled = true;
+            const originalSaveText = saveNoteBtn.textContent;
+            saveNoteBtn.textContent = 'Saving...';
+
+            try {
+                const response = await csrfFetch(updateUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `note=${encodeURIComponent(note)}`
+                });
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (jsonErr) {}
+
+                if (!response.ok) {
+                    const errorMsg = (data && data.error) || 'Failed to update lesson note. Please try again.';
+                    if (errorEl) {
+                        errorEl.textContent = errorMsg;
+                        errorEl.classList.remove('d-none');
+                    } else {
+                        alert(errorMsg);
+                    }
+                    saveNoteBtn.disabled = false;
+                    if (cancelBtn) cancelBtn.disabled = false;
+                    saveNoteBtn.textContent = originalSaveText;
+                    return;
+                }
+
+                hasChanges = true;
+                saveNoteBtn.disabled = false;
+                if (cancelBtn) cancelBtn.disabled = false;
+                saveNoteBtn.textContent = originalSaveText;
+
+                const savedNote = (data && data.note !== undefined) ? data.note : note;
+                const noteTextEl = document.getElementById('lessonNoteText');
+                const noteDisplayEl = document.getElementById('lessonNoteDisplay');
+                const noteEmptyEl = document.getElementById('lessonNoteEmptyPrompt');
+                const editBtn = document.getElementById('editLessonNoteBtn');
+                const editForm = document.getElementById('lessonNoteEditForm');
+                const feedbackEl = document.getElementById('lessonNoteFeedback');
+
+                if (noteTextEl) {
+                    noteTextEl.textContent = savedNote;
+                }
+                if (noteInput) {
+                    noteInput.value = savedNote;
+                }
+
+                if (editForm) editForm.classList.add('d-none');
+
+                if (savedNote) {
+                    if (noteDisplayEl) noteDisplayEl.classList.remove('d-none');
+                    if (editBtn) editBtn.classList.remove('d-none');
+                    if (noteEmptyEl) noteEmptyEl.classList.add('d-none');
+                } else {
+                    if (noteDisplayEl) noteDisplayEl.classList.add('d-none');
+                    if (editBtn) editBtn.classList.add('d-none');
+                    if (noteEmptyEl) noteEmptyEl.classList.remove('d-none');
+                }
+
+                if (feedbackEl) {
+                    feedbackEl.classList.remove('d-none');
+                    setTimeout(() => {
+                        feedbackEl.classList.add('d-none');
+                    }, 2500);
+                }
+            } catch (err) {
+                if (errorEl) {
+                    errorEl.textContent = 'Network error. Please try again.';
+                    errorEl.classList.remove('d-none');
+                } else {
+                    alert('Network error. Please try again.');
+                }
+                saveNoteBtn.disabled = false;
+                if (cancelBtn) cancelBtn.disabled = false;
+                saveNoteBtn.textContent = originalSaveText;
+            }
+            return;
+        }
     });
 
     async function handleModalPostAction(btn, url, extraOptions = {}) {

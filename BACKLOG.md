@@ -11,6 +11,8 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
 - [x] "Join Lesson" direct meeting access on lesson cards for teacher and student (activates during the Lesson Join Window, 10 minutes before start through 10 minutes after end of lesson, linking directly to the teacher's meeting link) (#221)
 - [x] Pagination for the Upcoming/Past sections in both dashboards (#207, #208, #209)
 - [ ] Teacher-configurable Instant Tutoring buffer (currently hardcoded to 1 hour — see CLAUDE.md)
+- [x] Allow teachers to add or edit lesson notes on completed bookings (#250)
+  - Allow teachers to add notes retroactively if skipped during resolution, or edit existing notes on completed lessons.
 - [ ] Visual/styling pass on `profile_settings.html`
 - [ ] Visual/styling pass on the Past Lessons section
 - [ ] WeeklyOverride "mark whole day off" toggle (currently requires filling Start/End inputs)
