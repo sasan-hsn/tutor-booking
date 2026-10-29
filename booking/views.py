@@ -848,6 +848,28 @@ def mark_lesson_not_held(request, booking_id):
     return JsonResponse({"success": True})
 
 
+@teacher_required
+@require_POST
+def update_lesson_note(request, booking_id):
+    teacher = get_object_or_404(TeacherProfile, user=request.user)
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        teacher=teacher,
+    )
+
+    if booking.status != Booking.Status.COMPLETED:
+        return JsonResponse({"error": "Lesson notes can only be updated on completed bookings."}, status=400)
+
+    note = request.POST.get("note", "").strip()
+    if len(note) > 2000:
+        return JsonResponse({"error": "Lesson note cannot exceed 2,000 characters."}, status=400)
+
+    booking.completion_note = note
+    booking.save(update_fields=["completion_note"])
+    return JsonResponse({"success": True, "note": note})
+
+
 @student_required
 def student_calendar(request):
     today = timezone.localtime(timezone.now(), ZoneInfo(request.user.timezone)).date()

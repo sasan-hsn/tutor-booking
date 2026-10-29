@@ -44,11 +44,46 @@
                 {{ booking.get_status_display }}
             </span>
         </div>
-        {% if booking.completion_note %}
-        <div class="lesson-detail-note">
-            <p class="lesson-detail-note-label">Teacher's Note</p>
-            <p class="lesson-detail-note-text">{{ booking.completion_note }}</p>
-        </div>
+        {% if user.teacher_profile %}
+            {% if booking.status == 'completed' %}
+            <div class="lesson-detail-note" id="lessonNoteSection" data-update-url="{% url 'booking:update_lesson_note' booking_id=booking.id %}">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="lesson-detail-note-label mb-0">Lesson Note</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="lessonNoteFeedback" class="text-success small d-none">Saved!</span>
+                        <button type="button" class="lesson-note-action-btn {% if not booking.completion_note %}d-none{% endif %}" id="editLessonNoteBtn">
+                            Edit Note
+                        </button>
+                    </div>
+                </div>
+
+                <div id="lessonNoteDisplay" class="{% if not booking.completion_note %}d-none{% endif %}">
+                    <p class="lesson-detail-note-text" id="lessonNoteText">{{ booking.completion_note }}</p>
+                </div>
+
+                <div id="lessonNoteEmptyPrompt" class="{% if booking.completion_note %}d-none{% endif %}">
+                    <button type="button" class="lesson-note-action-btn" id="addLessonNoteBtn">
+                        + Add Lesson Note
+                    </button>
+                </div>
+
+                <div id="lessonNoteEditForm" class="d-none mt-2">
+                    <textarea class="form-control form-control-sm mb-2" id="lessonNoteInput" rows="3" maxlength="2000" placeholder="Add homework, feedback, or lesson notes...">{{ booking.completion_note }}</textarea>
+                    <div id="lessonNoteError" class="text-danger small mb-2 d-none"></div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="lesson-note-btn-cancel" id="cancelLessonNoteBtn">Cancel</button>
+                        <button type="button" class="lesson-note-btn-save" id="saveLessonNoteBtn">Save</button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        {% else %}
+            {% if booking.status == 'completed' and booking.completion_note %}
+            <div class="lesson-detail-note" id="lessonNoteSection">
+                <p class="lesson-detail-note-label">Lesson Note</p>
+                <p class="lesson-detail-note-text" id="lessonNoteText">{{ booking.completion_note }}</p>
+            </div>
+            {% endif %}
         {% endif %}
     </div>
 

@@ -23,6 +23,7 @@ urlpatterns = [
     path("teacher/lesson/<int:booking_id>/cancel/", views.cancel_lesson, name="cancel_lesson"),
     path('lessons/<int:booking_id>/complete/', views.complete_lesson, name='complete_lesson'),
     path('lessons/<int:booking_id>/not-held/', views.mark_lesson_not_held, name='mark_lesson_not_held'),
+    path('lessons/<int:booking_id>/note/', views.update_lesson_note, name='update_lesson_note'),
     path("student/calendar/", views.student_calendar, name="student_calendar"),
     path("student/calendar/ajax/", views.student_calendar_ajax, name="student_calendar_ajax"),
     path("student/lesson/<int:booking_id>/", views.lesson_detail_student, name="lesson_detail_student"),
