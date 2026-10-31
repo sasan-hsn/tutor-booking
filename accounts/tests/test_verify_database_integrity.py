@@ -308,3 +308,25 @@ class VerifyDatabaseIntegrityTests(TestCase):
         self.assertIn('Bookings: 1', output)
         self.assertIn('Confirmed: 1', output)
         self.assertIn('Availabilities: 1 RegularAvailability rule(s), 1 WeeklyOverride(s)', output)
+        self.assertIn('Messaging: 0 Conversation(s), 0 Message(s)', output)
+
+    def test_referential_integrity_broken_conversation_fk(self):
+        with patch('accounts.management.commands.verify_database_integrity.Conversation.objects.using') as mock_using:
+            mock_qs = MagicMock()
+            mock_using.return_value = mock_qs
+            def mock_exclude(**kwargs):
+                sub_mock = MagicMock()
+                if 'student__in' in kwargs:
+                    sub_mock.count.return_value = 1
+                else:
+                    sub_mock.count.return_value = 0
+                return sub_mock
+            mock_qs.exclude.side_effect = mock_exclude
+
+            out = io.StringIO()
+            with self.assertRaises(CommandError) as ctx:
+                call_command('verify_database_integrity', stdout=out)
+
+            self.assertIn('Database integrity verification failed', str(ctx.exception))
+            output = out.getvalue()
+            self.assertIn('Conversation(s) reference non-existent Student User IDs', output)
