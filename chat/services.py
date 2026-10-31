@@ -1,4 +1,6 @@
 import logging
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F
@@ -6,8 +8,39 @@ from django.db.models.functions import Greatest
 from django.utils import timezone
 
 from .models import Conversation, Message
+from .utils import linkify_message_text
 
 logger = logging.getLogger(__name__)
+
+
+def broadcast_chat_message(message: Message) -> None:
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    group_name = Conversation.get_group_name(message.conversation_id)
+    payload = {
+        "type": "chat_message",
+        "message": {
+            "id": message.id,
+            "conversation_id": str(message.conversation_id),
+            "sender_id": message.sender_id,
+            "sender_username": message.sender.username,
+            "text": message.text,
+            "rendered_text": linkify_message_text(message.text),
+            "message_type": message.message_type,
+            "created_at": message.created_at.isoformat(),
+        },
+    }
+    try:
+        async_to_sync(channel_layer.group_send)(group_name, payload)
+    except Exception as exc:
+        logger.warning(
+            "Failed to broadcast chat message %s to group %s: %s",
+            message.id,
+            group_name,
+            exc,
+        )
 
 
 def get_or_create_conversation(student, teacher) -> tuple[Conversation, bool]:
@@ -37,6 +70,10 @@ def advance_watermark(conversation: Conversation, user, message_id: int) -> int:
                 message_id,
             )
         )
+        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
+            "student_last_read_message_id", flat=True
+        ).first()
+        return updated_val or 0
     elif user.id == conversation.teacher_id:
         Conversation.objects.filter(id=conversation.id).update(
             teacher_last_read_message_id=Greatest(
@@ -44,10 +81,12 @@ def advance_watermark(conversation: Conversation, user, message_id: int) -> int:
                 message_id,
             )
         )
+        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
+            "teacher_last_read_message_id", flat=True
+        ).first()
+        return updated_val or 0
     else:
         raise ValueError("User is not a participant of this conversation.")
-
-    return message_id
 
 
 def send_message(
@@ -100,5 +139,7 @@ def send_message(
                     message.id,
                 ),
             )
+
+        transaction.on_commit(lambda: broadcast_chat_message(message))
 
     return message

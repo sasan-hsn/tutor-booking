@@ -49,6 +49,10 @@ class Conversation(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    @classmethod
+    def get_group_name(cls, conversation_id) -> str:
+        return f"chat_{conversation_id}"
+
     def get_counterpart(self, user):
         if user == self.student:
             return self.teacher

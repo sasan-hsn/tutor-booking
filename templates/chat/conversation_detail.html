@@ -83,6 +83,19 @@
     justify-content: flex-end;
 }
 
+.chat-receipt {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.chat-typing-indicator {
+    padding: 0.35rem 1.25rem;
+    font-style: italic;
+    background: #fafbfc;
+    border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
 .chat-input-area {
     padding: 1rem 1.25rem;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
@@ -113,7 +126,12 @@
 
 {% block page_content %}
 <div class="container-fluid px-0 px-md-3 py-2">
-    <div class="chat-container shadow-sm">
+    <div class="chat-container shadow-sm" id="chatContainer"
+         data-conversation-id="{{ conversation.id }}"
+         data-current-user-id="{{ user.id }}"
+         data-counterpart-id="{{ counterpart.id }}"
+         data-counterpart-name="{{ counterpart.get_full_name|default:counterpart.username }}"
+         data-counterpart-watermark="{{ counterpart_watermark|default:0 }}">
         <div class="chat-header">
             <div class="d-flex align-items-center gap-3">
                 <a href="{% if user.role == 'teacher' %}{% url 'booking:teacher_dashboard' %}{% else %}{% url 'booking:student_dashboard' %}{% endif %}" class="btn btn-sm btn-outline-secondary d-md-none" aria-label="Back">
@@ -156,10 +174,24 @@
                     <div class="chat-text">{{ message.text|chat_linkify|safe }}</div>
                     <div class="chat-meta">
                         <span>{{ message.created_at|date:"g:i A" }}</span>
+                        {% if message.sender_id == user.id %}
+                        <span class="chat-receipt ms-1" data-read="{% if message.id <= counterpart_watermark %}true{% else %}false{% endif %}">
+                            {% if message.id <= counterpart_watermark %}
+                            <i class="bi bi-check2-all text-info" title="Read"></i>
+                            {% else %}
+                            <i class="bi bi-check2 text-white-50" title="Delivered"></i>
+                            {% endif %}
+                        </span>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
             {% endif %}
+        </div>
+
+        <div id="chatTypingIndicator" class="chat-typing-indicator small text-muted px-3 py-1 d-none" aria-live="polite">
+            <span class="spinner-grow spinner-grow-sm text-secondary me-1" role="status" style="width: 0.45rem; height: 0.45rem;"></span>
+            <span id="chatTypingText"></span>
         </div>
 
         <div class="chat-input-area">
@@ -195,12 +227,21 @@
 {{ block.super }}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const container = document.getElementById('chatContainer');
     const timeline = document.getElementById('chatTimeline');
     const form = document.getElementById('chatSendForm');
     const input = document.getElementById('chatInput');
     const sendBtn = document.getElementById('chatSendBtn');
     const feedback = document.getElementById('chatFeedback');
     const emptyState = document.getElementById('chatEmptyState');
+    const typingIndicator = document.getElementById('chatTypingIndicator');
+    const typingText = document.getElementById('chatTypingText');
+
+    if (!container || !timeline) return;
+
+    const conversationId = container.dataset.conversationId;
+    const currentUserId = parseInt(container.dataset.currentUserId, 10);
+    const counterpartId = parseInt(container.dataset.counterpartId, 10);
 
     function scrollToBottom() {
         if (timeline) {
@@ -209,11 +250,217 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     scrollToBottom();
 
+    // --- WebSocket Real-Time Connection ---
+    let chatSocket = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    const RECONNECT_INTERVALS = [1000, 2000, 5000, 10000];
+    let typingTimeout = null;
+    let lastTypingSent = 0;
+
+    function getChatWebSocketUrl(convId) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${window.location.host}/ws/chat/${convId}/`;
+    }
+
+    function sendWsAction(payload) {
+        if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+            try {
+                chatSocket.send(JSON.stringify(payload));
+            } catch (err) {
+                console.error('Failed to send WebSocket action:', err);
+            }
+        }
+    }
+
+    function clearTypingIndicator() {
+        if (typingTimeout) {
+            clearTimeout(typingTimeout);
+            typingTimeout = null;
+        }
+        if (typingIndicator) {
+            typingIndicator.classList.add('d-none');
+        }
+    }
+
+    function handleUserTyping(data) {
+        if (!data || data.user_id === currentUserId) return;
+        if (!typingIndicator || !typingText) return;
+
+        typingText.textContent = `${data.username || 'User'} is typing...`;
+        typingIndicator.classList.remove('d-none');
+        scrollToBottom();
+
+        if (typingTimeout) {
+            clearTimeout(typingTimeout);
+        }
+        typingTimeout = setTimeout(() => {
+            typingIndicator.classList.add('d-none');
+        }, 3500);
+    }
+
+    function getReceiptIconHtml(isRead) {
+        if (isRead) {
+            return '<i class="bi bi-check2-all text-info" title="Read"></i>';
+        }
+        return '<i class="bi bi-check2 text-white-50" title="Delivered"></i>';
+    }
+
+    function handleReadReceipt(data) {
+        if (!data || data.reader_id !== counterpartId) return;
+        const watermark = parseInt(data.watermark, 10) || 0;
+        const bubbles = timeline.querySelectorAll('.chat-bubble-out[data-message-id]');
+        bubbles.forEach(bubble => {
+            const msgId = parseInt(bubble.dataset.messageId, 10);
+            if (msgId <= watermark) {
+                const receipt = bubble.querySelector('.chat-receipt');
+                if (receipt) {
+                    receipt.dataset.read = 'true';
+                    receipt.innerHTML = getReceiptIconHtml(true);
+                }
+            }
+        });
+    }
+
+    function handleNewMessage(message) {
+        if (!message) return;
+        clearTypingIndicator();
+
+        // Deduplicate against messages already in the timeline
+        if (timeline.querySelector(`.chat-bubble[data-message-id="${message.id}"]`)) {
+            return;
+        }
+
+        if (emptyState) emptyState.remove();
+
+        const isOwn = message.sender_id === currentUserId;
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${isOwn ? 'chat-bubble-out' : 'chat-bubble-in'}`;
+        bubble.dataset.messageId = message.id;
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'chat-text';
+        textDiv.innerHTML = message.rendered_text;
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'chat-meta';
+        const timeSpan = document.createElement('span');
+        const msgDate = new Date(message.created_at);
+        timeSpan.textContent = msgDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        metaDiv.appendChild(timeSpan);
+
+        if (isOwn) {
+            const receiptSpan = document.createElement('span');
+            receiptSpan.className = 'chat-receipt ms-1';
+            receiptSpan.dataset.read = 'false';
+            receiptSpan.innerHTML = getReceiptIconHtml(false);
+            metaDiv.appendChild(receiptSpan);
+        }
+
+        bubble.appendChild(textDiv);
+        bubble.appendChild(metaDiv);
+        timeline.appendChild(bubble);
+
+        scrollToBottom();
+
+        // Advance watermark if message is received from counterpart
+        if (!isOwn) {
+            sendWsAction({
+                action: 'advance_watermark',
+                message_id: message.id
+            });
+        }
+    }
+
+    function connectChatWebSocket() {
+        const wsUrl = getChatWebSocketUrl(conversationId);
+        try {
+            chatSocket = new WebSocket(wsUrl);
+        } catch (err) {
+            console.error('Failed to create Chat WebSocket:', err);
+            scheduleReconnect();
+            return;
+        }
+
+        chatSocket.onopen = function () {
+            reconnectAttempts = 0;
+            // On open, advance watermark for latest message if present
+            const bubbles = timeline.querySelectorAll('.chat-bubble[data-message-id]');
+            if (bubbles.length > 0) {
+                const lastBubble = bubbles[bubbles.length - 1];
+                const lastId = parseInt(lastBubble.dataset.messageId, 10);
+                if (lastId > 0) {
+                    sendWsAction({
+                        action: 'advance_watermark',
+                        message_id: lastId
+                    });
+                }
+            }
+        };
+
+        chatSocket.onmessage = function (event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'new_message' || data.type === 'chat_message') {
+                    handleNewMessage(data.message);
+                } else if (data.type === 'read_receipt') {
+                    handleReadReceipt(data);
+                } else if (data.type === 'user_typing') {
+                    handleUserTyping(data);
+                }
+            } catch (err) {
+                console.error('Error parsing Chat WebSocket frame:', err);
+            }
+        };
+
+        chatSocket.onclose = function (event) {
+            if (!event.wasClean) {
+                scheduleReconnect();
+            }
+        };
+
+        chatSocket.onerror = function (err) {
+            console.error('Chat WebSocket error:', err);
+        };
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+        const delay = RECONNECT_INTERVALS[Math.min(reconnectAttempts, RECONNECT_INTERVALS.length - 1)];
+        reconnectAttempts++;
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectChatWebSocket();
+        }, delay);
+    }
+
+    connectChatWebSocket();
+
+    // --- Input and Form Handlers ---
     if (!form || !input) return;
+
+    let typingDebounceTimer = null;
+
+    function dispatchTypingSignal() {
+        const now = Date.now();
+        if (now - lastTypingSent >= 3000) {
+            lastTypingSent = now;
+            sendWsAction({ action: 'typing' });
+        }
+    }
 
     input.addEventListener('input', function () {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+
+        dispatchTypingSignal();
+
+        if (typingDebounceTimer) {
+            clearTimeout(typingDebounceTimer);
+        }
+        typingDebounceTimer = setTimeout(() => {
+            dispatchTypingSignal();
+        }, 500);
     });
 
     input.addEventListener('keydown', function (e) {
@@ -250,27 +497,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await res.json();
 
             if (res.ok && data.success) {
-                if (emptyState) emptyState.remove();
-
-                const bubble = document.createElement('div');
-                bubble.className = 'chat-bubble chat-bubble-out';
-                bubble.dataset.messageId = data.message.id;
-
-                const textDiv = document.createElement('div');
-                textDiv.className = 'chat-text';
-                textDiv.innerHTML = data.message.rendered_text;
-
-                const metaDiv = document.createElement('div');
-                metaDiv.className = 'chat-meta';
-                const timeSpan = document.createElement('span');
-                const now = new Date();
-                timeSpan.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                metaDiv.appendChild(timeSpan);
-
-                bubble.appendChild(textDiv);
-                bubble.appendChild(metaDiv);
-                timeline.appendChild(bubble);
-
+                handleNewMessage(data.message);
                 input.value = '';
                 input.style.height = 'auto';
                 scrollToBottom();
