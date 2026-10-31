@@ -160,6 +160,25 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertContains(response, 'target="_blank"')
         self.assertContains(response, 'rel="noopener noreferrer"')
 
+    def test_conversation_detail_renders_read_receipts_and_typing_indicator(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        msg1 = send_message(conversation=conv, sender=self.student, text="Read message")
+        msg2 = send_message(conversation=conv, sender=self.student, text="Unread message")
+
+        # Teacher has read msg1 but not msg2
+        conv.teacher_last_read_message_id = msg1.id
+        conv.save()
+
+        # Student views conversation
+        self.client.force_login(self.student)
+        url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["counterpart_watermark"], msg1.id)
+        self.assertContains(response, 'id="chatTypingIndicator"')
+        self.assertContains(response, 'data-read="true"')
+        self.assertContains(response, 'data-read="false"')
+
     # --- Test /messages/<conversation_id>/send/ ---
 
     def test_send_message_unauthenticated(self):

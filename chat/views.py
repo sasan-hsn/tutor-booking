@@ -82,10 +82,12 @@ def conversation_detail(request, conversation_id):
         advance_watermark(conversation, request.user, latest_message.id)
 
     is_student = request.user.role == "student"
+    counterpart_watermark = conversation.get_last_read_message_id(counterpart)
 
     context = {
         "conversation": conversation,
         "counterpart": counterpart,
+        "counterpart_watermark": counterpart_watermark,
         "messages": messages,
         "is_student": is_student,
         "is_email_verified": request.user.is_email_verified,
