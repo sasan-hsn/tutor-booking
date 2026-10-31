@@ -44,7 +44,7 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
     - 1 hour before lesson start: Send urgent reminder notification with direct meeting link.
   - Integration point: Hook into existing Celery periodic reminder tasks using `create_and_send_notification`.
   - Ensure idempotency so duplicate notifications are never emitted for the same lesson.
-- [ ] Student↔teacher messaging — real-time chat via Django Channels/WebSockets built on top of the ASGI foundation established in ADR 0007
+- [ ] Student↔teacher messaging — real-time chat via Django Channels/WebSockets built on top of the ASGI foundation established in ADR 0007 (see ADR 0008)
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
 - [ ] Payments/financial section (last, after everything above)
 

@@ -9,6 +9,7 @@ from django.utils.connection import ConnectionDoesNotExist
 
 from accounts.models import StudentProfile
 from booking.models import Booking, RegularAvailability, Review, WeeklyOverride
+from chat.models import Conversation, Message
 from portfolio.models import Certificate, TeacherProfile
 
 
@@ -128,6 +129,9 @@ class Command(BaseCommand):
         override_count = WeeklyOverride.objects.using(db).count()
         cert_count = Certificate.objects.using(db).count()
 
+        conv_count = Conversation.objects.using(db).count()
+        msg_count = Message.objects.using(db).count()
+
         self.stdout.write(
             f'  Users: {total_users} (Teachers: {teachers_count}, Students: {students_count}, '
             f'Active: {active_users}, Email Verified: {verified_users}, Unverified: {unverified_users})'
@@ -145,6 +149,9 @@ class Command(BaseCommand):
         self.stdout.write(
             f'  Availabilities: {reg_avail_count} RegularAvailability rule(s), '
             f'{override_count} WeeklyOverride(s), {cert_count} Certificate(s)'
+        )
+        self.stdout.write(
+            f'  Messaging: {conv_count} Conversation(s), {msg_count} Message(s)'
         )
 
     def _check_referential_integrity(self, db, errors):
@@ -231,6 +238,32 @@ class Command(BaseCommand):
         if orphaned_certs:
             relational_errors.append(
                 f'{orphaned_certs} Certificate(s) reference non-existent TeacherProfile IDs'
+            )
+
+        # Check conversations referencing non-existent students or teachers
+        orphaned_conv_students = Conversation.objects.using(db).exclude(student__in=users_qs).count()
+        if orphaned_conv_students:
+            relational_errors.append(
+                f'{orphaned_conv_students} Conversation(s) reference non-existent Student User IDs'
+            )
+
+        orphaned_conv_teachers = Conversation.objects.using(db).exclude(teacher__in=users_qs).count()
+        if orphaned_conv_teachers:
+            relational_errors.append(
+                f'{orphaned_conv_teachers} Conversation(s) reference non-existent Teacher User IDs'
+            )
+
+        # Check messages referencing non-existent conversations or senders
+        orphaned_msg_convs = Message.objects.using(db).exclude(conversation__in=Conversation.objects.using(db)).count()
+        if orphaned_msg_convs:
+            relational_errors.append(
+                f'{orphaned_msg_convs} Message(s) reference non-existent Conversation IDs'
+            )
+
+        orphaned_msg_senders = Message.objects.using(db).exclude(sender__in=users_qs).count()
+        if orphaned_msg_senders:
+            relational_errors.append(
+                f'{orphaned_msg_senders} Message(s) reference non-existent Sender User IDs'
             )
 
         if relational_errors:
