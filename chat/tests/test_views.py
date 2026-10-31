@@ -178,6 +178,7 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertContains(response, 'id="chatTypingIndicator"')
         self.assertContains(response, 'data-read="true"')
         self.assertContains(response, 'data-read="false"')
+        self.assertFalse(response.context["has_more_history"])
 
     # --- Test /messages/<conversation_id>/send/ ---
 
@@ -253,3 +254,188 @@ class ChatViewsIntegrationTests(TestCase):
         data = json.loads(response.content)
         self.assertEqual(data.get("error"), "rate_limited")
         self.assertIn("retry_after", data)
+
+    # --- Test /messages/ (Inbox) ---
+
+    def test_inbox_redirects_unauthenticated(self):
+        url = reverse("chat:inbox")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_inbox_lists_active_conversations_ordered_by_last_message_at_desc(self):
+        # Student has conversations with teacher and other_teacher
+        conv1 = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        send_message(conv1, sender=self.student, text="First conversation message")
+
+        conv2 = Conversation.objects.create(student=self.student, teacher=self.other_teacher)
+        send_message(conv2, sender=self.other_teacher, text="Second conversation message")
+
+        # Third conversation that is uninitiated
+        third_teacher = User.objects.create_user(
+            username="third_teacher",
+            email="third_teacher@example.com",
+            password="testpassword123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
+        )
+        conv3 = Conversation.objects.create(student=self.student, teacher=third_teacher)
+
+        self.client.force_login(self.student)
+        url = reverse("chat:inbox")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        conversations = response.context["conversations"]
+        # conv2 should be first, then conv1. conv3 should be omitted.
+        self.assertEqual(len(conversations), 2)
+        self.assertEqual(conversations[0]["conversation"].id, conv2.id)
+        self.assertEqual(conversations[1]["conversation"].id, conv1.id)
+
+    def test_inbox_omits_uninitiated_conversations(self):
+        # Conversation with no messages (last_message_at is None)
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        self.assertIsNone(conv.last_message_at)
+
+        self.client.force_login(self.student)
+        url = reverse("chat:inbox")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["conversations"]), 0)
+
+    def test_inbox_displays_counterpart_info_and_unread_count(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        msg1 = send_message(conv, sender=self.teacher, text="Message 1 from teacher")
+        msg2 = send_message(conv, sender=self.teacher, text="Message 2 from teacher")
+
+        # Student has not read any message
+        self.client.force_login(self.student)
+        url = reverse("chat:inbox")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        item = response.context["conversations"][0]
+        self.assertEqual(item["counterpart"], self.teacher)
+        self.assertEqual(item["unread_count"], 2)
+        self.assertEqual(item["conversation"].last_message_snippet, "Message 2 from teacher")
+        self.assertContains(response, self.teacher.username)
+        self.assertContains(response, "Message 2 from teacher")
+
+        # Now student marks msg1 as read
+        Conversation.objects.filter(id=conv.id).update(student_last_read_message_id=msg1.id)
+        response = self.client.get(url)
+        item = response.context["conversations"][0]
+        self.assertEqual(item["unread_count"], 1)
+
+    def test_inbox_accessible_by_teacher(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        send_message(conv, sender=self.student, text="Hello teacher!")
+
+        self.client.force_login(self.teacher)
+        url = reverse("chat:inbox")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        item = response.context["conversations"][0]
+        self.assertEqual(item["counterpart"], self.student)
+        self.assertEqual(item["unread_count"], 1)
+
+    # --- Test /messages/<conversation_id>/history/ ---
+
+    def test_conversation_history_access_control(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        send_message(conv, sender=self.student, text="Hello")
+        url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+
+        # Anonymous -> 302
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+
+        # Outsider user -> 404
+        self.client.force_login(self.other_student)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+        # Non-GET -> 405
+        self.client.force_login(self.student)
+        post_response = self.client.post(url)
+        self.assertEqual(post_response.status_code, 405)
+
+    def test_conversation_history_reverse_pagination(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        messages = []
+        for i in range(45):
+            msg = send_message(conv, sender=self.student, text=f"Message {i + 1}")
+            messages.append(msg)
+
+        # Initial page view only loads the latest 30 messages (Message 16 to 45)
+        self.client.force_login(self.student)
+        detail_url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["messages"]), 30)
+        self.assertTrue(response.context["has_more_history"])
+        oldest_initial = response.context["messages"][0]
+        self.assertEqual(oldest_initial.text, "Message 16")
+
+        # Now paginate before oldest_initial.id
+        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        history_response = self.client.get(f"{history_url}?before={oldest_initial.id}")
+        self.assertEqual(history_response.status_code, 200)
+        data = json.loads(history_response.content)
+
+        # Should return 15 remaining messages (Message 1 to 15) in chronological order
+        self.assertEqual(len(data["messages"]), 15)
+        self.assertEqual(data["messages"][0]["text"], "Message 1")
+        self.assertEqual(data["messages"][-1]["text"], "Message 15")
+        self.assertFalse(data["has_more"])
+
+    def test_conversation_history_multi_page_pagination(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        messages = []
+        for i in range(70):
+            msg = send_message(conv, sender=self.student, text=f"Message {i + 1}")
+            messages.append(msg)
+
+        self.client.force_login(self.student)
+        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+
+        # Request before msg 70 (latest)
+        latest_id = messages[-1].id
+        res1 = self.client.get(f"{history_url}?before={latest_id}")
+        self.assertEqual(res1.status_code, 200)
+        data1 = json.loads(res1.content)
+        self.assertEqual(len(data1["messages"]), 30)
+        self.assertTrue(data1["has_more"])
+        # Should be messages 40 to 69 (30 messages)
+        self.assertEqual(data1["messages"][-1]["id"], messages[-2].id)
+
+        # Request before oldest of page 1
+        oldest_id_p1 = data1["messages"][0]["id"]
+        res2 = self.client.get(f"{history_url}?before={oldest_id_p1}")
+        data2 = json.loads(res2.content)
+        self.assertEqual(len(data2["messages"]), 30)
+        self.assertTrue(data2["has_more"])
+
+        # Request before oldest of page 2
+        oldest_id_p2 = data2["messages"][0]["id"]
+        res3 = self.client.get(f"{history_url}?before={oldest_id_p2}")
+        data3 = json.loads(res3.content)
+        self.assertEqual(len(data3["messages"]), 9)  # 70 - 1 - 30 - 30 = 9
+        self.assertFalse(data3["has_more"])
+
+    def test_conversation_history_invalid_before_parameter(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        send_message(conv, sender=self.student, text="Hello")
+
+        self.client.force_login(self.student)
+        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+
+        # Non-integer before
+        res = self.client.get(f"{history_url}?before=abc")
+        self.assertEqual(res.status_code, 400)
+
+        # Negative before
+        res2 = self.client.get(f"{history_url}?before=-5")
+        self.assertEqual(res2.status_code, 400)
+
+
