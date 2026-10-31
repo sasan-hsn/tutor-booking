@@ -36,6 +36,14 @@
     background: #fdfdfd;
 }
 
+.chat-history-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0.5rem 0;
+    margin-bottom: 0.5rem;
+}
+
 .chat-bubble {
     max-width: 75%;
     padding: 0.75rem 1rem;
@@ -131,10 +139,12 @@
          data-current-user-id="{{ user.id }}"
          data-counterpart-id="{{ counterpart.id }}"
          data-counterpart-name="{{ counterpart.get_full_name|default:counterpart.username }}"
-         data-counterpart-watermark="{{ counterpart_watermark|default:0 }}">
+         data-counterpart-watermark="{{ counterpart_watermark|default:0 }}"
+         data-has-more-history="{% if has_more_history %}true{% else %}false{% endif %}"
+         data-history-url="{% url 'chat:conversation_history' conversation_id=conversation.id %}">
         <div class="chat-header">
             <div class="d-flex align-items-center gap-3">
-                <a href="{% if user.role == 'teacher' %}{% url 'booking:teacher_dashboard' %}{% else %}{% url 'booking:student_dashboard' %}{% endif %}" class="btn btn-sm btn-outline-secondary d-md-none" aria-label="Back">
+                <a href="{% url 'chat:inbox' %}" class="btn btn-sm btn-outline-secondary" aria-label="Back to Messages">
                     <i class="bi bi-arrow-left"></i>
                 </a>
                 <div class="d-flex align-items-center gap-2">
@@ -242,6 +252,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const conversationId = container.dataset.conversationId;
     const currentUserId = parseInt(container.dataset.currentUserId, 10);
     const counterpartId = parseInt(container.dataset.counterpartId, 10);
+    let counterpartWatermark = parseInt(container.dataset.counterpartWatermark, 10) || 0;
+    const historyBaseUrl = container.dataset.historyUrl;
 
     function scrollToBottom() {
         if (timeline) {
@@ -309,10 +321,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleReadReceipt(data) {
         if (!data || data.reader_id !== counterpartId) return;
         const watermark = parseInt(data.watermark, 10) || 0;
+        counterpartWatermark = Math.max(counterpartWatermark, watermark);
         const bubbles = timeline.querySelectorAll('.chat-bubble-out[data-message-id]');
         bubbles.forEach(bubble => {
             const msgId = parseInt(bubble.dataset.messageId, 10);
-            if (msgId <= watermark) {
+            if (msgId <= counterpartWatermark) {
                 const receipt = bubble.querySelector('.chat-receipt');
                 if (receipt) {
                     receipt.dataset.read = 'true';
@@ -322,17 +335,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function handleNewMessage(message) {
-        if (!message) return;
-        clearTypingIndicator();
-
-        // Deduplicate against messages already in the timeline
-        if (timeline.querySelector(`.chat-bubble[data-message-id="${message.id}"]`)) {
-            return;
-        }
-
-        if (emptyState) emptyState.remove();
-
+    function createBubbleElement(message) {
         const isOwn = message.sender_id === currentUserId;
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${isOwn ? 'chat-bubble-out' : 'chat-bubble-in'}`;
@@ -350,15 +353,32 @@ document.addEventListener('DOMContentLoaded', function () {
         metaDiv.appendChild(timeSpan);
 
         if (isOwn) {
+            const isRead = message.id <= counterpartWatermark;
             const receiptSpan = document.createElement('span');
             receiptSpan.className = 'chat-receipt ms-1';
-            receiptSpan.dataset.read = 'false';
-            receiptSpan.innerHTML = getReceiptIconHtml(false);
+            receiptSpan.dataset.read = isRead ? 'true' : 'false';
+            receiptSpan.innerHTML = getReceiptIconHtml(isRead);
             metaDiv.appendChild(receiptSpan);
         }
 
         bubble.appendChild(textDiv);
         bubble.appendChild(metaDiv);
+        return bubble;
+    }
+
+    function handleNewMessage(message) {
+        if (!message) return;
+        clearTypingIndicator();
+
+        // Deduplicate against messages already in the timeline
+        if (timeline.querySelector(`.chat-bubble[data-message-id="${message.id}"]`)) {
+            return;
+        }
+
+        if (emptyState) emptyState.remove();
+
+        const isOwn = message.sender_id === currentUserId;
+        const bubble = createBubbleElement(message);
         timeline.appendChild(bubble);
 
         scrollToBottom();
@@ -371,6 +391,93 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
     }
+
+    // --- Reverse History Pagination ---
+    let isLoadingHistory = false;
+    let hasMoreHistory = container.dataset.hasMoreHistory === 'true';
+
+    function getOldestMessageId() {
+        const firstBubble = timeline.querySelector('.chat-bubble[data-message-id]');
+        if (firstBubble) {
+            return parseInt(firstBubble.dataset.messageId, 10);
+        }
+        return null;
+    }
+
+    async function loadOlderHistory() {
+        if (isLoadingHistory || !hasMoreHistory) return;
+
+        const oldestId = getOldestMessageId();
+        if (!oldestId) {
+            hasMoreHistory = false;
+            return;
+        }
+
+        isLoadingHistory = true;
+
+        // Record scroll metrics before inserting loader
+        const prevScrollHeight = timeline.scrollHeight;
+        const prevScrollTop = timeline.scrollTop;
+
+        // Show loading spinner at top of timeline
+        const loader = document.createElement('div');
+        loader.className = 'chat-history-loader';
+        loader.id = 'chatHistoryLoader';
+        loader.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading older messages..."></span>';
+        timeline.insertBefore(loader, timeline.firstChild);
+
+        try {
+            const url = historyBaseUrl ? `${historyBaseUrl}?before=${oldestId}` : `/messages/${conversationId}/history/?before=${oldestId}`;
+            const res = await fetch(url, {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!res.ok) {
+                console.error('Failed to load message history:', res.status);
+                loader.remove();
+                return;
+            }
+
+            const data = await res.json();
+            const olderMessages = data.messages || [];
+            hasMoreHistory = Boolean(data.has_more);
+
+            loader.remove();
+
+            if (olderMessages.length > 0) {
+                const fragment = document.createDocumentFragment();
+                olderMessages.forEach(msg => {
+                    // Avoid duplicate if already present
+                    if (!timeline.querySelector(`.chat-bubble[data-message-id="${msg.id}"]`)) {
+                        const bubble = createBubbleElement(msg);
+                        fragment.appendChild(bubble);
+                    }
+                });
+
+                // Insert all older messages at the top of the timeline
+                timeline.insertBefore(fragment, timeline.firstChild);
+
+                // Preserve scroll position precisely without jumping
+                const newScrollHeight = timeline.scrollHeight;
+                timeline.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+            } else {
+                hasMoreHistory = false;
+            }
+        } catch (err) {
+            console.error('Error fetching message history:', err);
+            loader.remove();
+        } finally {
+            isLoadingHistory = false;
+        }
+    }
+
+    timeline.addEventListener('scroll', function () {
+        if (timeline.scrollTop <= 60 && hasMoreHistory && !isLoadingHistory) {
+            loadOlderHistory();
+        }
+    });
 
     function connectChatWebSocket() {
         const wsUrl = getChatWebSocketUrl(conversationId);

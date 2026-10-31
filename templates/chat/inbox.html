@@ -1,0 +1,160 @@
+{% extends "dashboard_base.html" %}
+{% load static humanize avatar_tags %}
+
+{% block title %}Messages – {{ site_name }}{% endblock %}
+
+{% block extra_css %}
+{{ block.super }}
+<style>
+.inbox-card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+.inbox-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fafbfc;
+}
+
+.inbox-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.inbox-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.inbox-item:last-child {
+    border-bottom: none;
+}
+
+.inbox-item:hover, .inbox-item:focus {
+    background-color: #f8fafc;
+    color: inherit;
+}
+
+.inbox-avatar-container {
+    flex-shrink: 0;
+}
+
+.inbox-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.inbox-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.25rem;
+}
+
+.inbox-counterpart-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+    margin: 0;
+}
+
+.inbox-time {
+    font-size: 0.8rem;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+.inbox-preview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.inbox-snippet {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.inbox-item.has-unread .inbox-counterpart-name {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.inbox-item.has-unread .inbox-snippet {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.inbox-empty-state {
+    padding: 4rem 1.5rem;
+    text-align: center;
+    color: #94a3b8;
+}
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="container-fluid px-0 px-md-3 py-2">
+    <div class="inbox-card shadow-sm">
+        <div class="inbox-header d-flex align-items-center justify-content-between">
+            <h4 class="mb-0 fw-bold">Conversations</h4>
+        </div>
+
+        {% if not conversations %}
+        <div class="inbox-empty-state">
+            <i class="bi bi-chat-square-dots fs-1 d-block mb-3"></i>
+            <h5 class="fw-semibold text-secondary">No conversations yet</h5>
+            <p class="mb-0">When you message or receive messages from {% if user.role == 'student' %}a teacher{% else %}your students{% endif %}, your conversations will appear here.</p>
+        </div>
+        {% else %}
+        <ul class="inbox-list" id="inboxList">
+            {% for item in conversations %}
+            <li>
+                <a href="{% url 'chat:conversation_detail' conversation_id=item.conversation.id %}" class="inbox-item {% if item.unread_count > 0 %}has-unread{% endif %}" data-conversation-id="{{ item.conversation.id }}">
+                    <div class="inbox-avatar-container">
+                        {% user_avatar item.counterpart 48 %}
+                    </div>
+                    <div class="inbox-content">
+                        <div class="inbox-title-row">
+                            <h6 class="inbox-counterpart-name">
+                                {{ item.counterpart.get_full_name|default:item.counterpart.username }}
+                                <span class="badge bg-light text-secondary border ms-1 fw-normal text-capitalize small">{{ item.counterpart.role }}</span>
+                            </h6>
+                            <span class="inbox-time" title="{{ item.local_last_message_at|date:'M d, Y H:i' }}">
+                                {{ item.conversation.last_message_at|naturaltime }}
+                            </span>
+                        </div>
+                        <div class="inbox-preview-row">
+                            <p class="inbox-snippet">
+                                {{ item.conversation.last_message_snippet|default:"No message text" }}
+                            </p>
+                            {% if item.unread_count > 0 %}
+                            <span class="badge rounded-pill bg-primary ms-auto" aria-label="{{ item.unread_count }} unread messages">
+                                {{ item.unread_count }}
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
