@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from booking.models import Booking
 from .models import Conversation, Message
 from .services import advance_watermark, get_or_create_conversation, send_message
 from .utils import check_chat_rate_limit, get_client_ip, linkify_message_text, record_chat_message
@@ -27,6 +28,7 @@ def serialize_message(message: Message) -> dict:
         "text": message.text,
         "rendered_text": linkify_message_text(message.text),
         "message_type": message.message_type,
+        "metadata": message.metadata,
         "created_at": message.created_at.isoformat(),
     }
 
@@ -152,6 +154,19 @@ def conversation_detail(request, conversation_id):
         else False
     )
 
+    now = timezone.now()
+    upcoming_booking = (
+        Booking.objects.filter(
+            student=conversation.student,
+            teacher__user=conversation.teacher,
+            status__in=[Booking.Status.CONFIRMED, Booking.Status.PENDING],
+            end_at__gte=now,
+        )
+        .select_related("teacher", "teacher__user", "student")
+        .order_by("start_at")
+        .first()
+    )
+
     context = {
         "conversation": conversation,
         "counterpart": counterpart,
@@ -160,6 +175,7 @@ def conversation_detail(request, conversation_id):
         "is_student": is_student,
         "is_email_verified": request.user.is_email_verified,
         "has_more_history": has_more_history,
+        "upcoming_booking": upcoming_booking,
     }
     return render(request, "chat/conversation_detail.html", context)
 

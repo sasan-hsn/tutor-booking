@@ -104,6 +104,28 @@
     border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
+.chat-lesson-drawer {
+    padding: 0.75rem 1.25rem;
+    background: #f8fafc;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 0.9rem;
+}
+
+.chat-system-event-card {
+    align-self: center;
+    max-width: 85%;
+    width: 100%;
+    margin: 0.5rem 0;
+    padding: 0.85rem 1.15rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
 .chat-input-area {
     padding: 1rem 1.25rem;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
@@ -172,6 +194,49 @@
             </div>
         </div>
 
+        {% if upcoming_booking %}
+        <div class="chat-lesson-drawer" id="chatLessonDrawer">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle p-2 rounded-circle">
+                        <i class="bi bi-calendar-event fs-6"></i>
+                    </span>
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fw-bold small text-dark">Next Lesson:</span>
+                            <span class="badge {% if upcoming_booking.status == 'confirmed' %}bg-success{% else %}bg-warning text-dark{% endif %} text-capitalize small">
+                                {{ upcoming_booking.get_status_display }}
+                            </span>
+                            <span class="small text-muted">
+                                {{ upcoming_booking.duration_minutes }}m {{ upcoming_booking.get_lesson_type_display }}
+                            </span>
+                        </div>
+                        <div class="small text-secondary" id="drawerTimeDetails">
+                            {% if is_student %}
+                                {{ upcoming_booking.student_local_start|date:"l, M d, Y" }} · {{ upcoming_booking.student_local_start|date:"g:i A" }} – {{ upcoming_booking.student_local_end|date:"g:i A" }}
+                            {% else %}
+                                {{ upcoming_booking.teacher_local_start|date:"l, M d, Y" }} · {{ upcoming_booking.teacher_local_start|date:"g:i A" }} – {{ upcoming_booking.teacher_local_end|date:"g:i A" }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    {% if upcoming_booking.is_joinable and upcoming_booking.meeting_link %}
+                    <a href="{{ upcoming_booking.meeting_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-success fw-semibold">
+                        <i class="bi bi-camera-video-fill me-1"></i> Join Lesson
+                    </a>
+                    {% endif %}
+                    <a href="{% if is_student %}{% url 'booking:student_dashboard' %}{% else %}{% url 'booking:teacher_dashboard' %}{% endif %}" class="btn btn-sm btn-outline-secondary">
+                        View in Dashboard
+                    </a>
+                    <button type="button" class="btn btn-sm btn-link text-muted p-0 ms-1 text-decoration-none" id="toggleDrawerBtn" aria-expanded="true" aria-label="Toggle lesson context">
+                        <i class="bi bi-chevron-up" id="toggleDrawerIcon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="chat-timeline" id="chatTimeline">
             {% if not messages %}
             <div class="chat-empty-state" id="chatEmptyState">
@@ -180,21 +245,67 @@
             </div>
             {% else %}
                 {% for message in messages %}
-                <div class="chat-bubble {% if message.sender_id == user.id %}chat-bubble-out{% else %}chat-bubble-in{% endif %}" data-message-id="{{ message.id }}">
-                    <div class="chat-text">{{ message.text|chat_linkify|safe }}</div>
-                    <div class="chat-meta">
-                        <span>{{ message.created_at|date:"g:i A" }}</span>
-                        {% if message.sender_id == user.id %}
-                        <span class="chat-receipt ms-1" data-read="{% if message.id <= counterpart_watermark %}true{% else %}false{% endif %}">
-                            {% if message.id <= counterpart_watermark %}
-                            <i class="bi bi-check2-all text-info" title="Read"></i>
-                            {% else %}
-                            <i class="bi bi-check2 text-white-50" title="Delivered"></i>
+                    {% if message.message_type == 'system_event' %}
+                    <div class="chat-system-event-card" data-message-id="{{ message.id }}">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex align-items-center gap-2">
+                                {% if message.metadata.event_type == 'booking_requested' %}
+                                    <i class="bi bi-calendar-plus text-primary fs-5"></i>
+                                    <span class="fw-bold small text-dark">Lesson Request Submitted</span>
+                                {% elif message.metadata.event_type == 'booking_confirmed' %}
+                                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                                    <span class="fw-bold small text-dark">Lesson Confirmed</span>
+                                {% elif message.metadata.event_type == 'cancellation_requested' %}
+                                    <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+                                    <span class="fw-bold small text-dark">Cancellation Requested</span>
+                                {% elif message.metadata.event_type == 'booking_cancelled' %}
+                                    <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+                                    <span class="fw-bold small text-dark">Lesson Cancelled</span>
+                                {% else %}
+                                    <i class="bi bi-info-circle-fill text-secondary fs-5"></i>
+                                    <span class="fw-bold small text-dark">Booking Update</span>
+                                {% endif %}
+                            </div>
+                            <span class="badge {% if message.metadata.status == 'confirmed' %}bg-success{% elif message.metadata.status == 'cancelled' %}bg-secondary{% else %}bg-warning text-dark{% endif %} text-capitalize small">
+                                {{ message.metadata.status_display|default:message.metadata.status }}
+                            </span>
+                        </div>
+                        <div class="small text-secondary mb-2 d-flex flex-wrap gap-3">
+                            {% with start_dt=message.metadata.start_at|local_date_time:user end_dt=message.metadata.end_at|local_date_time:user %}
+                            {% if start_dt %}
+                            <span><i class="bi bi-calendar-event me-1"></i>{{ start_dt|date:"D, M d, Y" }} · {{ start_dt|date:"g:i A" }}{% if end_dt %} – {{ end_dt|date:"g:i A" }}{% endif %}</span>
                             {% endif %}
-                        </span>
-                        {% endif %}
+                            {% endwith %}
+                            <span><i class="bi bi-clock me-1"></i>{{ message.metadata.duration_minutes }} min · {{ message.metadata.lesson_type_display|default:message.metadata.lesson_type }}</span>
+                        </div>
+                        <div class="d-flex align-items-center justify-content-between pt-1 border-top border-light-subtle">
+                            {% if message.metadata.action_url %}
+                            <a href="{{ message.metadata.action_url }}" class="btn btn-sm btn-outline-primary py-0 px-2 small">
+                                View Booking <i class="bi bi-arrow-right ms-1"></i>
+                            </a>
+                            {% else %}
+                            <span></span>
+                            {% endif %}
+                            <small class="text-muted">{{ message.created_at|date:"g:i A" }}</small>
+                        </div>
                     </div>
-                </div>
+                    {% else %}
+                    <div class="chat-bubble {% if message.sender_id == user.id %}chat-bubble-out{% else %}chat-bubble-in{% endif %}" data-message-id="{{ message.id }}">
+                        <div class="chat-text">{{ message.text|chat_linkify|safe }}</div>
+                        <div class="chat-meta">
+                            <span>{{ message.created_at|date:"g:i A" }}</span>
+                            {% if message.sender_id == user.id %}
+                            <span class="chat-receipt ms-1" data-read="{% if message.id <= counterpart_watermark %}true{% else %}false{% endif %}">
+                                {% if message.id <= counterpart_watermark %}
+                                <i class="bi bi-check2-all text-info" title="Read"></i>
+                                {% else %}
+                                <i class="bi bi-check2 text-white-50" title="Delivered"></i>
+                                {% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
                 {% endfor %}
             {% endif %}
         </div>
@@ -261,6 +372,18 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
     scrollToBottom();
+
+    // Drawer Collapse/Expand Toggle
+    const toggleDrawerBtn = document.getElementById('toggleDrawerBtn');
+    const drawerDetails = document.getElementById('drawerTimeDetails');
+    const toggleDrawerIcon = document.getElementById('toggleDrawerIcon');
+    if (toggleDrawerBtn && drawerDetails && toggleDrawerIcon) {
+        toggleDrawerBtn.addEventListener('click', function () {
+            const isHidden = drawerDetails.classList.toggle('d-none');
+            toggleDrawerIcon.className = isHidden ? 'bi bi-chevron-down' : 'bi bi-chevron-up';
+            toggleDrawerBtn.setAttribute('aria-expanded', !isHidden);
+        });
+    }
 
     // --- WebSocket Real-Time Connection ---
     let chatSocket = null;
@@ -335,7 +458,84 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    function createSystemEventElement(message) {
+        const card = document.createElement('div');
+        card.className = 'chat-system-event-card';
+        card.dataset.messageId = message.id;
+
+        const meta = message.metadata || {};
+        const eventType = meta.event_type || '';
+        let iconHtml = '<i class="bi bi-info-circle-fill text-secondary fs-5"></i>';
+        let titleText = 'Booking Update';
+
+        if (eventType === 'booking_requested') {
+            iconHtml = '<i class="bi bi-calendar-plus text-primary fs-5"></i>';
+            titleText = 'Lesson Request Submitted';
+        } else if (eventType === 'booking_confirmed') {
+            iconHtml = '<i class="bi bi-check-circle-fill text-success fs-5"></i>';
+            titleText = 'Lesson Confirmed';
+        } else if (eventType === 'cancellation_requested') {
+            iconHtml = '<i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>';
+            titleText = 'Cancellation Requested';
+        } else if (eventType === 'booking_cancelled') {
+            iconHtml = '<i class="bi bi-x-circle-fill text-danger fs-5"></i>';
+            titleText = 'Lesson Cancelled';
+        }
+
+        const status = meta.status || '';
+        let badgeClass = 'bg-warning text-dark';
+        if (status === 'confirmed') badgeClass = 'bg-success';
+        else if (status === 'cancelled') badgeClass = 'bg-secondary';
+        const statusDisplay = meta.status_display || status;
+
+        let dateStr = '';
+        if (meta.start_at) {
+            const startDate = new Date(meta.start_at);
+            const datePart = startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            const timePart = startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            let endTimePart = '';
+            if (meta.end_at) {
+                const endDate = new Date(meta.end_at);
+                endTimePart = ' – ' + endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            }
+            dateStr = `<span><i class="bi bi-calendar-event me-1"></i>${datePart} · ${timePart}${endTimePart}</span>`;
+        }
+
+        const duration = meta.duration_minutes ? `${meta.duration_minutes} min` : '';
+        const lessonType = meta.lesson_type_display || meta.lesson_type || '';
+        const typeStr = (duration || lessonType) ? `<span><i class="bi bi-clock me-1"></i>${duration} · ${lessonType}</span>` : '';
+
+        const actionUrl = meta.action_url || '';
+        const actionBtnHtml = actionUrl ? `<a href="${actionUrl}" class="btn btn-sm btn-outline-primary py-0 px-2 small">View Booking <i class="bi bi-arrow-right ms-1"></i></a>` : '<span></span>';
+
+        const createdDate = new Date(message.created_at);
+        const createdTimeStr = createdDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+        card.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    ${iconHtml}
+                    <span class="fw-bold small text-dark">${titleText}</span>
+                </div>
+                <span class="badge ${badgeClass} text-capitalize small">${statusDisplay}</span>
+            </div>
+            <div class="small text-secondary mb-2 d-flex flex-wrap gap-3">
+                ${dateStr}
+                ${typeStr}
+            </div>
+            <div class="d-flex align-items-center justify-content-between pt-1 border-top border-light-subtle">
+                ${actionBtnHtml}
+                <small class="text-muted">${createdTimeStr}</small>
+            </div>
+        `;
+        return card;
+    }
+
     function createBubbleElement(message) {
+        if (message.message_type === 'system_event') {
+            return createSystemEventElement(message);
+        }
+
         const isOwn = message.sender_id === currentUserId;
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${isOwn ? 'chat-bubble-out' : 'chat-bubble-in'}`;
@@ -371,7 +571,7 @@ document.addEventListener('DOMContentLoaded', function () {
         clearTypingIndicator();
 
         // Deduplicate against messages already in the timeline
-        if (timeline.querySelector(`.chat-bubble[data-message-id="${message.id}"]`)) {
+        if (timeline.querySelector(`[data-message-id="${message.id}"]`)) {
             return;
         }
 
@@ -397,7 +597,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let hasMoreHistory = container.dataset.hasMoreHistory === 'true';
 
     function getOldestMessageId() {
-        const firstBubble = timeline.querySelector('.chat-bubble[data-message-id]');
+        const firstBubble = timeline.querySelector('[data-message-id]');
         if (firstBubble) {
             return parseInt(firstBubble.dataset.messageId, 10);
         }
@@ -450,7 +650,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const fragment = document.createDocumentFragment();
                 olderMessages.forEach(msg => {
                     // Avoid duplicate if already present
-                    if (!timeline.querySelector(`.chat-bubble[data-message-id="${msg.id}"]`)) {
+                    if (!timeline.querySelector(`[data-message-id="${msg.id}"]`)) {
                         const bubble = createBubbleElement(msg);
                         fragment.appendChild(bubble);
                     }
@@ -492,7 +692,7 @@ document.addEventListener('DOMContentLoaded', function () {
         chatSocket.onopen = function () {
             reconnectAttempts = 0;
             // On open, advance watermark for latest message if present
-            const bubbles = timeline.querySelectorAll('.chat-bubble[data-message-id]');
+            const bubbles = timeline.querySelectorAll('[data-message-id]');
             if (bubbles.length > 0) {
                 const lastBubble = bubbles[bubbles.length - 1];
                 const lastId = parseInt(lastBubble.dataset.messageId, 10);

@@ -16,6 +16,7 @@ from django.views.decorators.http import require_POST
 from accounts.avatar_utils import get_avatar_color
 from accounts.decorators import student_required, teacher_required
 from accounts.models import StudentProfile
+from chat.services import record_booking_event
 from portfolio.models import TeacherProfile
 
 from .forms import ReviewForm
@@ -49,6 +50,19 @@ from .notifications import (
 logger = logging.getLogger(__name__)
 
 DASHBOARD_PAGE_SIZE = 6
+
+
+def safe_record_booking_event(booking, event_type: str):
+    """Safely record booking chat timeline event without raising to caller."""
+    try:
+        return record_booking_event(booking, event_type)
+    except Exception:
+        logger.exception(
+            "Failed to record booking event '%s' for booking #%s",
+            event_type,
+            getattr(booking, "id", None),
+        )
+        return None
 
 
 def _get_student_upcoming_queryset(student, now):
@@ -327,6 +341,9 @@ def book_slot(request):
             transaction.on_commit(
                 lambda: send_booking_request_notifications(booking_id)
             )
+            transaction.on_commit(
+                lambda: safe_record_booking_event(booking, "booking_requested")
+            )
 
     except IntegrityError:
         return JsonResponse({'error': 'This time is no longer available.'}, status=409)
@@ -472,12 +489,16 @@ def respond_to_booking(request, booking_id):
                 booking.status = Booking.Status.CANCELLED
             booking.cancellation_requested = False
             booking.save()
-            if action == 'accept' and was_confirmed:
-                booking_id = booking.id
-                notify_booking_cancelled(booking, cancelled_by=request.user)
+            if action == 'accept':
                 transaction.on_commit(
-                    lambda: safe_send_booking_cancelled_email(booking_id)
+                    lambda: safe_record_booking_event(booking, "booking_cancelled")
                 )
+                if was_confirmed:
+                    booking_id = booking.id
+                    notify_booking_cancelled(booking, cancelled_by=request.user)
+                    transaction.on_commit(
+                        lambda: safe_send_booking_cancelled_email(booking_id)
+                    )
         elif booking.status == Booking.Status.PENDING:
             booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
             booking.save()
@@ -487,10 +508,16 @@ def respond_to_booking(request, booking_id):
                 transaction.on_commit(
                     lambda: safe_send_booking_confirmed_email(booking_id)
                 )
+                transaction.on_commit(
+                    lambda: safe_record_booking_event(booking, "booking_confirmed")
+                )
             elif action == 'decline':
                 notify_booking_declined(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_declined_email(booking_id)
+                )
+                transaction.on_commit(
+                    lambda: safe_record_booking_event(booking, "booking_cancelled")
                 )
 
         marked_notification_ids, unread_notifications_count = mark_booking_requests_read(booking)
@@ -801,6 +828,9 @@ def cancel_lesson(request, booking_id):
         booking.status = Booking.Status.CANCELLED
         booking.save()
         booking_id = booking.id
+        transaction.on_commit(
+            lambda: safe_record_booking_event(booking, "booking_cancelled")
+        )
         if was_confirmed:
             notify_booking_cancelled(booking, cancelled_by=request.user)
             transaction.on_commit(
@@ -956,6 +986,9 @@ def request_cancellation(request, booking_id):
         notify_cancellation_requested(booking)
         transaction.on_commit(
             lambda: safe_send_cancellation_requested_email(booking_id)
+        )
+        transaction.on_commit(
+            lambda: safe_record_booking_event(booking, "cancellation_requested")
         )
     return JsonResponse({"success": True})
 

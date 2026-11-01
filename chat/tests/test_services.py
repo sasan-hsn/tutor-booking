@@ -1,14 +1,20 @@
 from unittest.mock import AsyncMock, patch
+from datetime import timedelta
+from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 
+from booking.models import Booking
+from portfolio.models import TeacherProfile
 from chat.models import Conversation, Message
 from chat.services import (
     advance_watermark,
     broadcast_unread_chat_count,
     get_or_create_conversation,
     get_total_unread_chat_count,
+    record_booking_event,
     send_message,
 )
 
@@ -190,4 +196,91 @@ class ChatServicesTests(TestCase):
                 advance_watermark(conv, user=self.teacher, message_id=msg1.id)
 
             mock_layer.group_send.assert_not_called()
+
+    def test_send_message_with_custom_snippet(self):
+        conv, _ = get_or_create_conversation(self.student, self.teacher)
+        msg = send_message(
+            conversation=conv,
+            sender=self.student,
+            text="",
+            message_type=Message.MessageType.SYSTEM_EVENT,
+            snippet="Custom system notification",
+        )
+        conv.refresh_from_db()
+        self.assertEqual(conv.last_message_snippet, "Custom system notification")
+        self.assertEqual(msg.message_type, Message.MessageType.SYSTEM_EVENT)
+
+    def _create_test_booking(self, status=Booking.Status.PENDING):
+        teacher_profile, _ = TeacherProfile.objects.get_or_create(
+            user=self.teacher,
+            defaults={"hourly_rate": Decimal("25.00")},
+        )
+        now = timezone.now() + timedelta(days=2)
+        return Booking.objects.create(
+            student=self.student,
+            teacher=teacher_profile,
+            start_at=now,
+            end_at=now + timedelta(minutes=50),
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            status=status,
+            price=Decimal("25.00"),
+        )
+
+    def test_record_booking_event_booking_requested(self):
+        booking = self._create_test_booking(status=Booking.Status.PENDING)
+        msg = record_booking_event(booking, "booking_requested")
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.message_type, Message.MessageType.SYSTEM_EVENT)
+        self.assertEqual(msg.sender, self.student)
+        self.assertEqual(msg.metadata["booking_id"], booking.id)
+        self.assertEqual(msg.metadata["event_type"], "booking_requested")
+        self.assertEqual(msg.metadata["lesson_type"], Booking.LessonType.REGULAR)
+        self.assertEqual(msg.metadata["status"], Booking.Status.PENDING)
+        self.assertIn("action_url", msg.metadata)
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        self.assertTrue(conv.last_message_snippet.startswith("📅 Lesson Request submitted for"))
+
+    def test_record_booking_event_booking_confirmed(self):
+        booking = self._create_test_booking(status=Booking.Status.CONFIRMED)
+        msg = record_booking_event(booking, "booking_confirmed")
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.sender, self.teacher)
+        self.assertEqual(msg.metadata["event_type"], "booking_confirmed")
+        self.assertEqual(msg.metadata["status"], Booking.Status.CONFIRMED)
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        self.assertTrue(conv.last_message_snippet.startswith("✅ Lesson Confirmed for"))
+
+    def test_record_booking_event_cancellation_requested(self):
+        booking = self._create_test_booking(status=Booking.Status.CONFIRMED)
+        booking.cancellation_requested = True
+        booking.save()
+        msg = record_booking_event(booking, "cancellation_requested")
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.sender, self.student)
+        self.assertEqual(msg.metadata["event_type"], "cancellation_requested")
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        self.assertTrue(conv.last_message_snippet.startswith("⚠️ Cancellation Requested for"))
+
+    def test_record_booking_event_booking_cancelled(self):
+        booking = self._create_test_booking(status=Booking.Status.CANCELLED)
+        msg = record_booking_event(booking, "booking_cancelled")
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.sender, self.teacher)
+        self.assertEqual(msg.metadata["event_type"], "booking_cancelled")
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        self.assertTrue(conv.last_message_snippet.startswith("❌ Lesson Cancelled for"))
+
+    def test_record_booking_event_error_resilience(self):
+        # Passing an invalid event type or non-booking shouldn't crash
+        result = record_booking_event(None, "invalid_event")
+        self.assertIsNone(result)
 
