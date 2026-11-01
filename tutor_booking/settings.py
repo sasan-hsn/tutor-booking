@@ -88,6 +88,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 'portfolio.context_processors.global_teacher_context',
                 'notifications.context_processors.notification_context',
+                'chat.context_processors.chat_context',
             ],
         },
     },

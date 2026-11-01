@@ -92,6 +92,17 @@
             <div></div>
 
             <div class="d-flex align-items-center gap-3">
+                <!-- Chat messages link -->
+                <a href="{% url 'chat:inbox' %}" class="btn btn-link text-dark position-relative p-2 text-decoration-none chat-inbox-btn"
+                    id="chatInboxBtn" aria-label="Messages">
+                    <i class="bi bi-chat-dots fs-5"></i>
+                    <span id="chatBadge"
+                        class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger {% if unread_chat_count == 0 %}d-none{% endif %}">
+                        <span id="chatBadgeCount">{{ unread_chat_count }}</span>
+                        <span class="visually-hidden">unread messages</span>
+                    </span>
+                </a>
+
                 <!-- Notifications dropdown -->
                 <div class="dropdown" id="notificationDropdownContainer">
                     <button class="btn btn-link text-dark position-relative p-2 notification-bell-btn" type="button"
