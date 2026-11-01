@@ -132,6 +132,35 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator1.disconnect()
         await communicator2.disconnect()
 
+    async def test_receives_unread_chat_count_broadcast(self):
+        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        channel_layer = get_channel_layer()
+        payload = {
+            "type": "unread_chat_count",
+            "count": 4,
+        }
+
+        await channel_layer.group_send(Notification.get_group_name(self.user.id), payload)
+
+        response = await communicator.receive_json_from()
+        self.assertEqual(response, payload)
+
+        await communicator.disconnect()
+
+    async def test_get_unread_chat_count_action(self):
+        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        await communicator.send_json_to({"action": "get_unread_chat_count"})
+        response = await communicator.receive_json_from()
+        self.assertEqual(response, {"type": "unread_chat_count", "count": 0})
+
+        await communicator.disconnect()
+
     async def test_end_to_end_service_emission_to_websocket_communicator(self):
         communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
         connected, _ = await communicator.connect()

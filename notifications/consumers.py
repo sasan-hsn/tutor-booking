@@ -122,6 +122,11 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             if user and user.is_authenticated:
                 count = await self._get_unread_count(user.id)
                 await self.send_json({"type": "unread_count", "count": count})
+        elif action == "get_unread_chat_count":
+            user = self.scope.get("user")
+            if user and user.is_authenticated:
+                count = await self._get_unread_chat_count(user.id)
+                await self.send_json({"type": "unread_chat_count", "count": count})
 
     async def notification_message(self, event):
         """
@@ -137,6 +142,18 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
         """
         await self.send_json(event)
 
+    async def unread_chat_count(self, event):
+        """
+        Handler invoked when an unread chat count update frame is broadcast
+        to the user's private notification channel layer group.
+        """
+        await self.send_json(event)
+
     @database_sync_to_async
     def _get_unread_count(self, user_id):
         return Notification.objects.unread_count_for(user_id)
+
+    @database_sync_to_async
+    def _get_unread_chat_count(self, user_id):
+        from chat.services import get_total_unread_chat_count
+        return get_total_unread_chat_count(user_id)

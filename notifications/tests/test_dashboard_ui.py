@@ -89,3 +89,37 @@ class DashboardNotificationUITests(RoleTestCase):
         self.assertIn('id="notificationBadge"', content)
         self.assertIn('id="notificationToastContainer"', content)
         self.assertIn('notifications.js', content)
+
+    def test_topbar_renders_chat_inbox_icon_and_hidden_badge_when_zero_unread(self):
+        url = reverse('booking:student_dashboard')
+        response = self.student_client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+
+        # Chat inbox button linking to /messages/
+        self.assertIn('id="chatInboxBtn"', content)
+        self.assertIn('href="/messages/"', content)
+        self.assertIn('bi-chat-dots', content)
+        self.assertIn('id="chatBadge"', content)
+        self.assertIn('id="chatBadgeCount"', content)
+        # Should be hidden with d-none when 0
+        self.assertIn('class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"', content)
+
+    def test_topbar_renders_chat_inbox_badge_visible_when_unread(self):
+        from chat.models import Conversation
+        from chat.services import get_or_create_conversation, send_message
+
+        conv, _ = get_or_create_conversation(self.student_user, self.teacher_user)
+        send_message(conv, sender=self.teacher_user, text="Hey student!")
+
+        url = reverse('booking:student_dashboard')
+        response = self.student_client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+
+        self.assertIn('id="chatBadge"', content)
+        self.assertIn('id="chatBadgeCount">1</span>', content)
+        # Ensure d-none is NOT in chatBadge when unread > 0
+        self.assertIn('class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger "', content)

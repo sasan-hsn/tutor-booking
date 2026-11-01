@@ -84,6 +84,25 @@
         }
     }
 
+    function updateUnreadChatCount(count, elements = {}) {
+        const n = Math.max(0, parseInt(count, 10) || 0);
+
+        const chatBadge = elements.chatBadge || (typeof document !== 'undefined' ? document.getElementById('chatBadge') : null);
+        const chatBadgeCount = elements.chatBadgeCount || (typeof document !== 'undefined' ? document.getElementById('chatBadgeCount') : null);
+
+        if (chatBadgeCount) {
+            chatBadgeCount.textContent = String(n);
+        }
+
+        if (chatBadge) {
+            if (n === 0) {
+                chatBadge.classList.add('d-none');
+            } else {
+                chatBadge.classList.remove('d-none');
+            }
+        }
+    }
+
     function prependNotificationItem(data, listEl) {
         if (!listEl || typeof document === 'undefined') return null;
 
@@ -409,6 +428,13 @@
                         if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
                             document.dispatchEvent(new CustomEvent('tutor:notification:read', { detail: data }));
                         }
+                    } else if (data && data.type === 'unread_chat_count') {
+                        const count = typeof data.count !== 'undefined' ? data.count : 0;
+                        updateUnreadChatCount(count, elements);
+
+                        if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+                            document.dispatchEvent(new CustomEvent('tutor:chat:unread_count', { detail: data }));
+                        }
                     }
                 } catch (err) {
                     console.error('Error handling notification message:', err);
@@ -457,7 +483,8 @@
         if (typeof document === 'undefined') return null;
 
         const dropdownBtn = document.getElementById('notificationDropdownBtn');
-        if (!dropdownBtn && !options.force) return null;
+        const chatBtn = document.getElementById('chatInboxBtn');
+        if (!dropdownBtn && !chatBtn && !options.force) return null;
 
         const elements = {
             badge: document.getElementById('notificationBadge'),
@@ -466,6 +493,8 @@
             markAllBtn: document.getElementById('markAllReadBtn'),
             list: document.getElementById('notificationList'),
             toastContainer: document.getElementById('notificationToastContainer'),
+            chatBadge: document.getElementById('chatBadge'),
+            chatBadgeCount: document.getElementById('chatBadgeCount'),
         };
 
         // Attach Mark All as Read button listener
@@ -541,6 +570,7 @@
         getWebSocketUrl,
         getCurrentUnreadCount,
         updateUnreadCount,
+        updateUnreadChatCount,
         prependNotificationItem,
         showNotificationToast,
         markNotificationItemReadInDom,

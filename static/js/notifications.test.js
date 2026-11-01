@@ -269,7 +269,7 @@ global.fetch = async (url, options) => {
 const notifications = require('./notifications.js');
 
 describe('Notifications Client Module', () => {
-    let container, badge, badgeCount, dropdownCountBadge, markAllBtn, list, toastContainer;
+    let container, badge, badgeCount, dropdownCountBadge, markAllBtn, list, toastContainer, chatBadge, chatBadgeCount;
 
     beforeEach(() => {
         global.document = new MockDocument();
@@ -294,6 +294,20 @@ describe('Notifications Client Module', () => {
         btn.appendChild(badge);
         container.appendChild(btn);
 
+        // Chat envelope button & badge
+        const chatBtn = global.document.createElement('a');
+        chatBtn.attributes.id = 'chatInboxBtn';
+
+        chatBadge = global.document.createElement('span');
+        chatBadge.attributes.id = 'chatBadge';
+        chatBadge.classList.add('d-none');
+
+        chatBadgeCount = global.document.createElement('span');
+        chatBadgeCount.attributes.id = 'chatBadgeCount';
+        chatBadgeCount.textContent = '0';
+        chatBadge.appendChild(chatBadgeCount);
+        chatBtn.appendChild(chatBadge);
+
         dropdownCountBadge = global.document.createElement('span');
         dropdownCountBadge.attributes.id = 'notificationDropdownCountBadge';
         dropdownCountBadge.textContent = '0 unread';
@@ -311,6 +325,7 @@ describe('Notifications Client Module', () => {
         toastContainer = global.document.createElement('div');
         toastContainer.attributes.id = 'notificationToastContainer';
 
+        global.document.appendChild(chatBtn);
         global.document.appendChild(container);
         global.document.appendChild(toastContainer);
     });
@@ -719,6 +734,60 @@ describe('Notifications Client Module', () => {
         assert.notStrictEqual(dispatchedReadEvent, null);
         assert.strictEqual(dispatchedReadEvent.type, 'tutor:notification:read');
         assert.deepStrictEqual(dispatchedReadEvent.detail, readPayload);
+
+        client.disconnect();
+    });
+
+    test('updateUnreadChatCount updates chat badge, count text, and toggles d-none', () => {
+        notifications.updateUnreadChatCount(4, { chatBadge, chatBadgeCount });
+        assert.strictEqual(chatBadgeCount.textContent, '4');
+        assert.strictEqual(chatBadge.classList.contains('d-none'), false);
+
+        notifications.updateUnreadChatCount(0, { chatBadge, chatBadgeCount });
+        assert.strictEqual(chatBadgeCount.textContent, '0');
+        assert.strictEqual(chatBadge.classList.contains('d-none'), true);
+
+        notifications.updateUnreadChatCount('12', { chatBadge, chatBadgeCount });
+        assert.strictEqual(chatBadgeCount.textContent, '12');
+        assert.strictEqual(chatBadge.classList.contains('d-none'), false);
+    });
+
+    test('WebSocket unread_chat_count event updates chat badge and dispatches tutor:chat:unread_count', () => {
+        let dispatchedChatEvent = null;
+        global.document.addEventListener('tutor:chat:unread_count', (e) => {
+            dispatchedChatEvent = e;
+        });
+
+        const client = notifications.initNotifications({
+            autoConnectWs: true,
+            WebSocketClass: MockWebSocket,
+        });
+
+        const ws = MockWebSocket.instances[0];
+        ws.simulateOpen();
+
+        const chatPayload = {
+            type: 'unread_chat_count',
+            count: 7,
+        };
+        ws.simulateMessage(chatPayload);
+
+        // Chat badge updated
+        assert.strictEqual(chatBadgeCount.textContent, '7');
+        assert.strictEqual(chatBadge.classList.contains('d-none'), false);
+
+        // Custom event dispatched
+        assert.notStrictEqual(dispatchedChatEvent, null);
+        assert.strictEqual(dispatchedChatEvent.type, 'tutor:chat:unread_count');
+        assert.deepStrictEqual(dispatchedChatEvent.detail, chatPayload);
+
+        // Clear count
+        ws.simulateMessage({
+            type: 'unread_chat_count',
+            count: 0,
+        });
+        assert.strictEqual(chatBadgeCount.textContent, '0');
+        assert.strictEqual(chatBadge.classList.contains('d-none'), true);
 
         client.disconnect();
     });

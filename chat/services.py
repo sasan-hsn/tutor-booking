@@ -3,7 +3,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.db.models.functions import Greatest
 from django.utils import timezone
 
@@ -43,6 +43,69 @@ def broadcast_chat_message(message: Message) -> None:
         )
 
 
+def get_total_unread_chat_count(user) -> int:
+    """
+    Returns the total number of unread incoming chat messages across all
+    active conversations for the given user.
+    """
+    if not user:
+        return 0
+    if hasattr(user, "is_authenticated") and not user.is_authenticated:
+        return 0
+    user_id = getattr(user, "id", user)
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return 0
+
+    return (
+        Message.objects.filter(
+            (
+                Q(conversation__student_id=user_id)
+                & Q(id__gt=F("conversation__student_last_read_message_id"))
+            )
+            | (
+                Q(conversation__teacher_id=user_id)
+                & Q(id__gt=F("conversation__teacher_last_read_message_id"))
+            )
+        )
+        .exclude(sender_id=user_id)
+        .count()
+    )
+
+
+def broadcast_unread_chat_count(user) -> None:
+    """
+    Broadcasts the current total unread chat count to the user's private notification
+    group (user_<user_id>) so that topbar navigation badges across all open tabs
+    update immediately.
+    """
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    user_id = getattr(user, "id", user)
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return
+
+    unread_count = get_total_unread_chat_count(user_id)
+    group_name = f"user_{user_id}"
+    payload = {
+        "type": "unread_chat_count",
+        "count": unread_count,
+    }
+    try:
+        async_to_sync(channel_layer.group_send)(group_name, payload)
+    except Exception as exc:
+        logger.warning(
+            "Failed to broadcast unread_chat_count to group %s: %s",
+            group_name,
+            exc,
+        )
+
+
 def get_or_create_conversation(student, teacher) -> tuple[Conversation, bool]:
     if getattr(student, "role", None) != "student":
         raise ValidationError({"student": "Student must have the student role."})
@@ -64,29 +127,25 @@ def advance_watermark(conversation: Conversation, user, message_id: int) -> int:
         return 0
 
     if user.id == conversation.student_id:
-        Conversation.objects.filter(id=conversation.id).update(
-            student_last_read_message_id=Greatest(
-                F("student_last_read_message_id"),
-                message_id,
-            )
-        )
-        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
-            "student_last_read_message_id", flat=True
-        ).first()
-        return updated_val or 0
+        field = "student_last_read_message_id"
     elif user.id == conversation.teacher_id:
-        Conversation.objects.filter(id=conversation.id).update(
-            teacher_last_read_message_id=Greatest(
-                F("teacher_last_read_message_id"),
-                message_id,
-            )
-        )
-        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
-            "teacher_last_read_message_id", flat=True
-        ).first()
-        return updated_val or 0
+        field = "teacher_last_read_message_id"
     else:
         raise ValueError("User is not a participant of this conversation.")
+
+    old_val = Conversation.objects.filter(id=conversation.id).values_list(field, flat=True).first() or 0
+    if message_id > old_val:
+        Conversation.objects.filter(id=conversation.id).update(
+            **{field: Greatest(F(field), message_id)}
+        )
+        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
+            field, flat=True
+        ).first() or 0
+        if updated_val > old_val:
+            transaction.on_commit(lambda: broadcast_unread_chat_count(user))
+        return updated_val
+
+    return old_val
 
 
 def send_message(
@@ -140,6 +199,8 @@ def send_message(
                 ),
             )
 
+        recipient = conversation.get_counterpart(sender)
         transaction.on_commit(lambda: broadcast_chat_message(message))
+        transaction.on_commit(lambda: broadcast_unread_chat_count(recipient))
 
     return message
