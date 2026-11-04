@@ -37,6 +37,17 @@ async def get_authenticated_communicator(app, path, user):
     return WebsocketCommunicator(app, path, headers=headers)
 
 
+async def receive_expected_frame(ws, expected_type="notification_message", timeout=2.0):
+    """
+    Receives JSON frames from the WebSocket communicator, discarding intervening
+    system frames (such as 'unread_chat_count') until a frame matching expected_type arrives.
+    """
+    while True:
+        frame = await ws.receive_json_from(timeout=timeout)
+        if frame.get("type") == expected_type:
+            return frame
+
+
 class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
     """
     End-to-end integration tests verifying that executing booking views with
@@ -115,7 +126,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
 
         # Verify WebSocket frame received by teacher
-        frame = await teacher_ws.receive_json_from()
+        frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_REQUESTED)
         self.assertEqual(frame['level'], Notification.Level.INFO)
@@ -166,7 +177,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_booking()
         self.assertEqual(response.status_code, 200)
 
-        frame = await teacher_ws.receive_json_from()
+        frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_REQUESTED)
         self.assertEqual(frame['message'], 'John Doe requested a 50-minute Regular Lesson.')
@@ -208,7 +219,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_accept()
         self.assertEqual(response.status_code, 200)
 
-        frame = await student_ws.receive_json_from()
+        frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CONFIRMED)
         self.assertEqual(frame['level'], Notification.Level.SUCCESS)
@@ -257,7 +268,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_decline()
         self.assertEqual(response.status_code, 200)
 
-        frame = await student_ws.receive_json_from()
+        frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_DECLINED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
@@ -302,7 +313,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_request_cancellation()
         self.assertEqual(response.status_code, 200)
 
-        frame = await teacher_ws.receive_json_from()
+        frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.CANCELLATION_REQUESTED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
@@ -347,7 +358,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_cancel_lesson()
         self.assertEqual(response.status_code, 200)
 
-        frame = await student_ws.receive_json_from()
+        frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CANCELLED)
         self.assertEqual(frame['level'], Notification.Level.WARNING)
@@ -394,7 +405,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         response = await perform_accept_cancellation()
         self.assertEqual(response.status_code, 200)
 
-        frame = await student_ws.receive_json_from()
+        frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(frame['type'], 'notification_message')
         self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CANCELLED)
         self.assertEqual(frame['title'], 'Lesson Cancelled')
@@ -429,7 +440,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(count, 1)
 
         # Student receives booking_expired frame
-        student_frame = await student_ws.receive_json_from()
+        student_frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(student_frame['type'], 'notification_message')
         self.assertEqual(student_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
         self.assertEqual(student_frame['level'], Notification.Level.WARNING)
@@ -438,7 +449,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(student_frame['action_url'], reverse('booking:student_dashboard'))
 
         # Teacher receives booking_expired frame
-        teacher_frame = await teacher_ws.receive_json_from()
+        teacher_frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(teacher_frame['type'], 'notification_message')
         self.assertEqual(teacher_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
         self.assertEqual(teacher_frame['level'], Notification.Level.WARNING)
@@ -497,12 +508,12 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(response.json(), {'error': 'This lesson request has expired.'})
 
         # Student receives booking_expired frame
-        student_frame = await student_ws.receive_json_from()
+        student_frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(student_frame['type'], 'notification_message')
         self.assertEqual(student_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
 
         # Teacher receives booking_expired frame
-        teacher_frame = await teacher_ws.receive_json_from()
+        teacher_frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(teacher_frame['type'], 'notification_message')
         self.assertEqual(teacher_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
 
@@ -538,11 +549,11 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
 
         # Verify both student and teacher received real-time frames via WebSocket
-        student_frame = await student_ws.receive_json_from()
+        student_frame = await receive_expected_frame(student_ws, 'notification_message')
         self.assertEqual(student_frame['type'], 'notification_message')
         self.assertEqual(student_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
 
-        teacher_frame = await teacher_ws.receive_json_from()
+        teacher_frame = await receive_expected_frame(teacher_ws, 'notification_message')
         self.assertEqual(teacher_frame['type'], 'notification_message')
         self.assertEqual(teacher_frame['event_type'], Notification.EventType.BOOKING_EXPIRED)
 
@@ -587,7 +598,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         self.assertEqual(data['unread_notifications_count'], 0)
 
         # Teacher receives notification_read frame
-        read_frame = await teacher_ws.receive_json_from()
+        read_frame = await receive_expected_frame(teacher_ws, 'notification_read')
         self.assertEqual(read_frame['type'], 'notification_read')
         self.assertIn(notif.id, read_frame['notification_ids'])
         self.assertEqual(read_frame['unread_count'], 0)
