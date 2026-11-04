@@ -1,12 +1,17 @@
 import json
 import uuid
+from datetime import timedelta
+from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
+from booking.models import Booking
+from portfolio.models import TeacherProfile
 from chat.models import Conversation, Message
-from chat.services import send_message
+from chat.services import record_booking_event, send_message
 from chat.utils import CHAT_RATE_LIMIT, record_chat_message
 
 User = get_user_model()
@@ -437,5 +442,113 @@ class ChatViewsIntegrationTests(TestCase):
         # Negative before
         res2 = self.client.get(f"{history_url}?before=-5")
         self.assertEqual(res2.status_code, 400)
+
+    # --- Test Booking Context Drawer & System Event Cards ---
+
+    def test_conversation_detail_displays_upcoming_booking_in_drawer(self):
+        teacher_profile, _ = TeacherProfile.objects.get_or_create(
+            user=self.teacher,
+            defaults={"hourly_rate": Decimal("30.00"), "meeting_link": "https://meet.jit.si/lesson-123"},
+        )
+        now = timezone.now() + timedelta(days=1)
+        booking = Booking.objects.create(
+            student=self.student,
+            teacher=teacher_profile,
+            start_at=now,
+            end_at=now + timedelta(minutes=50),
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            status=Booking.Status.CONFIRMED,
+            price=Decimal("30.00"),
+        )
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+
+        self.client.force_login(self.student)
+        url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["upcoming_booking"], booking)
+        self.assertContains(response, "chat-lesson-drawer")
+        self.assertContains(response, "Next Lesson:")
+        self.assertContains(response, "Confirmed")
+        self.assertContains(response, "50m Regular Lesson")
+
+    def test_conversation_detail_renders_system_event_cards(self):
+        teacher_profile, _ = TeacherProfile.objects.get_or_create(
+            user=self.teacher,
+            defaults={"hourly_rate": Decimal("30.00")},
+        )
+        now = timezone.now() + timedelta(days=3)
+        booking = Booking.objects.create(
+            student=self.student,
+            teacher=teacher_profile,
+            start_at=now,
+            end_at=now + timedelta(minutes=50),
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            status=Booking.Status.PENDING,
+            price=Decimal("30.00"),
+        )
+        msg = record_booking_event(booking, "booking_requested")
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+
+        # 1. Student view: purely informational notice, waiting for confirmation, NO action button
+        self.client.force_login(self.student)
+        url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "chat-system-event-pill")
+        self.assertContains(response, "Lesson request submitted for")
+        self.assertContains(response, "Waiting for confirmation")
+        self.assertNotContains(response, f'<a href="{reverse("booking:teacher_dashboard")}"')
+
+        # 2. Teacher view: actionable notice with Review Request button
+        self.client.force_login(self.teacher)
+        response_teacher = self.client.get(url)
+        self.assertEqual(response_teacher.status_code, 200)
+        self.assertContains(response_teacher, "chat-system-event-pill")
+        self.assertContains(response_teacher, "Lesson request from")
+        self.assertContains(response_teacher, f'<a href="{reverse("booking:teacher_dashboard")}"')
+        self.assertContains(response_teacher, "Review Request")
+
+    def test_conversation_history_includes_message_type_and_metadata(self):
+        teacher_profile, _ = TeacherProfile.objects.get_or_create(
+            user=self.teacher,
+            defaults={"hourly_rate": Decimal("30.00")},
+        )
+        now = timezone.now() + timedelta(days=2)
+        booking = Booking.objects.create(
+            student=self.student,
+            teacher=teacher_profile,
+            start_at=now,
+            end_at=now + timedelta(minutes=50),
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            status=Booking.Status.CONFIRMED,
+            price=Decimal("30.00"),
+        )
+        system_msg = record_booking_event(booking, "booking_confirmed")
+
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        # Add another message so we can query ?before=
+        later_msg = send_message(conv, sender=self.student, text="Thank you for confirming!")
+
+        self.client.force_login(self.student)
+        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        response = self.client.get(f"{history_url}?before={later_msg.id}")
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(len(data["messages"]), 1)
+        item = data["messages"][0]
+        self.assertEqual(item["id"], system_msg.id)
+        self.assertEqual(item["message_type"], "system_event")
+        self.assertIn("metadata", item)
+        self.assertEqual(item["metadata"]["event_type"], "booking_confirmed")
+        self.assertEqual(item["metadata"]["booking_id"], booking.id)
+
 
 
