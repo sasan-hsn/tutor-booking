@@ -111,19 +111,36 @@
     font-size: 0.9rem;
 }
 
-.chat-system-event-card {
+.chat-system-event-pill {
     align-self: center;
-    max-width: 85%;
-    width: 100%;
-    margin: 0.5rem 0;
-    padding: 0.85rem 1.15rem;
+    max-width: 92%;
+    margin: 0.35rem auto;
+    padding: 0.35rem 0.85rem;
     background: #f8fafc;
     border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-    display: flex;
-    flex-direction: column;
+    border-radius: 50rem;
+    font-size: 0.825rem;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 0.4rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.chat-system-event-pill a.pill-action-link {
+    font-weight: 600;
+    color: var(--primary-blue, #1e3a8a);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: 0.25rem;
+}
+
+.chat-system-event-pill a.pill-action-link:hover {
+    text-decoration: underline;
 }
 
 .chat-input-area {
@@ -163,7 +180,9 @@
          data-counterpart-name="{{ counterpart.get_full_name|default:counterpart.username }}"
          data-counterpart-watermark="{{ counterpart_watermark|default:0 }}"
          data-has-more-history="{% if has_more_history %}true{% else %}false{% endif %}"
-         data-history-url="{% url 'chat:conversation_history' conversation_id=conversation.id %}">
+         data-history-url="{% url 'chat:conversation_history' conversation_id=conversation.id %}"
+         data-is-student="{% if is_student %}true{% else %}false{% endif %}"
+         data-teacher-dashboard-url="{% url 'booking:teacher_dashboard' %}">
         <div class="chat-header">
             <div class="d-flex align-items-center gap-3">
                 <a href="{% url 'chat:inbox' %}" class="btn btn-sm btn-outline-secondary" aria-label="Back to Messages">
@@ -246,48 +265,39 @@
             {% else %}
                 {% for message in messages %}
                     {% if message.message_type == 'system_event' %}
-                    <div class="chat-system-event-card" data-message-id="{{ message.id }}">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="d-flex align-items-center gap-2">
-                                {% if message.metadata.event_type == 'booking_requested' %}
-                                    <i class="bi bi-calendar-plus text-primary fs-5"></i>
-                                    <span class="fw-bold small text-dark">Lesson Request Submitted</span>
-                                {% elif message.metadata.event_type == 'booking_confirmed' %}
-                                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
-                                    <span class="fw-bold small text-dark">Lesson Confirmed</span>
-                                {% elif message.metadata.event_type == 'cancellation_requested' %}
-                                    <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
-                                    <span class="fw-bold small text-dark">Cancellation Requested</span>
-                                {% elif message.metadata.event_type == 'booking_cancelled' %}
-                                    <i class="bi bi-x-circle-fill text-danger fs-5"></i>
-                                    <span class="fw-bold small text-dark">Lesson Cancelled</span>
-                                {% else %}
-                                    <i class="bi bi-info-circle-fill text-secondary fs-5"></i>
-                                    <span class="fw-bold small text-dark">Booking Update</span>
-                                {% endif %}
-                            </div>
-                            <span class="badge {% if message.metadata.status == 'confirmed' %}bg-success{% elif message.metadata.status == 'cancelled' %}bg-secondary{% else %}bg-warning text-dark{% endif %} text-capitalize small">
-                                {{ message.metadata.status_display|default:message.metadata.status }}
-                            </span>
-                        </div>
-                        <div class="small text-secondary mb-2 d-flex flex-wrap gap-3">
-                            {% with start_dt=message.metadata.start_at|local_date_time:user end_dt=message.metadata.end_at|local_date_time:user %}
-                            {% if start_dt %}
-                            <span><i class="bi bi-calendar-event me-1"></i>{{ start_dt|date:"D, M d, Y" }} · {{ start_dt|date:"g:i A" }}{% if end_dt %} – {{ end_dt|date:"g:i A" }}{% endif %}</span>
-                            {% endif %}
-                            {% endwith %}
-                            <span><i class="bi bi-clock me-1"></i>{{ message.metadata.duration_minutes }} min · {{ message.metadata.lesson_type_display|default:message.metadata.lesson_type }}</span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between pt-1 border-top border-light-subtle">
-                            {% if message.metadata.action_url %}
-                            <a href="{{ message.metadata.action_url }}" class="btn btn-sm btn-outline-primary py-0 px-2 small">
-                                View Booking <i class="bi bi-arrow-right ms-1"></i>
-                            </a>
+                    <div class="chat-system-event-pill" data-message-id="{{ message.id }}">
+                        {% with start_dt=message.metadata.start_at|local_date_time:user %}
+                        {% if message.metadata.event_type == 'booking_requested' %}
+                            <i class="bi bi-calendar-plus text-primary"></i>
+                            {% if is_student %}
+                                <span>Lesson request submitted for <strong>{{ start_dt|date:"D, M d" }}</strong> ({{ message.metadata.duration_minutes }}m)</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill small">Waiting for confirmation</span>
                             {% else %}
-                            <span></span>
+                                <span>Lesson request from <strong>{{ message.metadata.student_name|default:conversation.student.username }}</strong> for <strong>{{ start_dt|date:"D, M d" }}</strong> ({{ message.metadata.duration_minutes }}m)</span>
+                                <a href="{% url 'booking:teacher_dashboard' %}" class="pill-action-link">Review Request <i class="bi bi-arrow-right"></i></a>
                             {% endif %}
-                            <small class="text-muted">{{ message.created_at|date:"g:i A" }}</small>
-                        </div>
+                        {% elif message.metadata.event_type == 'booking_confirmed' %}
+                            <i class="bi bi-check2-circle text-success"></i>
+                            <span>Lesson confirmed for <strong>{{ start_dt|date:"D, M d" }} · {{ start_dt|date:"g:i A" }}</strong> ({{ message.metadata.duration_minutes }}m)</span>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill small">Confirmed</span>
+                        {% elif message.metadata.event_type == 'cancellation_requested' %}
+                            <i class="bi bi-exclamation-triangle text-warning"></i>
+                            {% if is_student %}
+                                <span>Cancellation requested for <strong>{{ start_dt|date:"D, M d" }}</strong></span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill small">Pending</span>
+                            {% else %}
+                                <span>Cancellation requested by <strong>{{ message.metadata.student_name|default:conversation.student.username }}</strong> for <strong>{{ start_dt|date:"D, M d" }}</strong></span>
+                                <a href="{% url 'booking:teacher_dashboard' %}" class="pill-action-link">Review <i class="bi bi-arrow-right"></i></a>
+                            {% endif %}
+                        {% elif message.metadata.event_type == 'booking_cancelled' %}
+                            <i class="bi bi-x-circle text-danger"></i>
+                            <span>Lesson cancelled for <strong>{{ start_dt|date:"D, M d" }}</strong></span>
+                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill small">Cancelled</span>
+                        {% else %}
+                            <i class="bi bi-info-circle text-secondary"></i>
+                            <span>Booking update for <strong>{{ start_dt|date:"D, M d" }}</strong></span>
+                        {% endif %}
+                        {% endwith %}
                     </div>
                     {% else %}
                     <div class="chat-bubble {% if message.sender_id == user.id %}chat-bubble-out{% else %}chat-bubble-in{% endif %}" data-message-id="{{ message.id }}">
@@ -365,6 +375,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const counterpartId = parseInt(container.dataset.counterpartId, 10);
     let counterpartWatermark = parseInt(container.dataset.counterpartWatermark, 10) || 0;
     const historyBaseUrl = container.dataset.historyUrl;
+    const isStudentViewer = container.dataset.isStudent === 'true';
+    const teacherDashboardUrl = container.dataset.teacherDashboardUrl || '/booking/teacher/';
 
     function scrollToBottom() {
         if (timeline) {
@@ -459,76 +471,71 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function createSystemEventElement(message) {
-        const card = document.createElement('div');
-        card.className = 'chat-system-event-card';
-        card.dataset.messageId = message.id;
+        const pill = document.createElement('div');
+        pill.className = 'chat-system-event-pill';
+        pill.dataset.messageId = message.id;
 
         const meta = message.metadata || {};
         const eventType = meta.event_type || '';
-        let iconHtml = '<i class="bi bi-info-circle-fill text-secondary fs-5"></i>';
-        let titleText = 'Booking Update';
-
-        if (eventType === 'booking_requested') {
-            iconHtml = '<i class="bi bi-calendar-plus text-primary fs-5"></i>';
-            titleText = 'Lesson Request Submitted';
-        } else if (eventType === 'booking_confirmed') {
-            iconHtml = '<i class="bi bi-check-circle-fill text-success fs-5"></i>';
-            titleText = 'Lesson Confirmed';
-        } else if (eventType === 'cancellation_requested') {
-            iconHtml = '<i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>';
-            titleText = 'Cancellation Requested';
-        } else if (eventType === 'booking_cancelled') {
-            iconHtml = '<i class="bi bi-x-circle-fill text-danger fs-5"></i>';
-            titleText = 'Lesson Cancelled';
-        }
-
-        const status = meta.status || '';
-        let badgeClass = 'bg-warning text-dark';
-        if (status === 'confirmed') badgeClass = 'bg-success';
-        else if (status === 'cancelled') badgeClass = 'bg-secondary';
-        const statusDisplay = meta.status_display || status;
-
-        let dateStr = '';
+        let datePart = '';
+        let timePart = '';
         if (meta.start_at) {
             const startDate = new Date(meta.start_at);
-            const datePart = startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-            const timePart = startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-            let endTimePart = '';
-            if (meta.end_at) {
-                const endDate = new Date(meta.end_at);
-                endTimePart = ' – ' + endDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            datePart = startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+            timePart = startDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+        const durationPart = meta.duration_minutes ? `(${meta.duration_minutes}m)` : '';
+
+        if (eventType === 'booking_requested') {
+            if (isStudentViewer) {
+                pill.innerHTML = `
+                    <i class="bi bi-calendar-plus text-primary"></i>
+                    <span>Lesson request submitted for <strong>${datePart}</strong> ${durationPart}</span>
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill small">Waiting for confirmation</span>
+                `;
+            } else {
+                const studentName = meta.student_name || 'Student';
+                pill.innerHTML = `
+                    <i class="bi bi-calendar-plus text-primary"></i>
+                    <span>Lesson request from <strong>${studentName}</strong> for <strong>${datePart}</strong> ${durationPart}</span>
+                    <a href="${teacherDashboardUrl}" class="pill-action-link">Review Request <i class="bi bi-arrow-right"></i></a>
+                `;
             }
-            dateStr = `<span><i class="bi bi-calendar-event me-1"></i>${datePart} · ${timePart}${endTimePart}</span>`;
+        } else if (eventType === 'booking_confirmed') {
+            pill.innerHTML = `
+                <i class="bi bi-check2-circle text-success"></i>
+                <span>Lesson confirmed for <strong>${datePart} · ${timePart}</strong> ${durationPart}</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill small">Confirmed</span>
+            `;
+        } else if (eventType === 'cancellation_requested') {
+            if (isStudentViewer) {
+                pill.innerHTML = `
+                    <i class="bi bi-exclamation-triangle text-warning"></i>
+                    <span>Cancellation requested for <strong>${datePart}</strong></span>
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill small">Pending</span>
+                `;
+            } else {
+                const studentName = meta.student_name || 'Student';
+                pill.innerHTML = `
+                    <i class="bi bi-exclamation-triangle text-warning"></i>
+                    <span>Cancellation requested by <strong>${studentName}</strong> for <strong>${datePart}</strong></span>
+                    <a href="${teacherDashboardUrl}" class="pill-action-link">Review <i class="bi bi-arrow-right"></i></a>
+                `;
+            }
+        } else if (eventType === 'booking_cancelled') {
+            pill.innerHTML = `
+                <i class="bi bi-x-circle text-danger"></i>
+                <span>Lesson cancelled for <strong>${datePart}</strong></span>
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill small">Cancelled</span>
+            `;
+        } else {
+            pill.innerHTML = `
+                <i class="bi bi-info-circle text-secondary"></i>
+                <span>Booking update for <strong>${datePart}</strong></span>
+            `;
         }
 
-        const duration = meta.duration_minutes ? `${meta.duration_minutes} min` : '';
-        const lessonType = meta.lesson_type_display || meta.lesson_type || '';
-        const typeStr = (duration || lessonType) ? `<span><i class="bi bi-clock me-1"></i>${duration} · ${lessonType}</span>` : '';
-
-        const actionUrl = meta.action_url || '';
-        const actionBtnHtml = actionUrl ? `<a href="${actionUrl}" class="btn btn-sm btn-outline-primary py-0 px-2 small">View Booking <i class="bi bi-arrow-right ms-1"></i></a>` : '<span></span>';
-
-        const createdDate = new Date(message.created_at);
-        const createdTimeStr = createdDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-        card.innerHTML = `
-            <div class="d-flex align-items-center justify-content-between mb-2">
-                <div class="d-flex align-items-center gap-2">
-                    ${iconHtml}
-                    <span class="fw-bold small text-dark">${titleText}</span>
-                </div>
-                <span class="badge ${badgeClass} text-capitalize small">${statusDisplay}</span>
-            </div>
-            <div class="small text-secondary mb-2 d-flex flex-wrap gap-3">
-                ${dateStr}
-                ${typeStr}
-            </div>
-            <div class="d-flex align-items-center justify-content-between pt-1 border-top border-light-subtle">
-                ${actionBtnHtml}
-                <small class="text-muted">${createdTimeStr}</small>
-            </div>
-        `;
-        return card;
+        return pill;
     }
 
     function createBubbleElement(message) {

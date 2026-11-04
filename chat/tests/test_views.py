@@ -493,14 +493,26 @@ class ChatViewsIntegrationTests(TestCase):
         msg = record_booking_event(booking, "booking_requested")
 
         conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+
+        # 1. Student view: purely informational notice, waiting for confirmation, NO action button
         self.client.force_login(self.student)
         url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "chat-system-event-card")
-        self.assertContains(response, "Lesson Request Submitted")
-        self.assertContains(response, "Pending")
+        self.assertContains(response, "chat-system-event-pill")
+        self.assertContains(response, "Lesson request submitted for")
+        self.assertContains(response, "Waiting for confirmation")
+        self.assertNotContains(response, f'<a href="{reverse("booking:teacher_dashboard")}"')
+
+        # 2. Teacher view: actionable notice with Review Request button
+        self.client.force_login(self.teacher)
+        response_teacher = self.client.get(url)
+        self.assertEqual(response_teacher.status_code, 200)
+        self.assertContains(response_teacher, "chat-system-event-pill")
+        self.assertContains(response_teacher, "Lesson request from")
+        self.assertContains(response_teacher, f'<a href="{reverse("booking:teacher_dashboard")}"')
+        self.assertContains(response_teacher, "Review Request")
 
     def test_conversation_history_includes_message_type_and_metadata(self):
         teacher_profile, _ = TeacherProfile.objects.get_or_create(

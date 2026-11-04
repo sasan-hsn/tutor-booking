@@ -249,7 +249,7 @@ def record_booking_event(booking, event_type: str) -> Message | None:
             action_url = reverse("booking:teacher_dashboard")
         else:
             sender = teacher_user
-            action_url = reverse("booking:student_dashboard")
+            action_url = ""
 
         formatted_date = booking.start_at.strftime("%b %d")
 
@@ -267,6 +267,7 @@ def record_booking_event(booking, event_type: str) -> Message | None:
         metadata = {
             "event_type": event_type,
             "booking_id": booking.id,
+            "student_name": student.get_full_name() or student.username,
             "lesson_type": booking.lesson_type,
             "lesson_type_display": booking.get_lesson_type_display(),
             "duration_minutes": booking.duration_minutes,
