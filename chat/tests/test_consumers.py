@@ -367,6 +367,23 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
 
         await teacher_comm.disconnect()
 
+    async def test_consumer_tracks_room_presence_on_connect_and_disconnect(self):
+        from chat.presence import is_user_in_room
+
+        self.assertFalse(is_user_in_room(self.conversation.id, self.teacher.id))
+
+        teacher_comm = await get_authenticated_communicator(
+            application, self.ws_path, self.teacher
+        )
+        connected, _ = await teacher_comm.connect()
+        self.assertTrue(connected)
+
+        self.assertTrue(is_user_in_room(self.conversation.id, self.teacher.id))
+
+        await teacher_comm.disconnect()
+        self.assertFalse(is_user_in_room(self.conversation.id, self.teacher.id))
+
+
     # --- Typing Indicator Tests ---
 
     async def test_typing_indicator_broadcasts_to_counterpart(self):

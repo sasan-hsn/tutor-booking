@@ -19,6 +19,7 @@ except ImportError:
         pass
 
 from .models import Conversation
+from .presence import add_room_presence, remove_room_presence
 from .services import advance_watermark
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     e,
                 )
 
+        await self._add_presence()
+
     async def disconnect(self, close_code):
+        if hasattr(self, "conversation_id") and hasattr(self, "user") and self.user and self.conversation_id:
+            await self._remove_presence()
+
         if hasattr(self, "group_name") and self.group_name and self.channel_layer:
             try:
                 await asyncio.wait_for(
@@ -209,3 +215,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _advance_watermark_in_db(self, message_id):
         return advance_watermark(self.conversation, self.user, message_id)
+
+    @database_sync_to_async
+    def _add_presence(self):
+        add_room_presence(self.conversation_id, self.user.id, self.channel_name)
+
+    @database_sync_to_async
+    def _remove_presence(self):
+        remove_room_presence(self.conversation_id, self.user.id, self.channel_name)
+
