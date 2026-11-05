@@ -1,6 +1,7 @@
 import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Q
@@ -9,9 +10,72 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import Conversation, Message
+from .presence import is_user_in_room
 from .utils import linkify_message_text
 
 logger = logging.getLogger(__name__)
+
+DEBOUNCE_FLAG_KEY = "chat_digest_pending:{recipient_id}:{conversation_id}"
+DEBOUNCE_FLAG_TIMEOUT = 900  # 15 minutes
+
+
+def clear_digest_debounce_flag(recipient_id: int, conversation_id) -> None:
+    """
+    Clears the atomic digest debounce cache flag for a recipient in a conversation.
+    """
+    try:
+        cache.delete(DEBOUNCE_FLAG_KEY.format(recipient_id=recipient_id, conversation_id=conversation_id))
+    except Exception as exc:
+        logger.warning(
+            "Failed to clear digest debounce flag for recipient %s in conversation %s: %s",
+            recipient_id,
+            conversation_id,
+            exc,
+        )
+
+
+def schedule_unread_message_digest(conversation_id, recipient_id: int) -> bool:
+    """
+    Schedules an offline email digest task if the recipient is not currently in the room
+    and does not already have a pending digest task scheduled.
+    Sets an atomic Redis cache flag: chat_digest_pending:{recipient_id}:{conversation_id}
+    with a 15-minute TTL (timeout=900) and enqueues send_unread_message_digest.apply_async(countdown=900).
+    """
+    if is_user_in_room(conversation_id, recipient_id):
+        logger.debug(
+            "Recipient #%s has active room presence in conversation %s; skipping digest schedule.",
+            recipient_id,
+            conversation_id,
+        )
+        return False
+
+    key = DEBOUNCE_FLAG_KEY.format(recipient_id=recipient_id, conversation_id=conversation_id)
+    is_set = cache.add(key, True, timeout=DEBOUNCE_FLAG_TIMEOUT)
+    if not is_set:
+        logger.debug(
+            "Debounce flag already active for recipient #%s in conversation %s; skipping duplicate schedule.",
+            recipient_id,
+            conversation_id,
+        )
+        return False
+
+    try:
+        from .tasks import send_unread_message_digest
+
+        send_unread_message_digest.apply_async(
+            args=[str(conversation_id), recipient_id],
+            countdown=900,
+        )
+        return True
+    except Exception as exc:
+        clear_digest_debounce_flag(recipient_id, conversation_id)
+        logger.warning(
+            "Failed to enqueue send_unread_message_digest for conversation %s, recipient #%s: %s",
+            conversation_id,
+            recipient_id,
+            exc,
+        )
+        return False
 
 
 def broadcast_chat_message(message: Message) -> None:
@@ -135,6 +199,8 @@ def advance_watermark(conversation: Conversation, user, message_id: int) -> int:
     else:
         raise ValueError("User is not a participant of this conversation.")
 
+    clear_digest_debounce_flag(user.id, conversation.id)
+
     old_val = Conversation.objects.filter(id=conversation.id).values_list(field, flat=True).first() or 0
     if message_id > old_val:
         Conversation.objects.filter(id=conversation.id).update(
@@ -205,8 +271,14 @@ def send_message(
             )
 
         recipient = conversation.get_counterpart(sender)
+        conv_id = conversation.id
+        recipient_id = recipient.id
         transaction.on_commit(lambda: broadcast_chat_message(message))
         transaction.on_commit(lambda: broadcast_unread_chat_count(recipient))
+        if message_type == Message.MessageType.TEXT:
+            transaction.on_commit(
+                lambda: schedule_unread_message_digest(conv_id, recipient_id)
+            )
 
     return message
 

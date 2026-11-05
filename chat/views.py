@@ -12,7 +12,12 @@ from django.views.decorators.http import require_GET, require_POST
 
 from booking.models import Booking
 from .models import Conversation, Message
-from .services import advance_watermark, get_or_create_conversation, send_message
+from .services import (
+    advance_watermark,
+    clear_digest_debounce_flag,
+    get_or_create_conversation,
+    send_message,
+)
 from .utils import check_chat_rate_limit, get_client_ip, linkify_message_text, record_chat_message
 
 User = get_user_model()
@@ -143,6 +148,8 @@ def conversation_detail(request, conversation_id):
     if messages:
         latest_message = messages[-1]
         advance_watermark(conversation, request.user, latest_message.id)
+    else:
+        clear_digest_debounce_flag(request.user.id, conversation.id)
 
     is_student = request.user.role == "student"
     counterpart_watermark = conversation.get_last_read_message_id(counterpart)
