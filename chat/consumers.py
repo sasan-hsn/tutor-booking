@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -216,11 +216,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     def _advance_watermark_in_db(self, message_id):
         return advance_watermark(self.conversation, self.user, message_id)
 
-    @database_sync_to_async
+    @sync_to_async
     def _add_presence(self):
         add_room_presence(self.conversation_id, self.user.id, self.channel_name)
 
-    @database_sync_to_async
+    @sync_to_async
     def _remove_presence(self):
         remove_room_presence(self.conversation_id, self.user.id, self.channel_name)
 

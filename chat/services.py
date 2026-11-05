@@ -68,6 +68,7 @@ def schedule_unread_message_digest(conversation_id, recipient_id: int) -> bool:
         )
         return True
     except Exception as exc:
+        clear_digest_debounce_flag(recipient_id, conversation_id)
         logger.warning(
             "Failed to enqueue send_unread_message_digest for conversation %s, recipient #%s: %s",
             conversation_id,

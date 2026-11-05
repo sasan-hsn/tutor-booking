@@ -10,6 +10,7 @@ import requests
 from .emails import send_chat_unread_digest_email
 from .models import Conversation, Message
 from .presence import is_user_in_room
+from .services import clear_digest_debounce_flag
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -39,21 +40,12 @@ def is_transient_email_error(exc: Exception) -> bool:
     default_retry_delay=60,
     retry_backoff=True,
 )
-def send_unread_message_digest(self, conversation_id=None, recipient_id=None, **kwargs):
+def send_unread_message_digest(self, conversation_id, recipient_id):
     """
     Evaluates unread chat messages for recipient in conversation after a 15-minute cooldown.
     If unread messages exist and the recipient is not currently connected to the room via WebSocket,
     dispatches a consolidated email digest.
     """
-    if conversation_id is None and "conversation_id" in kwargs:
-        conversation_id = kwargs["conversation_id"]
-    if recipient_id is None and "recipient_id" in kwargs:
-        recipient_id = kwargs["recipient_id"]
-
-    # Support reverse argument order defensively (int recipient_id, UUID/str conversation_id)
-    if isinstance(conversation_id, int) and not isinstance(recipient_id, int):
-        recipient_id, conversation_id = conversation_id, recipient_id
-
     if not conversation_id or not recipient_id:
         logger.warning(
             "send_unread_message_digest called with invalid params: conv=%s, recipient=%s",
@@ -97,15 +89,13 @@ def send_unread_message_digest(self, conversation_id=None, recipient_id=None, **
         .order_by("id")
     )
 
-    debounce_key = f"chat_digest_pending:{recipient.id}:{conversation.id}"
-
     if not unread_messages:
         logger.info(
             "No unread messages for recipient #%s in conversation %s; exiting silently.",
             recipient.id,
             conversation.id,
         )
-        cache.delete(debounce_key)
+        clear_digest_debounce_flag(recipient.id, conversation.id)
         return
 
     # 2. Re-check active room presence (WebSocket connection in the conversation room)
@@ -126,7 +116,7 @@ def send_unread_message_digest(self, conversation_id=None, recipient_id=None, **
             unread_messages=unread_messages,
         )
         # Clear the debounce flag so future messages can schedule another cycle
-        cache.delete(debounce_key)
+        clear_digest_debounce_flag(recipient.id, conversation.id)
     except Exception as exc:
         if is_transient_email_error(exc):
             logger.exception(
