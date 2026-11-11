@@ -105,6 +105,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = Conversation.get_group_name(self.conversation_id)
         self.last_typing_time = 0.0
 
+        await self._add_presence()
         await self.accept()
 
         if self.channel_layer:
@@ -119,8 +120,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     self.conversation_id,
                     e,
                 )
-
-        await self._add_presence()
 
     async def disconnect(self, close_code):
         if hasattr(self, "conversation_id") and hasattr(self, "user") and self.user and self.conversation_id:
@@ -218,9 +217,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     @sync_to_async
     def _add_presence(self):
-        add_room_presence(self.conversation_id, self.user.id, self.channel_name)
+        channel_name = getattr(self, "channel_name", "") or str(id(self))
+        add_room_presence(self.conversation_id, self.user.id, channel_name)
 
     @sync_to_async
     def _remove_presence(self):
-        remove_room_presence(self.conversation_id, self.user.id, self.channel_name)
+        channel_name = getattr(self, "channel_name", "") or str(id(self))
+        remove_room_presence(self.conversation_id, self.user.id, channel_name)
 
