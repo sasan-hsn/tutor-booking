@@ -367,6 +367,17 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
 
         await teacher_comm.disconnect()
 
+    async def _assert_presence(self, conversation_id, user_id, expected: bool, timeout: float = 1.0):
+        from chat.presence import is_user_in_room
+
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+        while (loop.time() - start) < timeout:
+            if is_user_in_room(conversation_id, user_id) == expected:
+                return
+            await asyncio.sleep(0.02)
+        self.assertEqual(is_user_in_room(conversation_id, user_id), expected)
+
     async def test_consumer_tracks_room_presence_on_connect_and_disconnect(self):
         from chat.presence import is_user_in_room
 
@@ -378,10 +389,10 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         connected, _ = await teacher_comm.connect()
         self.assertTrue(connected)
 
-        self.assertTrue(is_user_in_room(self.conversation.id, self.teacher.id))
+        await self._assert_presence(self.conversation.id, self.teacher.id, True)
 
         await teacher_comm.disconnect()
-        self.assertFalse(is_user_in_room(self.conversation.id, self.teacher.id))
+        await self._assert_presence(self.conversation.id, self.teacher.id, False)
 
 
     # --- Typing Indicator Tests ---

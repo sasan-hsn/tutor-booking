@@ -213,6 +213,26 @@ function initLessonCardsScroll() {
 
         updateArrows();
     });
+
+    scrollToTargetLessonCard();
+    if (typeof window !== 'undefined') {
+        window.addEventListener('hashchange', scrollToTargetLessonCard);
+    }
+}
+
+function scrollToTargetLessonCard() {
+    if (typeof window === 'undefined' || !window.location || !window.location.hash) return false;
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#booking-')) {
+        const targetCard = (typeof document !== 'undefined') ? document.querySelector(hash) : null;
+        if (targetCard) {
+            if (typeof targetCard.scrollIntoView === 'function') {
+                targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 /* --------------------------------------------------------------------------
@@ -1972,5 +1992,6 @@ if (typeof module !== 'undefined' && module.exports) {
         initLessonRequestsManager,
         resetProcessedNotificationIds,
         processedLessonRequestNotificationIds,
+        scrollToTargetLessonCard,
     };
 }

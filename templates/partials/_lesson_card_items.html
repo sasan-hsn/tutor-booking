@@ -2,6 +2,7 @@
 
 {% for booking in upcoming_bookings %}
 <div class="lesson-card{% if booking.is_awaiting_resolution and user.teacher_profile %} lesson-card-needs-action{% endif %}{% if booking.is_joinable %} lesson-card-joinable{% endif %}"
+    id="booking-{{ booking.id }}"
     data-booking-id="{{ booking.id }}"
     data-start-at="{{ booking.start_at.isoformat }}"
     data-end-at="{{ booking.end_at.isoformat }}"

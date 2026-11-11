@@ -129,3 +129,16 @@ class DashboardDurationBadgesTests(RoleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
+
+    def test_student_dashboard_renders_upcoming_card_dom_anchors(self):
+        response = self.student_client.get(reverse('booking:student_dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'id="booking-{self.upcoming_trial.id}"')
+        self.assertContains(response, f'id="booking-{self.upcoming_regular.id}"')
+
+    def test_teacher_dashboard_renders_upcoming_card_dom_anchors(self):
+        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'id="booking-{self.upcoming_trial.id}"')
+        self.assertContains(response, f'id="booking-{self.upcoming_regular.id}"')
+
