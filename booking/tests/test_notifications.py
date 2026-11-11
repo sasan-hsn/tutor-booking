@@ -12,6 +12,7 @@ from django.utils import timezone
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking, RegularAvailability
 from booking.notifications import (
+    mark_booking_reminders_read,
     mark_booking_requests_read,
     notify_booking_cancelled,
     notify_booking_confirmed,
@@ -19,6 +20,9 @@ from booking.notifications import (
     notify_booking_expired,
     notify_booking_requested,
     notify_cancellation_requested,
+    notify_lesson_reminder_1h_student,
+    notify_lesson_reminder_1h_teacher,
+    notify_lesson_reminder_24h_student,
 )
 from notifications.models import Notification
 from booking.tasks import (
@@ -722,6 +726,28 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertIn('America/New_York', email.body)
         self.assertIn('cancelled', email.body.lower())
 
+    def test_respond_to_cancellation_accept_auto_marks_reminders_read(self):
+        self.booking.status = Booking.Status.CONFIRMED
+        self.booking.cancellation_requested = True
+        self.booking.save()
+
+        notif_24h = notify_lesson_reminder_24h_student(self.booking)
+        notif_1h = notify_lesson_reminder_1h_teacher(self.booking)
+        self.assertFalse(notif_24h.is_read)
+        self.assertFalse(notif_1h.is_read)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
+                {'action': 'accept'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notif_24h.refresh_from_db()
+        notif_1h.refresh_from_db()
+        self.assertTrue(notif_24h.is_read)
+        self.assertTrue(notif_1h.is_read)
+
     def test_respond_to_cancellation_decline_does_not_dispatch_email(self):
         self.booking.status = Booking.Status.CONFIRMED
         self.booking.cancellation_requested = True
@@ -978,6 +1004,23 @@ class CancelLessonNotificationTests(RoleTestCase):
         self.assertIn(expected_time_str, email.body)
         self.assertIn('America/New_York', email.body)
         self.assertIn('cancelled', email.body.lower())
+
+    def test_cancel_confirmed_lesson_auto_marks_reminders_read(self):
+        notif_24h = notify_lesson_reminder_24h_student(self.booking)
+        notif_1h = notify_lesson_reminder_1h_teacher(self.booking)
+        self.assertFalse(notif_24h.is_read)
+        self.assertFalse(notif_1h.is_read)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse('booking:cancel_lesson', kwargs={'booking_id': self.booking.id}),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notif_24h.refresh_from_db()
+        notif_1h.refresh_from_db()
+        self.assertTrue(notif_24h.is_read)
+        self.assertTrue(notif_1h.is_read)
 
     def test_cancel_awaiting_resolution_lesson_does_not_dispatch_email(self):
         past_date = timezone.localdate() - timedelta(days=1)
@@ -1282,5 +1325,105 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertFalse(notif_other.is_read)
         self.assertCountEqual(marked_ids, [notif_requested.id, notif_cancelled.id])
         self.assertEqual(unread_count, 1)
+
+    def test_notify_lesson_reminder_24h_student_copy_and_attributes(self):
+        notif = notify_lesson_reminder_24h_student(self.trial_booking)
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.recipient, self.student_user)
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.event_type, Notification.EventType.LESSON_REMINDER_24H)
+        self.assertEqual(notif.level, Notification.Level.INFO)
+        self.assertEqual(notif.title, "Upcoming Lesson Reminder")
+        self.assertEqual(
+            notif.message,
+            "Your 25-minute Trial Lesson with Mary Smith is scheduled for tomorrow.",
+        )
+        expected_url = f"{reverse('booking:student_dashboard')}#booking-{self.trial_booking.id}"
+        self.assertEqual(notif.action_url, expected_url)
+        self.assertEqual(notif.metadata["booking_id"], self.trial_booking.id)
+        self.assertEqual(notif.metadata["lesson_duration"], 25)
+        self.assertEqual(notif.metadata["lesson_type"], "trial")
+        self.assertEqual(notif.metadata["participant_name"], "Mary Smith")
+
+    def test_notify_lesson_reminder_1h_student_copy_and_attributes(self):
+        notif = notify_lesson_reminder_1h_student(self.regular_booking)
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.recipient, self.student_user)
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.event_type, Notification.EventType.LESSON_REMINDER_1H)
+        self.assertEqual(notif.level, Notification.Level.WARNING)
+        self.assertEqual(notif.title, "Lesson Starting Soon")
+        self.assertEqual(
+            notif.message,
+            "Your 50-minute Regular Lesson with Mary Smith starts in 1 hour.",
+        )
+        expected_url = f"{reverse('booking:student_dashboard')}#booking-{self.regular_booking.id}"
+        self.assertEqual(notif.action_url, expected_url)
+        self.assertEqual(notif.metadata["booking_id"], self.regular_booking.id)
+        self.assertEqual(notif.metadata["lesson_duration"], 50)
+        self.assertEqual(notif.metadata["lesson_type"], "regular")
+        self.assertEqual(notif.metadata["participant_name"], "Mary Smith")
+
+    def test_notify_lesson_reminder_1h_teacher_copy_and_attributes(self):
+        notif = notify_lesson_reminder_1h_teacher(self.regular_booking)
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.recipient, self.teacher_user)
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.event_type, Notification.EventType.LESSON_REMINDER_1H)
+        self.assertEqual(notif.level, Notification.Level.WARNING)
+        self.assertEqual(notif.title, "Lesson Starting Soon")
+        self.assertEqual(
+            notif.message,
+            "Your 50-minute Regular Lesson with John Doe starts in 1 hour.",
+        )
+        expected_url = f"{reverse('booking:teacher_dashboard')}#booking-{self.regular_booking.id}"
+        self.assertEqual(notif.action_url, expected_url)
+        self.assertEqual(notif.metadata["booking_id"], self.regular_booking.id)
+        self.assertEqual(notif.metadata["lesson_duration"], 50)
+        self.assertEqual(notif.metadata["lesson_type"], "regular")
+        self.assertEqual(notif.metadata["participant_name"], "John Doe")
+
+    def test_mark_booking_reminders_read_marks_24h_and_1h_for_both_users(self):
+        # Reminders for regular_booking
+        notif_24h_student = notify_lesson_reminder_24h_student(self.regular_booking)
+        notif_1h_student = notify_lesson_reminder_1h_student(self.regular_booking)
+        notif_1h_teacher = notify_lesson_reminder_1h_teacher(self.regular_booking)
+
+        # Reminder for trial_booking (different booking)
+        notif_other_student = notify_lesson_reminder_24h_student(self.trial_booking)
+
+        self.assertFalse(notif_24h_student.is_read)
+        self.assertFalse(notif_1h_student.is_read)
+        self.assertFalse(notif_1h_teacher.is_read)
+        self.assertFalse(notif_other_student.is_read)
+
+        mark_booking_reminders_read(self.regular_booking)
+
+        notif_24h_student.refresh_from_db()
+        notif_1h_student.refresh_from_db()
+        notif_1h_teacher.refresh_from_db()
+        notif_other_student.refresh_from_db()
+
+        self.assertTrue(notif_24h_student.is_read)
+        self.assertTrue(notif_1h_student.is_read)
+        self.assertTrue(notif_1h_teacher.is_read)
+        self.assertFalse(notif_other_student.is_read)
+
+    def test_notify_booking_cancelled_automatically_marks_reminders_as_read(self):
+        notif_24h_student = notify_lesson_reminder_24h_student(self.regular_booking)
+        notif_1h_teacher = notify_lesson_reminder_1h_teacher(self.regular_booking)
+
+        self.assertFalse(notif_24h_student.is_read)
+        self.assertFalse(notif_1h_teacher.is_read)
+
+        cancel_notif = notify_booking_cancelled(self.regular_booking)
+        self.assertIsNotNone(cancel_notif)
+
+        notif_24h_student.refresh_from_db()
+        notif_1h_teacher.refresh_from_db()
+
+        self.assertTrue(notif_24h_student.is_read)
+        self.assertTrue(notif_1h_teacher.is_read)
+
 
 

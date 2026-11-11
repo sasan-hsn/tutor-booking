@@ -8,9 +8,10 @@ from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 import requests
+from notifications.models import Notification
 from portfolio.models import TeacherProfile
 from .models import Booking, TeacherDailyDigestRecord
-from . import emails
+from . import emails, notifications
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,93 @@ def send_booking_reminder_1h_teacher_email_task(self, booking_id: int):
 
 
 @shared_task
+def send_booking_reminder_24h_student_notification_task(booking_id: int):
+    """Send student 24-hour in-platform reminder notification for an upcoming confirmed lesson."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping 24h reminder notification.", booking_id)
+        return
+
+    if booking.status != Booking.Status.CONFIRMED:
+        logger.info(
+            "Booking #%s is not confirmed (status=%s); skipping 24h reminder notification.",
+            booking_id,
+            booking.status,
+        )
+        return
+
+    with transaction.atomic():
+        if Notification.objects.filter(
+            recipient=booking.student,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+            metadata__booking_id=booking.id,
+        ).exists():
+            logger.info("24h reminder notification already exists for booking #%s", booking_id)
+            return
+
+        notifications.notify_lesson_reminder_24h_student(booking)
+
+
+@shared_task
+def send_booking_reminder_1h_student_notification_task(booking_id: int):
+    """Send student 1-hour in-platform reminder notification for an upcoming confirmed lesson."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping 1h student reminder notification.", booking_id)
+        return
+
+    if booking.status != Booking.Status.CONFIRMED:
+        logger.info(
+            "Booking #%s is not confirmed (status=%s); skipping 1h student reminder notification.",
+            booking_id,
+            booking.status,
+        )
+        return
+
+    with transaction.atomic():
+        if Notification.objects.filter(
+            recipient=booking.student,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            metadata__booking_id=booking.id,
+        ).exists():
+            logger.info("1h reminder notification already exists for student on booking #%s", booking_id)
+            return
+
+        notifications.notify_lesson_reminder_1h_student(booking)
+
+
+@shared_task
+def send_booking_reminder_1h_teacher_notification_task(booking_id: int):
+    """Send teacher 1-hour in-platform reminder notification for an upcoming confirmed lesson."""
+    try:
+        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+    except Booking.DoesNotExist:
+        logger.warning("Booking #%s not found; skipping 1h teacher reminder notification.", booking_id)
+        return
+
+    if booking.status != Booking.Status.CONFIRMED:
+        logger.info(
+            "Booking #%s is not confirmed (status=%s); skipping 1h teacher reminder notification.",
+            booking_id,
+            booking.status,
+        )
+        return
+
+    with transaction.atomic():
+        if Notification.objects.filter(
+            recipient=booking.teacher.user,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            metadata__booking_id=booking.id,
+        ).exists():
+            logger.info("1h reminder notification already exists for teacher on booking #%s", booking_id)
+            return
+
+        notifications.notify_lesson_reminder_1h_teacher(booking)
+
+
+@shared_task
 def send_lesson_reminders(now=None):
     """
     Periodic sweeper task scheduled every 5 minutes:
@@ -377,6 +465,7 @@ def send_lesson_reminders(now=None):
         updated = Booking.objects.filter(pk=booking_id, reminder_24h_sent=False).update(reminder_24h_sent=True)
         if updated:
             send_booking_reminder_24h_student_email_task.delay(booking_id)
+            send_booking_reminder_24h_student_notification_task.delay(booking_id)
             reminders_24h_count += 1
 
     # 2. 1-hour reminder sweep (Student and Teacher)
@@ -404,6 +493,8 @@ def send_lesson_reminders(now=None):
         if updated:
             send_booking_reminder_1h_student_email_task.delay(booking_id)
             send_booking_reminder_1h_teacher_email_task.delay(booking_id)
+            send_booking_reminder_1h_student_notification_task.delay(booking_id)
+            send_booking_reminder_1h_teacher_notification_task.delay(booking_id)
             reminders_1h_count += 1
 
     logger.info(

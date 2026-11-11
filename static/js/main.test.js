@@ -175,7 +175,11 @@ global.setInterval = (fn, ms) => {
 global.clearInterval = (id) => {};
 
 // Import main.js
-const { initLessonJoinWindowWatcher, updateLessonJoinWindows } = require('./main.js');
+const {
+    initLessonJoinWindowWatcher,
+    updateLessonJoinWindows,
+    scrollToTargetLessonCard,
+} = require('./main.js');
 
 describe('Lesson Join Window Watcher', () => {
     let card, cardBody, teacherEl, badgeEl;
@@ -336,3 +340,58 @@ describe('Lesson Join Window Watcher', () => {
         });
     });
 });
+
+describe('Target Lesson Card Scrolling', () => {
+    let originalWindow;
+    let originalDocument;
+
+    beforeEach(() => {
+        originalWindow = global.window;
+        originalDocument = global.document;
+    });
+
+    afterEach(() => {
+        global.window = originalWindow;
+        global.document = originalDocument;
+    });
+
+    test('scrollToTargetLessonCard scrolls target card into view when hash matches #booking-id', () => {
+        const targetElement = new MockElement('div');
+        let scrolled = false;
+        let scrollOptions = null;
+        targetElement.scrollIntoView = (options) => {
+            scrolled = true;
+            scrollOptions = options;
+        };
+
+        const doc = new MockDocument();
+        doc.querySelector = (selector) => {
+            if (selector === '#booking-42') return targetElement;
+            return null;
+        };
+
+        global.document = doc;
+        global.window = {
+            location: { hash: '#booking-42' }
+        };
+
+        const result = scrollToTargetLessonCard();
+        assert.strictEqual(result, true);
+        assert.strictEqual(scrolled, true);
+        assert.strictEqual(scrollOptions.behavior, 'smooth');
+        assert.strictEqual(scrollOptions.inline, 'center');
+    });
+
+    test('scrollToTargetLessonCard safely returns false when no hash or non-booking hash', () => {
+        global.document = new MockDocument();
+        global.window = {
+            location: { hash: '#other-section' }
+        };
+
+        assert.strictEqual(scrollToTargetLessonCard(), false);
+
+        global.window.location.hash = '';
+        assert.strictEqual(scrollToTargetLessonCard(), false);
+    });
+});
+

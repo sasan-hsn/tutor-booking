@@ -11,10 +11,14 @@ from booking.models import Booking
 from booking.tasks import (
     expire_pending_bookings_task,
     send_booking_reminder_1h_student_email_task,
+    send_booking_reminder_1h_student_notification_task,
     send_booking_reminder_1h_teacher_email_task,
+    send_booking_reminder_1h_teacher_notification_task,
     send_booking_reminder_24h_student_email_task,
+    send_booking_reminder_24h_student_notification_task,
     send_lesson_reminders,
 )
+from notifications.models import Notification
 
 
 class LessonReminderEmailTasksTests(RoleTestCase):
@@ -215,6 +219,146 @@ class LessonReminderEmailTasksTests(RoleTestCase):
                 send_booking_reminder_1h_teacher_email_task.apply(args=[self.booking.id], throw=True)
 
 
+class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.teacher.save()
+
+        cls.teacher_user.email = 'teacher@englishwithmary.ir'
+        cls.teacher_user.first_name = 'Mary'
+        cls.teacher_user.last_name = 'Smith'
+        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.save()
+
+        cls.student_user.email = 'student@example.com'
+        cls.student_user.first_name = 'John'
+        cls.student_user.last_name = 'Doe'
+        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.save()
+
+    def setUp(self):
+        super().setUp()
+        future_start = timezone.now() + timedelta(days=2)
+        self.booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=future_start,
+            end_at=future_start + timedelta(minutes=60),
+            duration_minutes=60,
+            lesson_type=Booking.LessonType.REGULAR,
+            price=self.teacher.lesson_price,
+            status=Booking.Status.CONFIRMED,
+        )
+
+    def test_send_24h_student_notification_task_success(self):
+        send_booking_reminder_24h_student_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.student_user,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+        )
+        self.assertEqual(notifications.count(), 1)
+        notif = notifications.first()
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.level, Notification.Level.INFO)
+        self.assertEqual(notif.title, "Upcoming Lesson Reminder")
+        self.assertIn("scheduled for tomorrow", notif.message)
+        self.assertEqual(notif.metadata["booking_id"], self.booking.id)
+        self.assertEqual(notif.action_url, f"/dashboard/student/#booking-{self.booking.id}")
+
+    def test_send_24h_student_notification_task_idempotency(self):
+        send_booking_reminder_24h_student_notification_task(self.booking.id)
+        send_booking_reminder_24h_student_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.student_user,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+            metadata__booking_id=self.booking.id,
+        )
+        self.assertEqual(notifications.count(), 1)
+
+    def test_send_24h_student_notification_task_skips_non_confirmed_status(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save()
+
+        send_booking_reminder_24h_student_notification_task(self.booking.id)
+        self.assertEqual(Notification.objects.filter(recipient=self.student_user).count(), 0)
+
+    def test_send_24h_student_notification_task_skips_nonexistent_booking(self):
+        send_booking_reminder_24h_student_notification_task(999999)
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_send_1h_student_notification_task_success(self):
+        send_booking_reminder_1h_student_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.student_user,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+        )
+        self.assertEqual(notifications.count(), 1)
+        notif = notifications.first()
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.level, Notification.Level.WARNING)
+        self.assertEqual(notif.title, "Lesson Starting Soon")
+        self.assertIn("starts in 1 hour", notif.message)
+        self.assertEqual(notif.metadata["booking_id"], self.booking.id)
+        self.assertEqual(notif.action_url, f"/dashboard/student/#booking-{self.booking.id}")
+
+    def test_send_1h_student_notification_task_idempotency(self):
+        send_booking_reminder_1h_student_notification_task(self.booking.id)
+        send_booking_reminder_1h_student_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.student_user,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            metadata__booking_id=self.booking.id,
+        )
+        self.assertEqual(notifications.count(), 1)
+
+    def test_send_1h_student_notification_task_skips_non_confirmed_status(self):
+        self.booking.status = Booking.Status.EXPIRED
+        self.booking.save()
+
+        send_booking_reminder_1h_student_notification_task(self.booking.id)
+        self.assertEqual(Notification.objects.filter(recipient=self.student_user).count(), 0)
+
+    def test_send_1h_teacher_notification_task_success(self):
+        send_booking_reminder_1h_teacher_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.teacher_user,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+        )
+        self.assertEqual(notifications.count(), 1)
+        notif = notifications.first()
+        self.assertIsNone(notif.actor)
+        self.assertEqual(notif.level, Notification.Level.WARNING)
+        self.assertEqual(notif.title, "Lesson Starting Soon")
+        self.assertIn("starts in 1 hour", notif.message)
+        self.assertEqual(notif.metadata["booking_id"], self.booking.id)
+        self.assertEqual(notif.action_url, f"/dashboard/teacher/#booking-{self.booking.id}")
+
+    def test_send_1h_teacher_notification_task_idempotency(self):
+        send_booking_reminder_1h_teacher_notification_task(self.booking.id)
+        send_booking_reminder_1h_teacher_notification_task(self.booking.id)
+
+        notifications = Notification.objects.filter(
+            recipient=self.teacher_user,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            metadata__booking_id=self.booking.id,
+        )
+        self.assertEqual(notifications.count(), 1)
+
+    def test_send_1h_teacher_notification_task_skips_non_confirmed_status(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save()
+
+        send_booking_reminder_1h_teacher_notification_task(self.booking.id)
+        self.assertEqual(Notification.objects.filter(recipient=self.teacher_user).count(), 0)
+
+
 class LessonReminderSweeperTests(RoleTestCase):
     @classmethod
     def setUpTestData(cls):
@@ -270,6 +414,14 @@ class LessonReminderSweeperTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['student@example.com'])
         self.assertIn('Tomorrow', mail.outbox[0].subject)
+
+        # Must send 1 in-platform notification to student ONLY
+        student_notifs = Notification.objects.filter(
+            recipient=self.student_user,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+        )
+        self.assertEqual(student_notifs.count(), 1)
+        self.assertEqual(Notification.objects.filter(recipient=self.teacher_user).count(), 0)
 
     def test_24h_reminder_sweep_bounds_exclude_out_of_window_bookings(self):
         """Bookings too far in the future or too close are not matched by the 24h sweep."""
@@ -336,6 +488,50 @@ class LessonReminderSweeperTests(RoleTestCase):
         self.assertIn('1 Hour', teacher_mail.subject)
         self.assertIn('https://meet.google.com/test-room', student_mail.body)
         self.assertIn('https://meet.google.com/test-room', teacher_mail.body)
+
+        # Must send 1h notifications to both student and teacher
+        self.assertEqual(
+            Notification.objects.filter(event_type=Notification.EventType.LESSON_REMINDER_1H).count(),
+            2,
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.student_user,
+                event_type=Notification.EventType.LESSON_REMINDER_1H,
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.teacher_user,
+                event_type=Notification.EventType.LESSON_REMINDER_1H,
+            ).exists()
+        )
+
+    def test_1h_reminder_sweep_matches_same_day_short_notice_booking(self):
+        """Same-day booking scheduled 40m away receives 1h in-platform and email reminders."""
+        now = timezone.now()
+        booking_same_day = self._create_booking(
+            start_at=now + timedelta(minutes=40),
+            created_at=now - timedelta(minutes=5),
+        )
+
+        result = send_lesson_reminders(now=now)
+
+        self.assertEqual(result['reminders_1h'], 1)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.student_user,
+                event_type=Notification.EventType.LESSON_REMINDER_1H,
+                metadata__booking_id=booking_same_day.id,
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.teacher_user,
+                event_type=Notification.EventType.LESSON_REMINDER_1H,
+                metadata__booking_id=booking_same_day.id,
+            ).exists()
+        )
 
     def test_1h_reminder_sweep_excludes_bookings_outside_window(self):
         """Bookings starting in 1h 20m or past bookings are excluded from 1h sweep."""
@@ -439,18 +635,21 @@ class LessonReminderSweeperTests(RoleTestCase):
         self.assertEqual(first_run['reminders_24h'], 1)
         self.assertEqual(first_run['reminders_1h'], 1)
         self.assertEqual(len(mail.outbox), 3)  # 1 student 24h + 1 student 1h + 1 teacher 1h
+        self.assertEqual(Notification.objects.count(), 3)
 
         # Second run immediately afterwards
         second_run = send_lesson_reminders(now=now + timedelta(minutes=1))
         self.assertEqual(second_run['reminders_24h'], 0)
         self.assertEqual(second_run['reminders_1h'], 0)
         self.assertEqual(len(mail.outbox), 3)  # No new emails sent
+        self.assertEqual(Notification.objects.count(), 3)  # No new notifications created
 
         # Third run at 5 minutes interval
         third_run = send_lesson_reminders(now=now + timedelta(minutes=5))
         self.assertEqual(third_run['reminders_24h'], 0)
         self.assertEqual(third_run['reminders_1h'], 0)
         self.assertEqual(len(mail.outbox), 3)
+        self.assertEqual(Notification.objects.count(), 3)
 
     def test_expire_pending_bookings_periodic_task(self):
         """expire_pending_bookings_task transitions stale pending bookings to EXPIRED."""

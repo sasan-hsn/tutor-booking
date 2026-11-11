@@ -165,3 +165,26 @@ class NotificationModelTests(TestCase):
                 "unread_count": 5,
             },
         )
+
+    def test_lesson_reminder_event_types(self):
+        self.assertEqual(Notification.EventType.LESSON_REMINDER_24H, 'lesson_reminder_24h')
+        self.assertEqual(Notification.EventType.LESSON_REMINDER_1H, 'lesson_reminder_1h')
+
+        notif_24h = Notification.objects.create(
+            recipient=self.recipient,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+            level=Notification.Level.INFO,
+            title='Upcoming Lesson Reminder',
+            message='Your 60-minute Regular Lesson with Mary is scheduled for tomorrow.',
+            metadata={'booking_id': 1},
+        )
+        notif_1h = Notification.objects.create(
+            recipient=self.recipient,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            level=Notification.Level.WARNING,
+            title='Lesson Starting Soon',
+            message='Your 60-minute Regular Lesson with Mary starts in 1 hour.',
+            metadata={'booking_id': 1},
+        )
+        self.assertEqual(notif_24h.event_type, 'lesson_reminder_24h')
+        self.assertEqual(notif_1h.event_type, 'lesson_reminder_1h')

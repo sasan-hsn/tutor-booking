@@ -53,8 +53,12 @@ A standard-priced lesson booked at either a 25-minute or 50-minute duration at t
 _Avoid_: Standard lesson, paid lesson
 
 **Lesson Reminder**:
-An automated notification sent to a student and teacher prior to a confirmed booking's scheduled start time.
+An automated communication sent to a student and teacher prior to a confirmed booking's scheduled start time, delivered across email and in-platform notification channels.
 _Avoid_: Lesson alert, booking notification, calendar ping
+
+**In-Platform Lesson Reminder**:
+A time-triggered in-platform notification delivered via WebSocket and persistent dropdown bell prior to a confirmed booking's start time (24 hours prior for students, 1 hour prior for both students and teachers) with direct navigation to the targeted dashboard lesson card.
+_Avoid_: In-app class alert, popup reminder, bell ping
 
 **In-Platform Notification**:
 A persistent, real-time alert delivered to a user's notification bell and dropdown, triggered by booking lifecycle transitions (e.g. `booking_requested`, `cancellation_requested`, `booking_confirmed`).

@@ -109,6 +109,7 @@ def notify_cancellation_requested(booking):
 
 def notify_booking_cancelled(booking, cancelled_by=None):
     """Notify the student when their booking is cancelled by the teacher."""
+    mark_booking_reminders_read(booking)
     try:
         action_url = reverse("booking:student_dashboard")
         metadata = _build_booking_metadata(booking, booking.teacher_display_name)
@@ -193,3 +194,93 @@ def mark_booking_requests_read(booking):
             Notification.EventType.CANCELLATION_REQUESTED,
         ],
     )
+
+
+def notify_lesson_reminder_24h_student(booking):
+    """Notify the student 24 hours before their scheduled lesson."""
+    try:
+        action_url = f"{reverse('booking:student_dashboard')}#booking-{booking.id}"
+        metadata = _build_booking_metadata(booking, booking.teacher_display_name)
+        lesson_type = booking.get_lesson_type_display()
+        return create_and_send_notification(
+            recipient=booking.student,
+            actor=None,
+            event_type=Notification.EventType.LESSON_REMINDER_24H,
+            level=Notification.Level.INFO,
+            title="Upcoming Lesson Reminder",
+            message=f"Your {booking.duration_minutes}-minute {lesson_type} with {booking.teacher_display_name} is scheduled for tomorrow.",
+            action_url=action_url,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception("Failed to emit lesson_reminder_24h notification for booking #%s", booking.id)
+        return None
+
+
+def notify_lesson_reminder_1h_student(booking):
+    """Notify the student 1 hour before their scheduled lesson."""
+    try:
+        action_url = f"{reverse('booking:student_dashboard')}#booking-{booking.id}"
+        metadata = _build_booking_metadata(booking, booking.teacher_display_name)
+        lesson_type = booking.get_lesson_type_display()
+        return create_and_send_notification(
+            recipient=booking.student,
+            actor=None,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            level=Notification.Level.WARNING,
+            title="Lesson Starting Soon",
+            message=f"Your {booking.duration_minutes}-minute {lesson_type} with {booking.teacher_display_name} starts in 1 hour.",
+            action_url=action_url,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception("Failed to emit lesson_reminder_1h student notification for booking #%s", booking.id)
+        return None
+
+
+def notify_lesson_reminder_1h_teacher(booking):
+    """Notify the teacher 1 hour before their scheduled lesson."""
+    try:
+        action_url = f"{reverse('booking:teacher_dashboard')}#booking-{booking.id}"
+        metadata = _build_booking_metadata(booking, booking.student_display_name)
+        lesson_type = booking.get_lesson_type_display()
+        return create_and_send_notification(
+            recipient=booking.teacher.user,
+            actor=None,
+            event_type=Notification.EventType.LESSON_REMINDER_1H,
+            level=Notification.Level.WARNING,
+            title="Lesson Starting Soon",
+            message=f"Your {booking.duration_minutes}-minute {lesson_type} with {booking.student_display_name} starts in 1 hour.",
+            action_url=action_url,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception("Failed to emit lesson_reminder_1h teacher notification for booking #%s", booking.id)
+        return None
+
+
+def mark_booking_reminders_read(booking):
+    """
+    Mark unread reminder notifications (24h, 1h) for both student and teacher
+    associated with this booking as read.
+    """
+    event_types = [
+        Notification.EventType.LESSON_REMINDER_24H,
+        Notification.EventType.LESSON_REMINDER_1H,
+    ]
+    try:
+        if booking.student:
+            mark_booking_notifications_as_read(
+                recipient=booking.student,
+                booking_id=booking.id,
+                event_types=event_types,
+            )
+        if hasattr(booking, 'teacher') and booking.teacher and booking.teacher.user:
+            mark_booking_notifications_as_read(
+                recipient=booking.teacher.user,
+                booking_id=booking.id,
+                event_types=event_types,
+            )
+    except Exception:
+        logger.exception("Failed to mark reminder notifications as read for booking #%s", booking.id)
+
