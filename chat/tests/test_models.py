@@ -1,4 +1,5 @@
 import uuid
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
@@ -81,7 +82,9 @@ class ConversationModelTests(TestCase):
         self.assertEqual(conv.get_counterpart(self.student), self.teacher)
         self.assertEqual(conv.get_counterpart(self.teacher), self.student)
 
-        outsider = User.objects.create_user(username="outsider", email="outsider@example.com")
+        outsider = User.objects.create_user(
+            username="outsider", email="outsider@example.com"
+        )
         with self.assertRaises(ValueError):
             conv.get_counterpart(outsider)
 
@@ -135,7 +138,9 @@ class MessageModelTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             msg.full_clean()
-        self.assertIn("Message text cannot be empty or whitespace only", str(ctx.exception))
+        self.assertIn(
+            "Message text cannot be empty or whitespace only", str(ctx.exception)
+        )
 
     def test_message_max_length_2000(self):
         msg = Message(
@@ -166,4 +171,6 @@ class MessageModelTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             msg.full_clean()
-        self.assertIn("Sender must be a participant of the conversation", str(ctx.exception))
+        self.assertIn(
+            "Sender must be a participant of the conversation", str(ctx.exception)
+        )

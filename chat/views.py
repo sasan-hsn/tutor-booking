@@ -1,6 +1,7 @@
 import json
 import logging
 from zoneinfo import ZoneInfo
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -10,7 +11,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from accounts.rate_limiting import get_client_ip
 from booking.models import Booking
+
 from .models import Conversation, Message
 from .services import (
     advance_watermark,
@@ -18,7 +21,11 @@ from .services import (
     get_or_create_conversation,
     send_message,
 )
-from .utils import check_chat_rate_limit, get_client_ip, linkify_message_text, record_chat_message
+from .utils import (
+    check_chat_rate_limit,
+    linkify_message_text,
+    record_chat_message,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -67,7 +74,9 @@ def inbox_view(request):
         unread_count = conv.get_unread_count(request.user)
         local_last_message_at = None
         if conv.last_message_at:
-            local_last_message_at = timezone.localtime(conv.last_message_at, user_tz).replace(tzinfo=None)
+            local_last_message_at = timezone.localtime(
+                conv.last_message_at, user_tz
+            ).replace(tzinfo=None)
 
         inbox_items.append(
             {
@@ -93,7 +102,9 @@ def start_conversation(request, teacher_username):
     the Conversation and redirects to /messages/<conversation_id>/.
     """
     if request.user.role != "student":
-        return HttpResponseForbidden("Only students can initiate a conversation with a teacher.")
+        return HttpResponseForbidden(
+            "Only students can initiate a conversation with a teacher."
+        )
 
     if not request.user.is_email_verified:
         return render(
@@ -140,9 +151,7 @@ def conversation_detail(request, conversation_id):
 
     counterpart = conversation.get_counterpart(request.user)
 
-    messages = list(
-        conversation.messages.select_related("sender").order_by("-id")[:30]
-    )
+    messages = list(conversation.messages.select_related("sender").order_by("-id")[:30])
     messages.reverse()
 
     if messages:
@@ -225,15 +234,26 @@ def send_message_view(request, conversation_id):
             body = json.loads(request.body.decode("utf-8"))
             raw_text = body.get("text")
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({"error": "invalid_json", "message": "Invalid JSON body."}, status=400)
+            return JsonResponse(
+                {"error": "invalid_json", "message": "Invalid JSON body."}, status=400
+            )
     else:
         raw_text = request.POST.get("text")
 
     if not raw_text or not raw_text.strip():
-        return JsonResponse({"error": "empty_text", "message": "Message text cannot be empty."}, status=400)
+        return JsonResponse(
+            {"error": "empty_text", "message": "Message text cannot be empty."},
+            status=400,
+        )
 
     if len(raw_text.strip()) > 2000:
-        return JsonResponse({"error": "text_too_long", "message": "Message text cannot exceed 2000 characters."}, status=400)
+        return JsonResponse(
+            {
+                "error": "text_too_long",
+                "message": "Message text cannot exceed 2000 characters.",
+            },
+            status=400,
+        )
 
     try:
         message = send_message(
@@ -243,7 +263,9 @@ def send_message_view(request, conversation_id):
         )
         record_chat_message(user_id=request.user.id, ip=client_ip)
     except ValidationError as exc:
-        return JsonResponse({"error": "validation_error", "message": str(exc)}, status=400)
+        return JsonResponse(
+            {"error": "validation_error", "message": str(exc)}, status=400
+        )
 
     return JsonResponse(
         {
@@ -271,14 +293,26 @@ def conversation_history(request, conversation_id):
 
     before_raw = request.GET.get("before")
     if not before_raw:
-        return JsonResponse({"error": "missing_before", "message": "Query parameter 'before' is required."}, status=400)
+        return JsonResponse(
+            {
+                "error": "missing_before",
+                "message": "Query parameter 'before' is required.",
+            },
+            status=400,
+        )
 
     try:
         before_id = int(before_raw)
         if before_id <= 0:
             raise ValueError
     except (TypeError, ValueError):
-        return JsonResponse({"error": "invalid_before", "message": "Query parameter 'before' must be a positive integer."}, status=400)
+        return JsonResponse(
+            {
+                "error": "invalid_before",
+                "message": "Query parameter 'before' must be a positive integer.",
+            },
+            status=400,
+        )
 
     PAGE_SIZE = 30
     # Fetch PAGE_SIZE + 1 messages with id < before_id in descending order to determine has_more
@@ -300,4 +334,3 @@ def conversation_history(request, conversation_id):
             "has_more": has_more,
         }
     )
-

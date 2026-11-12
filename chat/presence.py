@@ -1,4 +1,5 @@
 import logging
+
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -8,7 +9,9 @@ PRESENCE_TIMEOUT = 86400  # 24-hour safety TTL for ephemeral connection tracking
 
 
 def get_presence_key(conversation_id, user_id) -> str:
-    return PRESENCE_KEY_TEMPLATE.format(conversation_id=conversation_id, user_id=user_id)
+    return PRESENCE_KEY_TEMPLATE.format(
+        conversation_id=conversation_id, user_id=user_id
+    )
 
 
 def add_room_presence(conversation_id, user_id, channel_name: str) -> None:

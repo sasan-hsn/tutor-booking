@@ -1,4 +1,5 @@
 import argparse
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import get_hashers, identify_hasher, is_password_usable
 from django.core.files.storage import default_storage
@@ -15,55 +16,57 @@ from portfolio.models import Certificate, TeacherProfile
 
 class Command(BaseCommand):
     help = (
-        'Verifies database integrity after a restore or disaster recovery drill. '
-        'Checks schema migrations, entity counts, referential integrity, '
-        'password hasher sanity, and on-disk media existence.'
+        "Verifies database integrity after a restore or disaster recovery drill. "
+        "Checks schema migrations, entity counts, referential integrity, "
+        "password hasher sanity, and on-disk media existence."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--database',
-            default='default',
+            "--database",
+            default="default",
             help='Target database alias to verify (default: "default").',
         )
         parser.add_argument(
-            '--check-media',
+            "--check-media",
             action=argparse.BooleanOptionalAction,
             default=True,
-            help='Check existence of referenced media files in storage (default: True).',
+            help="Check existence of referenced media files in storage (default: True).",
         )
         parser.add_argument(
-            '--sample-auth',
+            "--sample-auth",
             action=argparse.BooleanOptionalAction,
             default=True,
-            help='Verify password hasher validity using Django hasher (default: True).',
+            help="Verify password hasher validity using Django hasher (default: True).",
         )
         parser.add_argument(
-            '--fail-on-missing-media',
-            action='store_true',
+            "--fail-on-missing-media",
+            action="store_true",
             default=False,
-            help='Treat missing media files as a fatal error instead of a warning.',
+            help="Treat missing media files as a fatal error instead of a warning.",
         )
 
     def handle(self, *args, **options):
-        db = options['database']
-        check_media = options.get('check_media', True)
-        sample_auth = options.get('sample_auth', True)
-        fail_on_missing_media = options.get('fail_on_missing_media', False)
+        db = options["database"]
+        check_media = options.get("check_media", True)
+        sample_auth = options.get("sample_auth", True)
+        fail_on_missing_media = options.get("fail_on_missing_media", False)
 
         errors = []
         warnings = []
 
-        self.stdout.write(self.style.MIGRATE_HEADING('=' * 50))
-        self.stdout.write(self.style.MIGRATE_HEADING('Database Integrity Verification'))
-        self.stdout.write(f'Database: {db}')
-        self.stdout.write(self.style.MIGRATE_HEADING('=' * 50))
+        self.stdout.write(self.style.MIGRATE_HEADING("=" * 50))
+        self.stdout.write(self.style.MIGRATE_HEADING("Database Integrity Verification"))
+        self.stdout.write(f"Database: {db}")
+        self.stdout.write(self.style.MIGRATE_HEADING("=" * 50))
 
         try:
             conn = connections[db]
             conn.ensure_connection()
         except ConnectionDoesNotExist:
-            raise CommandError(f"Database connection '{db}' does not exist in settings.DATABASES.")
+            raise CommandError(
+                f"Database connection '{db}' does not exist in settings.DATABASES."
+            )
         except Exception as ex:
             raise CommandError(f"Unable to connect to database '{db}': {ex}")
 
@@ -80,27 +83,31 @@ class Command(BaseCommand):
         self._check_password_hashers(db, sample_auth, errors)
 
         # 5. Media Storage Cross-Check
-        self._check_media_storage(db, check_media, fail_on_missing_media, errors, warnings)
+        self._check_media_storage(
+            db, check_media, fail_on_missing_media, errors, warnings
+        )
 
         # Final Summary & Exit
         self._render_summary(errors, warnings)
 
     def _check_migrations(self, conn, errors):
-        self.stdout.write('\n[1/5] Schema Migrations')
+        self.stdout.write("\n[1/5] Schema Migrations")
         executor = MigrationExecutor(conn)
         targets = executor.loader.graph.leaf_nodes()
         unapplied_plan = executor.migration_plan(targets)
 
         if unapplied_plan:
             for migration, _ in unapplied_plan:
-                err = f'Unapplied migration: {migration.app_label}.{migration.name}'
+                err = f"Unapplied migration: {migration.app_label}.{migration.name}"
                 errors.append(err)
-                self.stdout.write(self.style.ERROR(f'  [FAIL] {err}'))
+                self.stdout.write(self.style.ERROR(f"  [FAIL] {err}"))
         else:
-            self.stdout.write(self.style.SUCCESS('  [OK] All migrations applied (0 unapplied).'))
+            self.stdout.write(
+                self.style.SUCCESS("  [OK] All migrations applied (0 unapplied).")
+            )
 
     def _check_entity_counts(self, db):
-        self.stdout.write('\n[2/5] Core Entity Counts')
+        self.stdout.write("\n[2/5] Core Entity Counts")
         User = get_user_model()
         users_qs = User.objects.using(db)
         total_users = users_qs.count()
@@ -118,7 +125,7 @@ class Command(BaseCommand):
         status_counts = []
         for status_val, status_label in Booking.Status.choices:
             count = bookings_qs.filter(status=status_val).count()
-            status_counts.append(f'{status_label}: {count}')
+            status_counts.append(f"{status_label}: {count}")
 
         reviews_qs = Review.objects.using(db)
         total_reviews = reviews_qs.count()
@@ -133,29 +140,27 @@ class Command(BaseCommand):
         msg_count = Message.objects.using(db).count()
 
         self.stdout.write(
-            f'  Users: {total_users} (Teachers: {teachers_count}, Students: {students_count}, '
-            f'Active: {active_users}, Email Verified: {verified_users}, Unverified: {unverified_users})'
+            f"  Users: {total_users} (Teachers: {teachers_count}, Students: {students_count}, "
+            f"Active: {active_users}, Email Verified: {verified_users}, Unverified: {unverified_users})"
         )
         self.stdout.write(
-            f'  Profiles: {teacher_profiles_count} TeacherProfile(s), '
-            f'{student_profiles_count} StudentProfile(s)'
+            f"  Profiles: {teacher_profiles_count} TeacherProfile(s), "
+            f"{student_profiles_count} StudentProfile(s)"
+        )
+        self.stdout.write(f'  Bookings: {total_bookings} ({", ".join(status_counts)})')
+        self.stdout.write(
+            f"  Reviews: {total_reviews} (Approved: {approved_reviews}, Pending: {pending_reviews})"
         )
         self.stdout.write(
-            f'  Bookings: {total_bookings} ({", ".join(status_counts)})'
+            f"  Availabilities: {reg_avail_count} RegularAvailability rule(s), "
+            f"{override_count} WeeklyOverride(s), {cert_count} Certificate(s)"
         )
         self.stdout.write(
-            f'  Reviews: {total_reviews} (Approved: {approved_reviews}, Pending: {pending_reviews})'
-        )
-        self.stdout.write(
-            f'  Availabilities: {reg_avail_count} RegularAvailability rule(s), '
-            f'{override_count} WeeklyOverride(s), {cert_count} Certificate(s)'
-        )
-        self.stdout.write(
-            f'  Messaging: {conv_count} Conversation(s), {msg_count} Message(s)'
+            f"  Messaging: {conv_count} Conversation(s), {msg_count} Message(s)"
         )
 
     def _check_referential_integrity(self, db, errors):
-        self.stdout.write('\n[3/5] Referential Integrity')
+        self.stdout.write("\n[3/5] Referential Integrity")
         User = get_user_model()
         users_qs = User.objects.using(db)
         teachers_qs = TeacherProfile.objects.using(db)
@@ -167,116 +172,156 @@ class Command(BaseCommand):
         # Check profiles referencing non-existent users
         orphaned_teachers = teachers_qs.exclude(user__in=users_qs).count()
         if orphaned_teachers:
-            relational_errors.append(f'{orphaned_teachers} TeacherProfile(s) reference non-existent User IDs')
+            relational_errors.append(
+                f"{orphaned_teachers} TeacherProfile(s) reference non-existent User IDs"
+            )
 
-        orphaned_students = StudentProfile.objects.using(db).exclude(user__in=users_qs).count()
+        orphaned_students = (
+            StudentProfile.objects.using(db).exclude(user__in=users_qs).count()
+        )
         if orphaned_students:
-            relational_errors.append(f'{orphaned_students} StudentProfile(s) reference non-existent User IDs')
+            relational_errors.append(
+                f"{orphaned_students} StudentProfile(s) reference non-existent User IDs"
+            )
 
         # Check users missing required profiles
-        missing_tp = users_qs.filter(role=User.Role.TEACHER, teacher_profile__isnull=True).count()
+        missing_tp = users_qs.filter(
+            role=User.Role.TEACHER, teacher_profile__isnull=True
+        ).count()
         if missing_tp:
-            relational_errors.append(f'{missing_tp} Teacher user(s) missing TeacherProfile')
+            relational_errors.append(
+                f"{missing_tp} Teacher user(s) missing TeacherProfile"
+            )
 
-        missing_sp = users_qs.filter(role=User.Role.STUDENT, student_profile__isnull=True).count()
+        missing_sp = users_qs.filter(
+            role=User.Role.STUDENT, student_profile__isnull=True
+        ).count()
         if missing_sp:
-            relational_errors.append(f'{missing_sp} Student user(s) missing StudentProfile')
+            relational_errors.append(
+                f"{missing_sp} Student user(s) missing StudentProfile"
+            )
 
         # Check bookings referencing non-existent students or teachers
         orphaned_booking_students = bookings_qs.exclude(student__in=users_qs).count()
         if orphaned_booking_students:
             relational_errors.append(
-                f'{orphaned_booking_students} Booking(s) reference non-existent Student User IDs'
+                f"{orphaned_booking_students} Booking(s) reference non-existent Student User IDs"
             )
 
         orphaned_booking_teachers = bookings_qs.exclude(teacher__in=teachers_qs).count()
         if orphaned_booking_teachers:
             relational_errors.append(
-                f'{orphaned_booking_teachers} Booking(s) reference non-existent TeacherProfile IDs'
+                f"{orphaned_booking_teachers} Booking(s) reference non-existent TeacherProfile IDs"
             )
 
         # Check reviews referencing non-existent students, bookings, or teachers
         orphaned_review_students = reviews_qs.exclude(student__in=users_qs).count()
         if orphaned_review_students:
             relational_errors.append(
-                f'{orphaned_review_students} Review(s) reference non-existent Student User IDs'
+                f"{orphaned_review_students} Review(s) reference non-existent Student User IDs"
             )
 
         orphaned_review_bookings = reviews_qs.exclude(booking__in=bookings_qs).count()
         if orphaned_review_bookings:
             relational_errors.append(
-                f'{orphaned_review_bookings} Review(s) reference non-existent Booking IDs'
+                f"{orphaned_review_bookings} Review(s) reference non-existent Booking IDs"
             )
 
-        orphaned_review_teachers = reviews_qs.exclude(booking__teacher__in=teachers_qs).count()
+        orphaned_review_teachers = reviews_qs.exclude(
+            booking__teacher__in=teachers_qs
+        ).count()
         if orphaned_review_teachers:
             relational_errors.append(
-                f'{orphaned_review_teachers} Review(s) reference non-existent TeacherProfile IDs via Booking'
+                f"{orphaned_review_teachers} Review(s) reference non-existent TeacherProfile IDs via Booking"
             )
 
         # Check reviews where review.student != booking.student
-        mismatched_reviews = reviews_qs.exclude(student=models.F('booking__student')).count()
+        mismatched_reviews = reviews_qs.exclude(
+            student=models.F("booking__student")
+        ).count()
         if mismatched_reviews:
             relational_errors.append(
-                f'{mismatched_reviews} Review(s) where student does not match booking student'
+                f"{mismatched_reviews} Review(s) where student does not match booking student"
             )
 
         # Check availability / override records referencing non-existent teachers
-        orphaned_reg_avail = RegularAvailability.objects.using(db).exclude(teacher__in=teachers_qs).count()
+        orphaned_reg_avail = (
+            RegularAvailability.objects.using(db)
+            .exclude(teacher__in=teachers_qs)
+            .count()
+        )
         if orphaned_reg_avail:
             relational_errors.append(
-                f'{orphaned_reg_avail} RegularAvailability rule(s) reference non-existent TeacherProfile IDs'
+                f"{orphaned_reg_avail} RegularAvailability rule(s) reference non-existent TeacherProfile IDs"
             )
 
-        orphaned_overrides = WeeklyOverride.objects.using(db).exclude(teacher__in=teachers_qs).count()
+        orphaned_overrides = (
+            WeeklyOverride.objects.using(db).exclude(teacher__in=teachers_qs).count()
+        )
         if orphaned_overrides:
             relational_errors.append(
-                f'{orphaned_overrides} WeeklyOverride(s) reference non-existent TeacherProfile IDs'
+                f"{orphaned_overrides} WeeklyOverride(s) reference non-existent TeacherProfile IDs"
             )
 
-        orphaned_certs = Certificate.objects.using(db).exclude(teacher__in=teachers_qs).count()
+        orphaned_certs = (
+            Certificate.objects.using(db).exclude(teacher__in=teachers_qs).count()
+        )
         if orphaned_certs:
             relational_errors.append(
-                f'{orphaned_certs} Certificate(s) reference non-existent TeacherProfile IDs'
+                f"{orphaned_certs} Certificate(s) reference non-existent TeacherProfile IDs"
             )
 
         # Check conversations referencing non-existent students or teachers
-        orphaned_conv_students = Conversation.objects.using(db).exclude(student__in=users_qs).count()
+        orphaned_conv_students = (
+            Conversation.objects.using(db).exclude(student__in=users_qs).count()
+        )
         if orphaned_conv_students:
             relational_errors.append(
-                f'{orphaned_conv_students} Conversation(s) reference non-existent Student User IDs'
+                f"{orphaned_conv_students} Conversation(s) reference non-existent Student User IDs"
             )
 
-        orphaned_conv_teachers = Conversation.objects.using(db).exclude(teacher__in=users_qs).count()
+        orphaned_conv_teachers = (
+            Conversation.objects.using(db).exclude(teacher__in=users_qs).count()
+        )
         if orphaned_conv_teachers:
             relational_errors.append(
-                f'{orphaned_conv_teachers} Conversation(s) reference non-existent Teacher User IDs'
+                f"{orphaned_conv_teachers} Conversation(s) reference non-existent Teacher User IDs"
             )
 
         # Check messages referencing non-existent conversations or senders
-        orphaned_msg_convs = Message.objects.using(db).exclude(conversation__in=Conversation.objects.using(db)).count()
+        orphaned_msg_convs = (
+            Message.objects.using(db)
+            .exclude(conversation__in=Conversation.objects.using(db))
+            .count()
+        )
         if orphaned_msg_convs:
             relational_errors.append(
-                f'{orphaned_msg_convs} Message(s) reference non-existent Conversation IDs'
+                f"{orphaned_msg_convs} Message(s) reference non-existent Conversation IDs"
             )
 
-        orphaned_msg_senders = Message.objects.using(db).exclude(sender__in=users_qs).count()
+        orphaned_msg_senders = (
+            Message.objects.using(db).exclude(sender__in=users_qs).count()
+        )
         if orphaned_msg_senders:
             relational_errors.append(
-                f'{orphaned_msg_senders} Message(s) reference non-existent Sender User IDs'
+                f"{orphaned_msg_senders} Message(s) reference non-existent Sender User IDs"
             )
 
         if relational_errors:
             for r_err in relational_errors:
-                errors.append(f'Referential integrity error: {r_err}')
-                self.stdout.write(self.style.ERROR(f'  [FAIL] {r_err}'))
+                errors.append(f"Referential integrity error: {r_err}")
+                self.stdout.write(self.style.ERROR(f"  [FAIL] {r_err}"))
         else:
-            self.stdout.write(self.style.SUCCESS('  [OK] All foreign keys and profiles intact.'))
+            self.stdout.write(
+                self.style.SUCCESS("  [OK] All foreign keys and profiles intact.")
+            )
 
     def _check_password_hashers(self, db, sample_auth, errors):
-        self.stdout.write('\n[4/5] Password Hasher Sanity')
+        self.stdout.write("\n[4/5] Password Hasher Sanity")
         if not sample_auth:
-            self.stdout.write(self.style.NOTICE('  [SKIPPED] Password hasher check skipped via flag.'))
+            self.stdout.write(
+                self.style.NOTICE("  [SKIPPED] Password hasher check skipped via flag.")
+            )
             return
 
         User = get_user_model()
@@ -288,7 +333,9 @@ class Command(BaseCommand):
             inspected_count += 1
             pwd = user.password
             if not pwd:
-                hasher_errors.append(f"User '{user.username}' (id={user.id}) has an empty password field")
+                hasher_errors.append(
+                    f"User '{user.username}' (id={user.id}) has an empty password field"
+                )
                 continue
 
             if is_password_usable(pwd):
@@ -305,24 +352,30 @@ class Command(BaseCommand):
                         f"Invalid or unrecognized password hash: {ex}"
                     )
             else:
-                if not pwd.startswith('!'):
+                if not pwd.startswith("!"):
                     hasher_errors.append(
                         f"User '{user.username}' (id={user.id}) has malformed unusable password"
                     )
 
         if hasher_errors:
             for h_err in hasher_errors:
-                errors.append(f'Password hasher error: {h_err}')
-                self.stdout.write(self.style.ERROR(f'  [FAIL] {h_err}'))
+                errors.append(f"Password hasher error: {h_err}")
+                self.stdout.write(self.style.ERROR(f"  [FAIL] {h_err}"))
         else:
             self.stdout.write(
-                self.style.SUCCESS(f'  [OK] {inspected_count} password hashes inspected; all valid.')
+                self.style.SUCCESS(
+                    f"  [OK] {inspected_count} password hashes inspected; all valid."
+                )
             )
 
-    def _check_media_storage(self, db, check_media, fail_on_missing_media, errors, warnings):
-        self.stdout.write('\n[5/5] Media Storage Cross-Check')
+    def _check_media_storage(
+        self, db, check_media, fail_on_missing_media, errors, warnings
+    ):
+        self.stdout.write("\n[5/5] Media Storage Cross-Check")
         if not check_media:
-            self.stdout.write(self.style.NOTICE('  [SKIPPED] Media check skipped via flag.'))
+            self.stdout.write(
+                self.style.NOTICE("  [SKIPPED] Media check skipped via flag.")
+            )
             return
 
         missing_media = []
@@ -341,11 +394,11 @@ class Command(BaseCommand):
             t_user_id = teacher.user_id
             inspect_file(
                 teacher.profile_picture,
-                f"TeacherProfile id={teacher.id} (user_id={t_user_id}) profile_picture"
+                f"TeacherProfile id={teacher.id} (user_id={t_user_id}) profile_picture",
             )
             inspect_file(
                 teacher.hero_image,
-                f"TeacherProfile id={teacher.id} (user_id={t_user_id}) hero_image"
+                f"TeacherProfile id={teacher.id} (user_id={t_user_id}) hero_image",
             )
 
         # StudentProfile images
@@ -353,43 +406,47 @@ class Command(BaseCommand):
             s_user_id = student.user_id
             inspect_file(
                 student.profile_picture,
-                f"StudentProfile id={student.id} (user_id={s_user_id}) profile_picture"
+                f"StudentProfile id={student.id} (user_id={s_user_id}) profile_picture",
             )
 
         if missing_media:
             for m_err in missing_media:
-                msg = f'[MISSING MEDIA] {m_err}'
+                msg = f"[MISSING MEDIA] {m_err}"
                 if fail_on_missing_media:
                     errors.append(msg)
-                    self.stdout.write(self.style.ERROR(f'  [FAIL] {msg}'))
+                    self.stdout.write(self.style.ERROR(f"  [FAIL] {msg}"))
                 else:
                     warnings.append(msg)
-                    self.stdout.write(self.style.WARNING(f'  [WARN] {msg}'))
+                    self.stdout.write(self.style.WARNING(f"  [WARN] {msg}"))
         else:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f'  [OK] {verified_media_count} referenced media file(s) verified in storage.'
+                    f"  [OK] {verified_media_count} referenced media file(s) verified in storage."
                 )
             )
 
     def _render_summary(self, errors, warnings):
-        self.stdout.write(self.style.MIGRATE_HEADING('\n' + '=' * 50))
+        self.stdout.write(self.style.MIGRATE_HEADING("\n" + "=" * 50))
         if errors:
             self.stdout.write(
                 self.style.ERROR(
-                    f'Verification Summary: FAILED ({len(errors)} error(s), {len(warnings)} warning(s))'
+                    f"Verification Summary: FAILED ({len(errors)} error(s), {len(warnings)} warning(s))"
                 )
             )
             for err in errors:
-                self.stdout.write(self.style.ERROR(f'  - {err}'))
-            self.stdout.write(self.style.MIGRATE_HEADING('=' * 50))
-            raise CommandError(f'Database integrity verification failed ({len(errors)} error(s)).')
+                self.stdout.write(self.style.ERROR(f"  - {err}"))
+            self.stdout.write(self.style.MIGRATE_HEADING("=" * 50))
+            raise CommandError(
+                f"Database integrity verification failed ({len(errors)} error(s))."
+            )
 
-        summary_msg = f'Verification Summary: PASSED (0 errors, {len(warnings)} warning(s))'
+        summary_msg = (
+            f"Verification Summary: PASSED (0 errors, {len(warnings)} warning(s))"
+        )
         if warnings:
             self.stdout.write(self.style.WARNING(summary_msg))
             for warn in warnings:
-                self.stdout.write(self.style.WARNING(f'  - {warn}'))
+                self.stdout.write(self.style.WARNING(f"  - {warn}"))
         else:
             self.stdout.write(self.style.SUCCESS(summary_msg))
-        self.stdout.write(self.style.MIGRATE_HEADING('=' * 50))
+        self.stdout.write(self.style.MIGRATE_HEADING("=" * 50))

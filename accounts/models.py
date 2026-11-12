@@ -1,14 +1,16 @@
+from zoneinfo import available_timezones
+
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser, UserManager as BaseUserManager
+from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import UserManager as BaseUserManager
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.functions import Lower
-from zoneinfo import available_timezones
 
 
 def validate_timezone(value):
     if value not in available_timezones():
-        raise ValidationError(f'{value} is not a valid timezone.')
+        raise ValidationError(f"{value} is not a valid timezone.")
 
 
 class UserManager(BaseUserManager):
@@ -24,7 +26,9 @@ class User(AbstractUser):
         STUDENT = "student", "Student"
 
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
-    timezone = models.CharField(max_length=64, default='UTC', validators=[validate_timezone])
+    timezone = models.CharField(
+        max_length=64, default="UTC", validators=[validate_timezone]
+    )
     is_email_verified = models.BooleanField(default=False)
     pending_email = models.EmailField(blank=True, null=True)
 
@@ -33,9 +37,9 @@ class User(AbstractUser):
     class Meta(AbstractUser.Meta):
         constraints = [
             models.UniqueConstraint(
-                Lower('email'),
-                name='unique_lower_email',
-                condition=~models.Q(email=''),
+                Lower("email"),
+                name="unique_lower_email",
+                condition=~models.Q(email=""),
             ),
         ]
 
@@ -44,7 +48,7 @@ class User(AbstractUser):
         if self.email and self.email.strip():
             self.email = self.email.strip().lower()
         else:
-            self.email = ''
+            self.email = ""
         if self.pending_email and self.pending_email.strip():
             self.pending_email = self.pending_email.strip().lower()
         else:
@@ -54,7 +58,7 @@ class User(AbstractUser):
         if self.email and self.email.strip():
             self.email = self.email.strip().lower()
         else:
-            self.email = ''
+            self.email = ""
         if self.pending_email and self.pending_email.strip():
             self.pending_email = self.pending_email.strip().lower()
         else:
@@ -69,9 +73,11 @@ class StudentProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='student_profile',
+        related_name="student_profile",
     )
-    profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True, null=True)
+    profile_picture = models.ImageField(
+        upload_to="profile_pictures/", blank=True, null=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

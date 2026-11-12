@@ -1,7 +1,8 @@
 import time
 from unittest.mock import patch
+
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from chat.utils import (
     CHAT_RATE_LIMIT,
@@ -40,7 +41,10 @@ class LinkifyMessageTextTests(TestCase):
         self.assertIn("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;", result)
         self.assertNotIn("<b>", result)
         self.assertIn("&lt;b&gt;bold&lt;/b&gt;", result)
-        self.assertIn('<a href="https://safe.com/test?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://safe.com/test?a=1&amp;b=2</a>', result)
+        self.assertIn(
+            '<a href="https://safe.com/test?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://safe.com/test?a=1&amp;b=2</a>',
+            result,
+        )
 
     def test_urls_with_trailing_punctuation(self):
         text = "Check this out (https://example.com/item). Wow, look at https://example.org/test!"

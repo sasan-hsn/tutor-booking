@@ -1,6 +1,8 @@
 from datetime import timedelta
+
 from django.urls import reverse
 from django.utils import timezone
+
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking
 
@@ -63,58 +65,67 @@ class DashboardDurationBadgesTests(RoleTestCase):
         )
 
     def test_student_dashboard_renders_upcoming_duration_badges(self):
-        response = self.student_client.get(reverse('booking:student_dashboard'))
+        response = self.student_client.get(reverse("booking:student_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
         self.assertContains(response, 'class="lesson-card-time-row"')
 
     def test_student_dashboard_renders_past_duration_badges(self):
-        response = self.student_client.get(reverse('booking:student_dashboard'))
+        response = self.student_client.get(reverse("booking:student_dashboard"))
         self.assertEqual(response.status_code, 200)
         # Past section contains both duration badges
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
 
     def test_teacher_dashboard_renders_upcoming_duration_badges(self):
-        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        response = self.teacher_client.get(reverse("booking:teacher_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
         self.assertContains(response, 'class="lesson-card-time-row"')
 
     def test_teacher_dashboard_renders_past_duration_badges(self):
-        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        response = self.teacher_client.get(reverse("booking:teacher_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
 
     def test_teacher_lesson_requests_modal_renders_duration_badge(self):
-        response = self.teacher_client.get(reverse('booking:teacher_lesson_requests'))
+        response = self.teacher_client.get(reverse("booking:teacher_lesson_requests"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
 
     def test_teacher_lesson_detail_modal_renders_duration_row(self):
         response = self.teacher_client.get(
-            reverse('booking:lesson_detail', kwargs={'booking_id': self.upcoming_regular.id})
+            reverse(
+                "booking:lesson_detail", kwargs={"booking_id": self.upcoming_regular.id}
+            )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<span class="lesson-detail-label">Duration</span>')
+        self.assertContains(
+            response, '<span class="lesson-detail-label">Duration</span>'
+        )
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
 
     def test_student_lesson_detail_modal_renders_duration_row(self):
         response = self.student_client.get(
-            reverse('booking:lesson_detail_student', kwargs={'booking_id': self.upcoming_trial.id})
+            reverse(
+                "booking:lesson_detail_student",
+                kwargs={"booking_id": self.upcoming_trial.id},
+            )
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<span class="lesson-detail-label">Duration</span>')
+        self.assertContains(
+            response, '<span class="lesson-detail-label">Duration</span>'
+        )
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
 
     def test_ajax_pagination_upcoming_renders_duration_badge(self):
         response = self.student_client.get(
-            reverse('booking:student_dashboard'),
-            {'section': 'upcoming', 'page': 1},
-            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            reverse("booking:student_dashboard"),
+            {"section": "upcoming", "page": 1},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
@@ -122,23 +133,22 @@ class DashboardDurationBadgesTests(RoleTestCase):
 
     def test_ajax_pagination_past_renders_duration_badge(self):
         response = self.teacher_client.get(
-            reverse('booking:teacher_dashboard'),
-            {'section': 'past', 'page': 1},
-            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            reverse("booking:teacher_dashboard"),
+            {"section": "past", "page": 1},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
 
     def test_student_dashboard_renders_upcoming_card_dom_anchors(self):
-        response = self.student_client.get(reverse('booking:student_dashboard'))
+        response = self.student_client.get(reverse("booking:student_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'id="booking-{self.upcoming_trial.id}"')
         self.assertContains(response, f'id="booking-{self.upcoming_regular.id}"')
 
     def test_teacher_dashboard_renders_upcoming_card_dom_anchors(self):
-        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        response = self.teacher_client.get(reverse("booking:teacher_dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'id="booking-{self.upcoming_trial.id}"')
         self.assertContains(response, f'id="booking-{self.upcoming_regular.id}"')
-

@@ -1,10 +1,11 @@
 import smtplib
-from datetime import date, time, timedelta, timezone as dt_timezone
+from datetime import time, timedelta
+from datetime import timezone as dt_timezone
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
-import requests
-from anymail.exceptions import AnymailAPIError, AnymailRequestsAPIError
 
+import requests
+from anymail.exceptions import AnymailAPIError
 from django.core import mail
 from django.urls import reverse
 from django.utils import timezone
@@ -24,7 +25,6 @@ from booking.notifications import (
     notify_lesson_reminder_1h_teacher,
     notify_lesson_reminder_24h_student,
 )
-from notifications.models import Notification
 from booking.tasks import (
     safe_send_booking_cancelled_email,
     safe_send_booking_confirmed_email,
@@ -38,6 +38,7 @@ from booking.tasks import (
     send_booking_request_teacher_email_task,
     send_cancellation_requested_teacher_email_task,
 )
+from notifications.models import Notification
 
 
 class BookingNotificationTasksTests(RoleTestCase):
@@ -52,16 +53,16 @@ class BookingNotificationTasksTests(RoleTestCase):
         cls.teacher.trial_duration_minutes = 30
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -72,7 +73,7 @@ class BookingNotificationTasksTests(RoleTestCase):
         # 2 days in the future at 14:00 UTC
         future_date = timezone.localdate() + timedelta(days=2)
         self.start_at = timezone.datetime.combine(
-            future_date, time(14, 0), tzinfo=ZoneInfo('UTC')
+            future_date, time(14, 0), tzinfo=ZoneInfo("UTC")
         )
         self.end_at = self.start_at + timedelta(minutes=30)
 
@@ -91,114 +92,118 @@ class BookingNotificationTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Request Received', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Request Received", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student's timezone (America/New_York = UTC-4 in summer / UTC-5 in winter)
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('John', email.body)
-        self.assertIn('Mary Smith', email.body)
-        self.assertIn('Trial Lesson', email.body)
-        self.assertIn('pending', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("John", email.body)
+        self.assertIn("Mary Smith", email.body)
+        self.assertIn("Trial Lesson", email.body)
+        self.assertIn("pending", email.body.lower())
 
         # Check multipart HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('America/New_York', html_content)
-        self.assertIn('John', html_content)
-        self.assertIn('Mary Smith', html_content)
-        self.assertIn('Trial Lesson', html_content)
-        self.assertIn('Pending', html_content)
+        self.assertIn("America/New_York", html_content)
+        self.assertIn("John", html_content)
+        self.assertIn("Mary Smith", html_content)
+        self.assertIn("Trial Lesson", html_content)
+        self.assertIn("Pending", html_content)
 
     def test_send_booking_request_teacher_email_success(self):
         send_booking_request_teacher_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
-        self.assertIn('New Lesson Request from John Doe', email.subject)
+        self.assertEqual(email.to, ["teacher@englishwithmary.ir"])
+        self.assertIn("New Lesson Request from John Doe", email.subject)
 
         # Check localized time in teacher's timezone (Asia/Tehran = UTC+3:30)
         local_start = timezone.localtime(self.start_at, self.teacher_tz)
         local_end = timezone.localtime(self.end_at, self.teacher_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('Asia/Tehran', email.body)
-        self.assertIn('John Doe', email.body)
-        self.assertIn('student@example.com', email.body)
-        self.assertIn('Trial Lesson', email.body)
-        self.assertIn(reverse('booking:teacher_dashboard'), email.body)
+        self.assertIn("Asia/Tehran", email.body)
+        self.assertIn("John Doe", email.body)
+        self.assertIn("student@example.com", email.body)
+        self.assertIn("Trial Lesson", email.body)
+        self.assertIn(reverse("booking:teacher_dashboard"), email.body)
 
         # Check multipart HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('Asia/Tehran', html_content)
-        self.assertIn('John Doe', html_content)
-        self.assertIn(reverse('booking:teacher_dashboard'), html_content)
+        self.assertIn("Asia/Tehran", html_content)
+        self.assertIn("John Doe", html_content)
+        self.assertIn(reverse("booking:teacher_dashboard"), html_content)
 
     def test_student_email_uses_teacher_branding_and_headline(self):
         """Verify emails dynamically brand to any teacher without hardcoded names."""
-        self.teacher_user.first_name = 'Alex'
-        self.teacher_user.last_name = 'Taylor'
+        self.teacher_user.first_name = "Alex"
+        self.teacher_user.last_name = "Taylor"
         self.teacher_user.save()
-        self.teacher.headline = 'Business English & Exam Prep Coach'
+        self.teacher.headline = "Business English & Exam Prep Coach"
         self.teacher.save()
 
         send_booking_request_student_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertIn('Lesson Request Received – Alex Taylor', email.subject)
-        self.assertIn('Alex Taylor', email.body)
-        self.assertNotIn('English with Mary', email.body)
+        self.assertIn("Lesson Request Received – Alex Taylor", email.subject)
+        self.assertIn("Alex Taylor", email.body)
+        self.assertNotIn("English with Mary", email.body)
 
         html_content = email.alternatives[0][0]
-        self.assertIn('Alex Taylor', html_content)
-        self.assertIn('Business English &amp; Exam Prep Coach', html_content)
-        self.assertNotIn('English with Mary', html_content)
+        self.assertIn("Alex Taylor", html_content)
+        self.assertIn("Business English &amp; Exam Prep Coach", html_content)
+        self.assertNotIn("English with Mary", html_content)
 
     def test_missing_student_email_skips_silently(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_request_student_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_missing_teacher_email_skips_silently(self):
-        self.teacher_user.email = ''
+        self.teacher_user.email = ""
         self.teacher_user.save()
-        self.teacher.contact_email = ''
+        self.teacher.contact_email = ""
         self.teacher.save()
 
         send_booking_request_teacher_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_teacher_contact_email_fallback(self):
-        self.teacher_user.email = ''
+        self.teacher_user.email = ""
         self.teacher_user.save()
-        self.teacher.contact_email = 'contact@englishwithmary.ir'
+        self.teacher.contact_email = "contact@englishwithmary.ir"
         self.teacher.save()
 
         send_booking_request_teacher_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['contact@englishwithmary.ir'])
+        self.assertEqual(mail.outbox[0].to, ["contact@englishwithmary.ir"])
 
     def test_nonexistent_booking_id_skips_silently(self):
         send_booking_request_student_email_task(999999)
@@ -206,177 +211,224 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_task_retries_on_transient_email_exception(self):
-        with patch('booking.emails.send_booking_request_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_request_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_request_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_task_retries_on_transient_anymail_api_error(self):
         resp = requests.Response()
         resp.status_code = 429
-        resp.reason = 'Too Many Requests'
-        err = AnymailAPIError('Rate limit exceeded', response=resp, status_code=429)
-        with patch('booking.emails.send_booking_request_student_email', side_effect=err):
+        resp.reason = "Too Many Requests"
+        err = AnymailAPIError("Rate limit exceeded", response=resp, status_code=429)
+        with patch(
+            "booking.emails.send_booking_request_student_email", side_effect=err
+        ):
             with self.assertRaises(Exception):
-                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_request_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_task_retries_on_requests_exception(self):
-        with patch('booking.emails.send_booking_request_student_email', side_effect=requests.exceptions.ConnectionError('Connection timed out')):
+        with patch(
+            "booking.emails.send_booking_request_student_email",
+            side_effect=requests.exceptions.ConnectionError("Connection timed out"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_request_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_task_does_not_retry_on_non_transient_anymail_error(self):
         resp = requests.Response()
         resp.status_code = 401
-        resp.reason = 'Unauthorized'
-        err = AnymailAPIError('Invalid API Key', response=resp, status_code=401)
-        with patch('booking.emails.send_booking_request_student_email', side_effect=err):
+        resp.reason = "Unauthorized"
+        err = AnymailAPIError("Invalid API Key", response=resp, status_code=401)
+        with patch(
+            "booking.emails.send_booking_request_student_email", side_effect=err
+        ):
             with self.assertRaises(AnymailAPIError):
-                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_request_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_task_does_not_retry_on_non_transient_exception(self):
-        with patch('booking.emails.send_booking_request_student_email', side_effect=ValueError('Programming error')):
+        with patch(
+            "booking.emails.send_booking_request_student_email",
+            side_effect=ValueError("Programming error"),
+        ):
             with self.assertRaises(ValueError):
-                send_booking_request_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_request_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_safe_notification_helpers_never_raise_on_task_delay_failure(self):
-        with patch('booking.tasks.send_booking_request_student_email_task.delay', side_effect=ConnectionError('Redis down')):
-            with patch('booking.tasks.send_booking_request_teacher_email_task.delay', side_effect=ConnectionError('Redis down')):
+        with patch(
+            "booking.tasks.send_booking_request_student_email_task.delay",
+            side_effect=ConnectionError("Redis down"),
+        ):
+            with patch(
+                "booking.tasks.send_booking_request_teacher_email_task.delay",
+                side_effect=ConnectionError("Redis down"),
+            ):
                 # None of these should raise
                 send_booking_request_notifications(self.booking.id)
 
-        with patch('booking.tasks.send_booking_confirmed_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+        with patch(
+            "booking.tasks.send_booking_confirmed_student_email_task.delay",
+            side_effect=ConnectionError("Redis down"),
+        ):
             safe_send_booking_confirmed_email(self.booking.id)
 
-        with patch('booking.tasks.send_booking_declined_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+        with patch(
+            "booking.tasks.send_booking_declined_student_email_task.delay",
+            side_effect=ConnectionError("Redis down"),
+        ):
             safe_send_booking_declined_email(self.booking.id)
 
-        with patch('booking.tasks.send_booking_cancelled_student_email_task.delay', side_effect=ConnectionError('Redis down')):
+        with patch(
+            "booking.tasks.send_booking_cancelled_student_email_task.delay",
+            side_effect=ConnectionError("Redis down"),
+        ):
             safe_send_booking_cancelled_email(self.booking.id)
 
-        with patch('booking.tasks.send_cancellation_requested_teacher_email_task.delay', side_effect=ConnectionError('Redis down')):
+        with patch(
+            "booking.tasks.send_cancellation_requested_teacher_email_task.delay",
+            side_effect=ConnectionError("Redis down"),
+        ):
             safe_send_cancellation_requested_email(self.booking.id)
 
     def test_send_booking_confirmed_student_email_with_meeting_link(self):
-        self.teacher.meeting_link = 'https://meet.google.com/abc-defg-hij'
+        self.teacher.meeting_link = "https://meet.google.com/abc-defg-hij"
         self.teacher.save()
 
         send_booking_confirmed_student_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Confirmed', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Confirmed", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student's timezone (America/New_York)
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('John', email.body)
-        self.assertIn('Mary Smith', email.body)
-        self.assertIn('Trial Lesson', email.body)
-        self.assertIn('https://meet.google.com/abc-defg-hij', email.body)
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("John", email.body)
+        self.assertIn("Mary Smith", email.body)
+        self.assertIn("Trial Lesson", email.body)
+        self.assertIn("https://meet.google.com/abc-defg-hij", email.body)
 
         # Check HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('America/New_York', html_content)
-        self.assertIn('https://meet.google.com/abc-defg-hij', html_content)
-        self.assertIn('Join Lesson', html_content)
+        self.assertIn("America/New_York", html_content)
+        self.assertIn("https://meet.google.com/abc-defg-hij", html_content)
+        self.assertIn("Join Lesson", html_content)
 
         # Check .ics attachment
         self.assertEqual(len(email.attachments), 1)
         filename, ics_content, mime = email.attachments[0]
-        self.assertTrue(filename.endswith('.ics'))
-        self.assertEqual(mime, 'text/calendar')
+        self.assertTrue(filename.endswith(".ics"))
+        self.assertEqual(mime, "text/calendar")
 
         # Check RFC 5545 compliance & structure
-        self.assertIn('BEGIN:VCALENDAR', ics_content)
-        self.assertIn('VERSION:2.0', ics_content)
-        self.assertIn('METHOD:PUBLISH', ics_content)
-        self.assertIn('BEGIN:VEVENT', ics_content)
-        self.assertIn('STATUS:CONFIRMED', ics_content)
+        self.assertIn("BEGIN:VCALENDAR", ics_content)
+        self.assertIn("VERSION:2.0", ics_content)
+        self.assertIn("METHOD:PUBLISH", ics_content)
+        self.assertIn("BEGIN:VEVENT", ics_content)
+        self.assertIn("STATUS:CONFIRMED", ics_content)
 
         # UTC timestamps ending in Z
-        utc_start_str = self.start_at.astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        utc_end_str = self.end_at.astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        self.assertIn(f'DTSTART:{utc_start_str}', ics_content)
-        self.assertIn(f'DTEND:{utc_end_str}', ics_content)
-        self.assertIn('DTSTAMP:', ics_content)
-        self.assertIn('Z', ics_content)
+        utc_start_str = self.start_at.astimezone(dt_timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
+        utc_end_str = self.end_at.astimezone(dt_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self.assertIn(f"DTSTART:{utc_start_str}", ics_content)
+        self.assertIn(f"DTEND:{utc_end_str}", ics_content)
+        self.assertIn("DTSTAMP:", ics_content)
+        self.assertIn("Z", ics_content)
 
         # Summary, Description, Location
-        self.assertIn('SUMMARY:Trial Lesson with Mary Smith', ics_content)
-        self.assertIn('DESCRIPTION:', ics_content)
-        self.assertIn('LOCATION:https://meet.google.com/abc-defg-hij', ics_content)
-        self.assertIn(f'UID:booking-{self.booking.id}@', ics_content)
-        self.assertIn('END:VEVENT', ics_content)
-        self.assertIn('END:VCALENDAR', ics_content)
+        self.assertIn("SUMMARY:Trial Lesson with Mary Smith", ics_content)
+        self.assertIn("DESCRIPTION:", ics_content)
+        self.assertIn("LOCATION:https://meet.google.com/abc-defg-hij", ics_content)
+        self.assertIn(f"UID:booking-{self.booking.id}@", ics_content)
+        self.assertIn("END:VEVENT", ics_content)
+        self.assertIn("END:VCALENDAR", ics_content)
 
         # CRLF line endings
-        self.assertIn('\r\n', ics_content)
+        self.assertIn("\r\n", ics_content)
 
     def test_send_booking_confirmed_student_email_without_meeting_link(self):
-        self.teacher.meeting_link = ''
+        self.teacher.meeting_link = ""
         self.teacher.save()
 
         send_booking_confirmed_student_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Confirmed', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Confirmed", email.subject)
 
         # Fallback guidance when meeting link is not configured
-        self.assertIn('share the meeting link with you prior to the lesson', email.body)
+        self.assertIn("share the meeting link with you prior to the lesson", email.body)
         html_content = email.alternatives[0][0]
-        self.assertIn('share the meeting link with you prior to the lesson', html_content)
+        self.assertIn(
+            "share the meeting link with you prior to the lesson", html_content
+        )
         self.assertNotIn('href=""', html_content)
 
         # .ics attachment present and handles empty location gracefully
         self.assertEqual(len(email.attachments), 1)
         filename, ics_content, mime = email.attachments[0]
-        self.assertTrue(filename.endswith('.ics'))
-        self.assertNotIn('LOCATION:http', ics_content)
+        self.assertTrue(filename.endswith(".ics"))
+        self.assertNotIn("LOCATION:http", ics_content)
 
     def test_send_booking_confirmed_uses_dynamic_teacher_branding(self):
         """Verify confirmed email dynamically brands to any teacher name and headline."""
-        self.teacher_user.first_name = 'Sarah'
-        self.teacher_user.last_name = 'Connor'
+        self.teacher_user.first_name = "Sarah"
+        self.teacher_user.last_name = "Connor"
         self.teacher_user.save()
-        self.teacher.headline = 'IELTS & Advanced Pronunciation Coach'
-        self.teacher.meeting_link = 'https://zoom.us/j/123456789'
+        self.teacher.headline = "IELTS & Advanced Pronunciation Coach"
+        self.teacher.meeting_link = "https://zoom.us/j/123456789"
         self.teacher.save()
 
         send_booking_confirmed_student_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertIn('Lesson Confirmed – Sarah Connor', email.subject)
-        self.assertIn('Sarah Connor', email.body)
-        self.assertNotIn('English with Mary', email.body)
+        self.assertIn("Lesson Confirmed – Sarah Connor", email.subject)
+        self.assertIn("Sarah Connor", email.body)
+        self.assertNotIn("English with Mary", email.body)
 
         html_content = email.alternatives[0][0]
-        self.assertIn('Sarah Connor', html_content)
-        self.assertIn('IELTS &amp; Advanced Pronunciation Coach', html_content)
-        self.assertNotIn('English with Mary', html_content)
+        self.assertIn("Sarah Connor", html_content)
+        self.assertIn("IELTS &amp; Advanced Pronunciation Coach", html_content)
+        self.assertNotIn("English with Mary", html_content)
 
         # .ics check
         filename, ics_content, _ = email.attachments[0]
-        self.assertIn('SUMMARY:Trial Lesson with Sarah Connor', ics_content)
-        self.assertIn('LOCATION:https://zoom.us/j/123456789', ics_content)
+        self.assertIn("SUMMARY:Trial Lesson with Sarah Connor", ics_content)
+        self.assertIn("LOCATION:https://zoom.us/j/123456789", ics_content)
 
     def test_ics_line_folding_and_special_character_escaping(self):
         """Verify RFC 5545 line folding and text escaping for long descriptions/URLs."""
-        from booking.emails import _fold_ics_line, _escape_ics_text
+        from booking.emails import _escape_ics_text, _fold_ics_line
 
         # Escaping
         raw = r"Special chars: \ backslash, ; semicolon, , comma, and " + "\nnewline"
@@ -389,16 +441,16 @@ class BookingNotificationTasksTests(RoleTestCase):
         # Folding
         long_line = "DESCRIPTION:" + "A" * 100
         folded = _fold_ics_line(long_line)
-        lines = folded.split('\r\n')
+        lines = folded.split("\r\n")
         self.assertGreater(len(lines), 1)
         for line in lines:
-            self.assertLessEqual(len(line.encode('utf-8')), 75)
+            self.assertLessEqual(len(line.encode("utf-8")), 75)
         # Unfolded content must match original
-        unfolded = folded.replace('\r\n ', '')
+        unfolded = folded.replace("\r\n ", "")
         self.assertEqual(unfolded, long_line)
 
     def test_send_booking_confirmed_missing_student_email_skips(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_confirmed_student_email_task(self.booking.id)
@@ -409,14 +461,24 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_confirmed_task_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_confirmed_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_confirmed_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_confirmed_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_confirmed_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     def test_confirmed_task_does_not_retry_on_non_transient_error(self):
-        with patch('booking.emails.send_booking_confirmed_student_email', side_effect=ValueError('Programming error')):
+        with patch(
+            "booking.emails.send_booking_confirmed_student_email",
+            side_effect=ValueError("Programming error"),
+        ):
             with self.assertRaises(ValueError):
-                send_booking_confirmed_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_confirmed_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     # --- Declined student notification task tests ---
 
@@ -428,37 +490,39 @@ class BookingNotificationTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Request Declined', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Request Declined", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student's timezone
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('John', email.body)
-        self.assertIn('Mary Smith', email.body)
-        self.assertIn('unavailable', email.body.lower())
-        self.assertIn('alternative', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("John", email.body)
+        self.assertIn("Mary Smith", email.body)
+        self.assertIn("unavailable", email.body.lower())
+        self.assertIn("alternative", email.body.lower())
 
         # Check multipart HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('America/New_York', html_content)
-        self.assertIn('John', html_content)
-        self.assertIn('Mary Smith', html_content)
-        self.assertIn('unavailable', html_content.lower())
+        self.assertIn("America/New_York", html_content)
+        self.assertIn("John", html_content)
+        self.assertIn("Mary Smith", html_content)
+        self.assertIn("unavailable", html_content.lower())
 
     def test_send_booking_declined_missing_student_email_skips(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_declined_student_email_task(self.booking.id)
@@ -469,9 +533,14 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_declined_task_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_declined_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_declined_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_declined_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_declined_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     # --- Cancelled student notification task tests ---
 
@@ -483,36 +552,38 @@ class BookingNotificationTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Cancelled', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Cancelled", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student's timezone
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('John', email.body)
-        self.assertIn('Mary Smith', email.body)
-        self.assertIn('cancelled', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("John", email.body)
+        self.assertIn("Mary Smith", email.body)
+        self.assertIn("cancelled", email.body.lower())
 
         # Check multipart HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('America/New_York', html_content)
-        self.assertIn('John', html_content)
-        self.assertIn('Mary Smith', html_content)
-        self.assertIn('cancelled', html_content.lower())
+        self.assertIn("America/New_York", html_content)
+        self.assertIn("John", html_content)
+        self.assertIn("Mary Smith", html_content)
+        self.assertIn("cancelled", html_content.lower())
 
     def test_send_booking_cancelled_missing_student_email_skips(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_cancelled_student_email_task(self.booking.id)
@@ -523,9 +594,14 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_cancelled_task_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_cancelled_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_cancelled_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_cancelled_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_cancelled_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     # --- Cancellation requested teacher alert task tests ---
 
@@ -537,37 +613,39 @@ class BookingNotificationTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
-        self.assertIn('Cancellation Request from John Doe', email.subject)
+        self.assertEqual(email.to, ["teacher@englishwithmary.ir"])
+        self.assertIn("Cancellation Request from John Doe", email.subject)
 
         # Check localized time in teacher's timezone (Asia/Tehran)
         local_start = timezone.localtime(self.start_at, self.teacher_tz)
         local_end = timezone.localtime(self.end_at, self.teacher_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('Asia/Tehran', email.body)
-        self.assertIn('Mary', email.body)
-        self.assertIn('John Doe', email.body)
-        self.assertIn('student@example.com', email.body)
-        self.assertIn(reverse('booking:teacher_dashboard'), email.body)
+        self.assertIn("Asia/Tehran", email.body)
+        self.assertIn("Mary", email.body)
+        self.assertIn("John Doe", email.body)
+        self.assertIn("student@example.com", email.body)
+        self.assertIn(reverse("booking:teacher_dashboard"), email.body)
 
         # Check multipart HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('Asia/Tehran', html_content)
-        self.assertIn('John Doe', html_content)
-        self.assertIn(reverse('booking:teacher_dashboard'), html_content)
+        self.assertIn("Asia/Tehran", html_content)
+        self.assertIn("John Doe", html_content)
+        self.assertIn(reverse("booking:teacher_dashboard"), html_content)
 
     def test_send_cancellation_requested_missing_teacher_email_skips(self):
-        self.teacher_user.email = ''
+        self.teacher_user.email = ""
         self.teacher_user.save()
-        self.teacher.contact_email = ''
+        self.teacher.contact_email = ""
         self.teacher.save()
 
         send_cancellation_requested_teacher_email_task(self.booking.id)
@@ -578,10 +656,14 @@ class BookingNotificationTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_cancellation_requested_task_retries_on_transient_error(self):
-        with patch('booking.emails.send_cancellation_requested_teacher_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_cancellation_requested_teacher_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_cancellation_requested_teacher_email_task.apply(args=[self.booking.id], throw=True)
-
+                send_cancellation_requested_teacher_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
 
 class RespondToBookingNotificationTests(RoleTestCase):
@@ -591,19 +673,19 @@ class RespondToBookingNotificationTests(RoleTestCase):
         cls.teacher = cls.teacher_user.teacher_profile
         cls.teacher.lesson_price = 25
         cls.teacher.lesson_duration_minutes = 60
-        cls.teacher.meeting_link = 'https://meet.google.com/test-room'
+        cls.teacher.meeting_link = "https://meet.google.com/test-room"
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -611,7 +693,7 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.student_tz = ZoneInfo(self.student_user.timezone)
         future_date = timezone.localdate() + timedelta(days=3)
         self.start_at = timezone.datetime.combine(
-            future_date, time(15, 0), tzinfo=ZoneInfo('UTC')
+            future_date, time(15, 0), tzinfo=ZoneInfo("UTC")
         )
         self.end_at = self.start_at + timedelta(minutes=60)
 
@@ -628,47 +710,53 @@ class RespondToBookingNotificationTests(RoleTestCase):
     def test_respond_to_booking_accept_dispatches_confirmation_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-                {'action': 'accept'},
+                reverse(
+                    "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+                ),
+                {"action": "accept"},
             )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertTrue(data['success'])
-        self.assertIn('unread_notifications_count', data)
-        self.assertIn('marked_notification_ids', data)
+        self.assertTrue(data["success"])
+        self.assertIn("unread_notifications_count", data)
+        self.assertIn("marked_notification_ids", data)
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Confirmed', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Confirmed", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Localized time check
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('https://meet.google.com/test-room', email.body)
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("https://meet.google.com/test-room", email.body)
 
         # Attachment check
         self.assertEqual(len(email.attachments), 1)
         filename, ics_content, mime = email.attachments[0]
-        self.assertTrue(filename.endswith('.ics'))
-        self.assertEqual(mime, 'text/calendar')
-        self.assertIn('STATUS:CONFIRMED', ics_content)
-        self.assertIn('LOCATION:https://meet.google.com/test-room', ics_content)
+        self.assertTrue(filename.endswith(".ics"))
+        self.assertEqual(mime, "text/calendar")
+        self.assertIn("STATUS:CONFIRMED", ics_content)
+        self.assertIn("LOCATION:https://meet.google.com/test-room", ics_content)
 
     def test_respond_to_booking_decline_dispatches_declined_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-                {'action': 'decline'},
+                reverse(
+                    "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+                ),
+                {"action": "decline"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -677,21 +765,23 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Request Declined', email.subject)
-        self.assertNotIn('Lesson Confirmed', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Request Declined", email.subject)
+        self.assertNotIn("Lesson Confirmed", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Localized time check in student's timezone
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('unavailable', email.body.lower())
-        self.assertIn('alternative', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("unavailable", email.body.lower())
+        self.assertIn("alternative", email.body.lower())
 
     def test_respond_to_cancellation_accept_dispatches_cancelled_email(self):
         self.booking.status = Booking.Status.CONFIRMED
@@ -700,8 +790,10 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-                {'action': 'accept'},
+                reverse(
+                    "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+                ),
+                {"action": "accept"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -711,20 +803,22 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Cancelled', email.subject)
-        self.assertNotIn('Lesson Confirmed', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Cancelled", email.subject)
+        self.assertNotIn("Lesson Confirmed", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Localized time check in student's timezone
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('cancelled', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("cancelled", email.body.lower())
 
     def test_respond_to_cancellation_accept_auto_marks_reminders_read(self):
         self.booking.status = Booking.Status.CONFIRMED
@@ -738,8 +832,10 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-                {'action': 'accept'},
+                reverse(
+                    "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+                ),
+                {"action": "accept"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -755,8 +851,10 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-                {'action': 'decline'},
+                reverse(
+                    "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+                ),
+                {"action": "decline"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -770,14 +868,16 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertFalse(notif.is_read)
 
         response = self.teacher_client.post(
-            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-            {'action': 'accept'},
+            reverse(
+                "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+            ),
+            {"action": "accept"},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertTrue(data['success'])
-        self.assertIn(notif.id, data['marked_notification_ids'])
-        self.assertEqual(data['unread_notifications_count'], 0)
+        self.assertTrue(data["success"])
+        self.assertIn(notif.id, data["marked_notification_ids"])
+        self.assertEqual(data["unread_notifications_count"], 0)
 
         notif.refresh_from_db()
         self.assertTrue(notif.is_read)
@@ -788,14 +888,16 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertFalse(notif.is_read)
 
         response = self.teacher_client.post(
-            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-            {'action': 'decline'},
+            reverse(
+                "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+            ),
+            {"action": "decline"},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertTrue(data['success'])
-        self.assertIn(notif.id, data['marked_notification_ids'])
-        self.assertEqual(data['unread_notifications_count'], 0)
+        self.assertTrue(data["success"])
+        self.assertIn(notif.id, data["marked_notification_ids"])
+        self.assertEqual(data["unread_notifications_count"], 0)
 
         notif.refresh_from_db()
         self.assertTrue(notif.is_read)
@@ -810,13 +912,15 @@ class RespondToBookingNotificationTests(RoleTestCase):
         self.assertFalse(notif.is_read)
 
         response = self.teacher_client.post(
-            reverse('booking:respond_to_booking', kwargs={'booking_id': self.booking.id}),
-            {'action': 'accept'},
+            reverse(
+                "booking:respond_to_booking", kwargs={"booking_id": self.booking.id}
+            ),
+            {"action": "accept"},
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertTrue(data['success'])
-        self.assertIn(notif.id, data['marked_notification_ids'])
+        self.assertTrue(data["success"])
+        self.assertIn(notif.id, data["marked_notification_ids"])
 
         notif.refresh_from_db()
         self.assertTrue(notif.is_read)
@@ -827,8 +931,12 @@ class RespondToBookingNotificationTests(RoleTestCase):
         stale_booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            start_at=timezone.datetime.combine(past_date, time(10, 0), tzinfo=ZoneInfo('UTC')),
-            end_at=timezone.datetime.combine(past_date, time(11, 0), tzinfo=ZoneInfo('UTC')),
+            start_at=timezone.datetime.combine(
+                past_date, time(10, 0), tzinfo=ZoneInfo("UTC")
+            ),
+            end_at=timezone.datetime.combine(
+                past_date, time(11, 0), tzinfo=ZoneInfo("UTC")
+            ),
             lesson_type=Booking.LessonType.REGULAR,
             price=self.teacher.lesson_price,
             status=Booking.Status.PENDING,
@@ -836,8 +944,11 @@ class RespondToBookingNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:respond_to_booking', kwargs={'booking_id': stale_booking.id}),
-                {'action': 'accept'},
+                reverse(
+                    "booking:respond_to_booking",
+                    kwargs={"booking_id": stale_booking.id},
+                ),
+                {"action": "accept"},
             )
 
         self.assertEqual(response.status_code, 400)
@@ -858,16 +969,16 @@ class BookSlotViewNotificationTests(RoleTestCase):
         cls.teacher.trial_duration_minutes = 30
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -887,8 +998,8 @@ class BookSlotViewNotificationTests(RoleTestCase):
     def test_book_slot_dispatches_notifications_on_commit(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.student_client.post(
-                reverse('booking:book_slot'),
-                {'start_at': self.valid_start.isoformat(), 'lesson_option': 'trial'},
+                reverse("booking:book_slot"),
+                {"start_at": self.valid_start.isoformat(), "lesson_option": "trial"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -897,33 +1008,37 @@ class BookSlotViewNotificationTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 2)
 
         recipients = {email.to[0] for email in mail.outbox}
-        self.assertEqual(recipients, {'student@example.com', 'teacher@englishwithmary.ir'})
+        self.assertEqual(
+            recipients, {"student@example.com", "teacher@englishwithmary.ir"}
+        )
 
         student_local_start = booking.student_local_start
         student_local_end = booking.student_local_end
-        student_date_str = student_local_start.strftime('%A, %B %d, %Y')
+        student_date_str = student_local_start.strftime("%A, %B %d, %Y")
         student_time_str = f"{student_local_start.strftime('%H:%M')} – {student_local_end.strftime('%H:%M')}"
 
-        student_email = next(e for e in mail.outbox if e.to == ['student@example.com'])
-        self.assertIn('Lesson Request Received', student_email.subject)
+        student_email = next(e for e in mail.outbox if e.to == ["student@example.com"])
+        self.assertIn("Lesson Request Received", student_email.subject)
         self.assertIn(student_date_str, student_email.body)
         self.assertIn(student_time_str, student_email.body)
-        self.assertIn('America/New_York', student_email.body)
+        self.assertIn("America/New_York", student_email.body)
         self.assertEqual(len(student_email.alternatives), 1)
         self.assertIn(student_date_str, student_email.alternatives[0][0])
         self.assertIn(student_time_str, student_email.alternatives[0][0])
 
         teacher_local_start = booking.teacher_local_start
         teacher_local_end = booking.teacher_local_end
-        teacher_date_str = teacher_local_start.strftime('%A, %B %d, %Y')
+        teacher_date_str = teacher_local_start.strftime("%A, %B %d, %Y")
         teacher_time_str = f"{teacher_local_start.strftime('%H:%M')} – {teacher_local_end.strftime('%H:%M')}"
 
-        teacher_email = next(e for e in mail.outbox if e.to == ['teacher@englishwithmary.ir'])
-        self.assertIn('New Lesson Request', teacher_email.subject)
+        teacher_email = next(
+            e for e in mail.outbox if e.to == ["teacher@englishwithmary.ir"]
+        )
+        self.assertIn("New Lesson Request", teacher_email.subject)
         self.assertIn(teacher_date_str, teacher_email.body)
         self.assertIn(teacher_time_str, teacher_email.body)
-        self.assertIn('Asia/Tehran', teacher_email.body)
-        self.assertIn(reverse('booking:teacher_dashboard'), teacher_email.body)
+        self.assertIn("Asia/Tehran", teacher_email.body)
+        self.assertIn(reverse("booking:teacher_dashboard"), teacher_email.body)
         self.assertEqual(len(teacher_email.alternatives), 1)
         self.assertIn(teacher_date_str, teacher_email.alternatives[0][0])
         self.assertIn(teacher_time_str, teacher_email.alternatives[0][0])
@@ -931,8 +1046,8 @@ class BookSlotViewNotificationTests(RoleTestCase):
     def test_failed_booking_does_not_send_notifications(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.student_client.post(
-                reverse('booking:book_slot'),
-                {'start_at': 'invalid-date'},
+                reverse("booking:book_slot"),
+                {"start_at": "invalid-date"},
             )
 
         self.assertEqual(response.status_code, 400)
@@ -948,16 +1063,16 @@ class CancelLessonNotificationTests(RoleTestCase):
         cls.teacher.lesson_duration_minutes = 60
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -965,7 +1080,7 @@ class CancelLessonNotificationTests(RoleTestCase):
         self.student_tz = ZoneInfo(self.student_user.timezone)
         future_date = timezone.localdate() + timedelta(days=3)
         self.start_at = timezone.datetime.combine(
-            future_date, time(16, 0), tzinfo=ZoneInfo('UTC')
+            future_date, time(16, 0), tzinfo=ZoneInfo("UTC")
         )
         self.end_at = self.start_at + timedelta(minutes=60)
 
@@ -982,7 +1097,9 @@ class CancelLessonNotificationTests(RoleTestCase):
     def test_cancel_confirmed_lesson_dispatches_cancelled_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:cancel_lesson', kwargs={'booking_id': self.booking.id}),
+                reverse(
+                    "booking:cancel_lesson", kwargs={"booking_id": self.booking.id}
+                ),
             )
 
         self.assertEqual(response.status_code, 200)
@@ -991,19 +1108,21 @@ class CancelLessonNotificationTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Cancelled', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Cancelled", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Localized time check
         local_start = timezone.localtime(self.start_at, self.student_tz)
         local_end = timezone.localtime(self.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('cancelled', email.body.lower())
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("cancelled", email.body.lower())
 
     def test_cancel_confirmed_lesson_auto_marks_reminders_read(self):
         notif_24h = notify_lesson_reminder_24h_student(self.booking)
@@ -1013,7 +1132,9 @@ class CancelLessonNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:cancel_lesson', kwargs={'booking_id': self.booking.id}),
+                reverse(
+                    "booking:cancel_lesson", kwargs={"booking_id": self.booking.id}
+                ),
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1027,8 +1148,12 @@ class CancelLessonNotificationTests(RoleTestCase):
         past_booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
-            start_at=timezone.datetime.combine(past_date, time(10, 0), tzinfo=ZoneInfo('UTC')),
-            end_at=timezone.datetime.combine(past_date, time(11, 0), tzinfo=ZoneInfo('UTC')),
+            start_at=timezone.datetime.combine(
+                past_date, time(10, 0), tzinfo=ZoneInfo("UTC")
+            ),
+            end_at=timezone.datetime.combine(
+                past_date, time(11, 0), tzinfo=ZoneInfo("UTC")
+            ),
             lesson_type=Booking.LessonType.REGULAR,
             price=self.teacher.lesson_price,
             status=Booking.Status.CONFIRMED,
@@ -1036,7 +1161,9 @@ class CancelLessonNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.teacher_client.post(
-                reverse('booking:cancel_lesson', kwargs={'booking_id': past_booking.id}),
+                reverse(
+                    "booking:cancel_lesson", kwargs={"booking_id": past_booking.id}
+                ),
             )
 
         self.assertEqual(response.status_code, 400)
@@ -1052,16 +1179,16 @@ class RequestCancellationNotificationTests(RoleTestCase):
         cls.teacher.lesson_duration_minutes = 60
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -1069,7 +1196,7 @@ class RequestCancellationNotificationTests(RoleTestCase):
         self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
         future_date = timezone.localdate() + timedelta(days=3)
         self.start_at = timezone.datetime.combine(
-            future_date, time(16, 0), tzinfo=ZoneInfo('UTC')
+            future_date, time(16, 0), tzinfo=ZoneInfo("UTC")
         )
         self.end_at = self.start_at + timedelta(minutes=60)
 
@@ -1086,7 +1213,10 @@ class RequestCancellationNotificationTests(RoleTestCase):
     def test_request_cancellation_dispatches_alert_to_teacher(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.student_client.post(
-                reverse('booking:request_cancellation', kwargs={'booking_id': self.booking.id}),
+                reverse(
+                    "booking:request_cancellation",
+                    kwargs={"booking_id": self.booking.id},
+                ),
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1095,20 +1225,22 @@ class RequestCancellationNotificationTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
-        self.assertIn('Cancellation Request from John Doe', email.subject)
+        self.assertEqual(email.to, ["teacher@englishwithmary.ir"])
+        self.assertIn("Cancellation Request from John Doe", email.subject)
 
         # Localized time check in teacher's timezone
         local_start = timezone.localtime(self.start_at, self.teacher_tz)
         local_end = timezone.localtime(self.end_at, self.teacher_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('Asia/Tehran', email.body)
-        self.assertIn('John Doe', email.body)
-        self.assertIn('student@example.com', email.body)
-        self.assertIn(reverse('booking:teacher_dashboard'), email.body)
+        self.assertIn("Asia/Tehran", email.body)
+        self.assertIn("John Doe", email.body)
+        self.assertIn("student@example.com", email.body)
+        self.assertIn(reverse("booking:teacher_dashboard"), email.body)
 
     def test_duplicate_request_cancellation_does_not_dispatch_email(self):
         self.booking.cancellation_requested = True
@@ -1116,7 +1248,10 @@ class RequestCancellationNotificationTests(RoleTestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             response = self.student_client.post(
-                reverse('booking:request_cancellation', kwargs={'booking_id': self.booking.id}),
+                reverse(
+                    "booking:request_cancellation",
+                    kwargs={"booking_id": self.booking.id},
+                ),
             )
 
         self.assertEqual(response.status_code, 404)
@@ -1141,20 +1276,22 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         cls.teacher.trial_duration_minutes = 25
         cls.teacher.save()
 
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
         super().setUp()
         future_date = timezone.localdate() + timedelta(days=2)
-        start_at = timezone.datetime.combine(future_date, time(10, 0), tzinfo=dt_timezone.utc)
+        start_at = timezone.datetime.combine(
+            future_date, time(10, 0), tzinfo=dt_timezone.utc
+        )
 
         self.trial_booking = Booking.objects.create(
             student=self.student_user,
@@ -1168,7 +1305,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         )
 
         future_date_2 = timezone.localdate() + timedelta(days=3)
-        start_at_2 = timezone.datetime.combine(future_date_2, time(14, 0), tzinfo=dt_timezone.utc)
+        start_at_2 = timezone.datetime.combine(
+            future_date_2, time(14, 0), tzinfo=dt_timezone.utc
+        )
         self.regular_booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
@@ -1198,7 +1337,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(notif.actor, self.student_user)
         self.assertEqual(notif.event_type, Notification.EventType.BOOKING_REQUESTED)
         self.assertEqual(notif.title, "New Lesson Request")
-        self.assertEqual(notif.message, "John Doe requested a 50-minute Regular Lesson.")
+        self.assertEqual(
+            notif.message, "John Doe requested a 50-minute Regular Lesson."
+        )
         self.assertEqual(notif.metadata["lesson_type"], "regular")
         self.assertEqual(notif.metadata["lesson_duration"], 50)
 
@@ -1208,7 +1349,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(trial_notif.recipient, self.student_user)
         self.assertEqual(trial_notif.actor, self.teacher_user)
         self.assertEqual(trial_notif.title, "Lesson Confirmed")
-        self.assertEqual(trial_notif.message, "Your Trial Lesson with Mary Smith has been confirmed.")
+        self.assertEqual(
+            trial_notif.message, "Your Trial Lesson with Mary Smith has been confirmed."
+        )
         self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
 
         regular_notif = notify_booking_confirmed(self.regular_booking)
@@ -1216,7 +1359,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(regular_notif.recipient, self.student_user)
         self.assertEqual(regular_notif.actor, self.teacher_user)
         self.assertEqual(regular_notif.title, "Lesson Confirmed")
-        self.assertEqual(regular_notif.message, "Your Regular Lesson with Mary Smith has been confirmed.")
+        self.assertEqual(
+            regular_notif.message,
+            "Your Regular Lesson with Mary Smith has been confirmed.",
+        )
         self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
 
     def test_notify_booking_declined_trial_and_regular_copy(self):
@@ -1225,7 +1371,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(trial_notif.recipient, self.student_user)
         self.assertEqual(trial_notif.actor, self.teacher_user)
         self.assertEqual(trial_notif.title, "Lesson Request Declined")
-        self.assertEqual(trial_notif.message, "Mary Smith was unable to accept your Trial Lesson request.")
+        self.assertEqual(
+            trial_notif.message,
+            "Mary Smith was unable to accept your Trial Lesson request.",
+        )
         self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
 
         regular_notif = notify_booking_declined(self.regular_booking)
@@ -1233,7 +1382,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(regular_notif.recipient, self.student_user)
         self.assertEqual(regular_notif.actor, self.teacher_user)
         self.assertEqual(regular_notif.title, "Lesson Request Declined")
-        self.assertEqual(regular_notif.message, "Mary Smith was unable to accept your Regular Lesson request.")
+        self.assertEqual(
+            regular_notif.message,
+            "Mary Smith was unable to accept your Regular Lesson request.",
+        )
         self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
 
     def test_notify_cancellation_requested_trial_and_regular_copy(self):
@@ -1242,7 +1394,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(trial_notif.recipient, self.teacher_user)
         self.assertEqual(trial_notif.actor, self.student_user)
         self.assertEqual(trial_notif.title, "Cancellation Requested")
-        self.assertEqual(trial_notif.message, "John Doe requested to cancel their upcoming Trial Lesson.")
+        self.assertEqual(
+            trial_notif.message,
+            "John Doe requested to cancel their upcoming Trial Lesson.",
+        )
         self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
 
         regular_notif = notify_cancellation_requested(self.regular_booking)
@@ -1250,7 +1405,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(regular_notif.recipient, self.teacher_user)
         self.assertEqual(regular_notif.actor, self.student_user)
         self.assertEqual(regular_notif.title, "Cancellation Requested")
-        self.assertEqual(regular_notif.message, "John Doe requested to cancel their upcoming Regular Lesson.")
+        self.assertEqual(
+            regular_notif.message,
+            "John Doe requested to cancel their upcoming Regular Lesson.",
+        )
         self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
 
     def test_notify_booking_cancelled_trial_and_regular_copy(self):
@@ -1259,7 +1417,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(trial_notif.recipient, self.student_user)
         self.assertEqual(trial_notif.actor, self.teacher_user)
         self.assertEqual(trial_notif.title, "Lesson Cancelled")
-        self.assertEqual(trial_notif.message, "Your Trial Lesson with Mary Smith has been cancelled.")
+        self.assertEqual(
+            trial_notif.message, "Your Trial Lesson with Mary Smith has been cancelled."
+        )
         self.assertEqual(trial_notif.metadata["lesson_type"], "trial")
 
         regular_notif = notify_booking_cancelled(self.regular_booking)
@@ -1267,7 +1427,10 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(regular_notif.recipient, self.student_user)
         self.assertEqual(regular_notif.actor, self.teacher_user)
         self.assertEqual(regular_notif.title, "Lesson Cancelled")
-        self.assertEqual(regular_notif.message, "Your Regular Lesson with Mary Smith has been cancelled.")
+        self.assertEqual(
+            regular_notif.message,
+            "Your Regular Lesson with Mary Smith has been cancelled.",
+        )
         self.assertEqual(regular_notif.metadata["lesson_type"], "regular")
 
     def test_notify_booking_expired_trial_and_regular_copy(self):
@@ -1275,20 +1438,32 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertEqual(len(trial_notifs), 2)
         trial_student_notif, trial_teacher_notif = trial_notifs
         self.assertEqual(trial_student_notif.title, "Lesson Request Expired")
-        self.assertEqual(trial_student_notif.message, "Your Trial Lesson request with Mary Smith has expired.")
+        self.assertEqual(
+            trial_student_notif.message,
+            "Your Trial Lesson request with Mary Smith has expired.",
+        )
         self.assertEqual(trial_student_notif.metadata["lesson_type"], "trial")
         self.assertEqual(trial_teacher_notif.title, "Lesson Request Expired")
-        self.assertEqual(trial_teacher_notif.message, "The Trial Lesson request from John Doe has expired.")
+        self.assertEqual(
+            trial_teacher_notif.message,
+            "The Trial Lesson request from John Doe has expired.",
+        )
         self.assertEqual(trial_teacher_notif.metadata["lesson_type"], "trial")
 
         regular_notifs = notify_booking_expired(self.regular_booking)
         self.assertEqual(len(regular_notifs), 2)
         regular_student_notif, regular_teacher_notif = regular_notifs
         self.assertEqual(regular_student_notif.title, "Lesson Request Expired")
-        self.assertEqual(regular_student_notif.message, "Your Regular Lesson request with Mary Smith has expired.")
+        self.assertEqual(
+            regular_student_notif.message,
+            "Your Regular Lesson request with Mary Smith has expired.",
+        )
         self.assertEqual(regular_student_notif.metadata["lesson_type"], "regular")
         self.assertEqual(regular_teacher_notif.title, "Lesson Request Expired")
-        self.assertEqual(regular_teacher_notif.message, "The Regular Lesson request from John Doe has expired.")
+        self.assertEqual(
+            regular_teacher_notif.message,
+            "The Regular Lesson request from John Doe has expired.",
+        )
         self.assertEqual(regular_teacher_notif.metadata["lesson_type"], "regular")
 
     def test_notify_booking_expired_marks_teacher_request_notification_as_read(self):
@@ -1303,7 +1478,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
         self.assertTrue(notif_requested.is_read)
         self.assertIsNotNone(notif_requested.read_at)
 
-    def test_mark_booking_requests_read_marks_requested_and_cancellation_notifications(self):
+    def test_mark_booking_requests_read_marks_requested_and_cancellation_notifications(
+        self,
+    ):
         notif_requested = notify_booking_requested(self.regular_booking)
         notif_cancelled = notify_cancellation_requested(self.regular_booking)
 
@@ -1338,7 +1515,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
             notif.message,
             "Your 25-minute Trial Lesson with Mary Smith is scheduled for tomorrow.",
         )
-        expected_url = f"{reverse('booking:student_dashboard')}#booking-{self.trial_booking.id}"
+        expected_url = (
+            f"{reverse('booking:student_dashboard')}#booking-{self.trial_booking.id}"
+        )
         self.assertEqual(notif.action_url, expected_url)
         self.assertEqual(notif.metadata["booking_id"], self.trial_booking.id)
         self.assertEqual(notif.metadata["lesson_duration"], 25)
@@ -1357,7 +1536,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
             notif.message,
             "Your 50-minute Regular Lesson with Mary Smith starts in 1 hour.",
         )
-        expected_url = f"{reverse('booking:student_dashboard')}#booking-{self.regular_booking.id}"
+        expected_url = (
+            f"{reverse('booking:student_dashboard')}#booking-{self.regular_booking.id}"
+        )
         self.assertEqual(notif.action_url, expected_url)
         self.assertEqual(notif.metadata["booking_id"], self.regular_booking.id)
         self.assertEqual(notif.metadata["lesson_duration"], 50)
@@ -1376,7 +1557,9 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
             notif.message,
             "Your 50-minute Regular Lesson with John Doe starts in 1 hour.",
         )
-        expected_url = f"{reverse('booking:teacher_dashboard')}#booking-{self.regular_booking.id}"
+        expected_url = (
+            f"{reverse('booking:teacher_dashboard')}#booking-{self.regular_booking.id}"
+        )
         self.assertEqual(notif.action_url, expected_url)
         self.assertEqual(notif.metadata["booking_id"], self.regular_booking.id)
         self.assertEqual(notif.metadata["lesson_duration"], 50)
@@ -1424,6 +1607,3 @@ class BookingInPlatformNotificationCopyTests(RoleTestCase):
 
         self.assertTrue(notif_24h_student.is_read)
         self.assertTrue(notif_1h_teacher.is_read)
-
-
-

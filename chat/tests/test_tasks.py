@@ -1,13 +1,13 @@
 import uuid
-from unittest.mock import MagicMock, patch
-from anymail.exceptions import AnymailAPIError
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 
-from chat.models import Conversation, Message
+from chat.models import Conversation
 from chat.presence import (
     add_room_presence,
     get_presence_key,
@@ -16,8 +16,6 @@ from chat.presence import (
 )
 from chat.services import (
     advance_watermark,
-    clear_digest_debounce_flag,
-    schedule_unread_message_digest,
     send_message,
 )
 from chat.tasks import (
@@ -119,9 +117,7 @@ class ChatDebounceAndSchedulingTests(TestCase):
         self.assertEqual(mock_apply_async.call_count, 1)
 
     @patch("chat.tasks.send_unread_message_digest.apply_async")
-    def test_message_to_online_recipient_does_not_schedule_task(
-        self, mock_apply_async
-    ):
+    def test_message_to_online_recipient_does_not_schedule_task(self, mock_apply_async):
         expected_flag = f"chat_digest_pending:{self.teacher.id}:{self.conversation.id}"
 
         # Recipient is currently in the room
@@ -139,7 +135,9 @@ class ChatDebounceAndSchedulingTests(TestCase):
         cache.set(expected_flag, True, timeout=900)
         self.assertTrue(cache.get(expected_flag))
 
-        msg = send_message(self.conversation, sender=self.student, text="Check this out")
+        msg = send_message(
+            self.conversation, sender=self.student, text="Check this out"
+        )
         # Ensure flag is set
         cache.set(expected_flag, True, timeout=900)
 
@@ -151,12 +149,15 @@ class ChatDebounceAndSchedulingTests(TestCase):
         expected_flag = f"chat_digest_pending:{self.teacher.id}:{self.conversation.id}"
         cache.set(expected_flag, True, timeout=900)
 
-        msg = send_message(self.conversation, sender=self.student, text="Hello!")
+        send_message(self.conversation, sender=self.student, text="Hello!")
         cache.set(expected_flag, True, timeout=900)
 
         self.client.force_login(self.teacher)
         response = self.client.get(
-            reverse("chat:conversation_detail", kwargs={"conversation_id": self.conversation.id})
+            reverse(
+                "chat:conversation_detail",
+                kwargs={"conversation_id": self.conversation.id},
+            )
         )
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(cache.get(expected_flag))
@@ -188,8 +189,12 @@ class SendUnreadMessageDigestWorkerTests(TestCase):
         )
 
     def test_digest_task_sends_email_when_unread_and_offline(self):
-        msg1 = send_message(self.conversation, sender=self.student, text="Hi Bob, lesson question.")
-        msg2 = send_message(self.conversation, sender=self.student, text="Also, see this attachment.")
+        send_message(
+            self.conversation, sender=self.student, text="Hi Bob, lesson question."
+        )
+        send_message(
+            self.conversation, sender=self.student, text="Also, see this attachment."
+        )
 
         # Recipient is offline
         self.assertFalse(is_user_in_room(self.conversation.id, self.teacher.id))
@@ -220,7 +225,9 @@ class SendUnreadMessageDigestWorkerTests(TestCase):
         self.assertIn(conv_url, html_content)
 
     def test_digest_task_singular_subject_for_single_message(self):
-        send_message(self.conversation, sender=self.student, text="Just one quick note.")
+        send_message(
+            self.conversation, sender=self.student, text="Just one quick note."
+        )
 
         send_unread_message_digest(self.conversation.id, self.teacher.id)
 
@@ -250,7 +257,9 @@ class SendUnreadMessageDigestWorkerTests(TestCase):
         flag = f"chat_digest_pending:{self.teacher.id}:{self.conversation.id}"
         cache.set(flag, True, timeout=900)
 
-        send_message(self.conversation, sender=self.student, text="Testing flag clearing")
+        send_message(
+            self.conversation, sender=self.student, text="Testing flag clearing"
+        )
         send_unread_message_digest(self.conversation.id, self.teacher.id)
 
         self.assertIsNone(cache.get(flag))

@@ -2,6 +2,7 @@ import calendar
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -23,9 +24,13 @@ def expire_stale_bookings(teacher=None, student=None, now=None):
         now = timezone.now()
 
     with transaction.atomic():
-        qs = Booking.objects.select_for_update(of=('self',)).select_related('student', 'teacher__user').filter(
-            status=Booking.Status.PENDING,
-            start_at__lte=now,
+        qs = (
+            Booking.objects.select_for_update(of=("self",))
+            .select_related("student", "teacher__user")
+            .filter(
+                status=Booking.Status.PENDING,
+                start_at__lte=now,
+            )
         )
         if teacher is not None:
             qs = qs.filter(teacher=teacher)
@@ -37,7 +42,9 @@ def expire_stale_bookings(teacher=None, student=None, now=None):
             return 0
 
         stale_ids = [b.id for b in stale_bookings]
-        count = Booking.objects.filter(id__in=stale_ids).update(status=Booking.Status.EXPIRED)
+        count = Booking.objects.filter(id__in=stale_ids).update(
+            status=Booking.Status.EXPIRED
+        )
 
         for booking in stale_bookings:
             booking.status = Booking.Status.EXPIRED
@@ -56,12 +63,18 @@ def get_availability_windows(teacher, date_val: date):
     windows apply (RegularAvailability is ignored); otherwise RegularAvailability
     for that weekday applies.
     """
-    if not teacher or not getattr(teacher, 'user', None) or not getattr(teacher.user, 'is_email_verified', False):
+    if (
+        not teacher
+        or not getattr(teacher, "user", None)
+        or not getattr(teacher.user, "is_email_verified", False)
+    ):
         return []
 
     # Evaluate overrides in a single database query
     overrides = list(
-        WeeklyOverride.objects.filter(teacher=teacher, date=date_val).order_by('start_time')
+        WeeklyOverride.objects.filter(teacher=teacher, date=date_val).order_by(
+            "start_time"
+        )
     )
 
     if overrides:
@@ -73,7 +86,7 @@ def get_availability_windows(teacher, date_val: date):
     weekday = date_val.weekday()
     regular_rules = RegularAvailability.objects.filter(
         teacher=teacher, day_of_week=weekday
-    ).order_by('start_time')
+    ).order_by("start_time")
 
     return [(r.start_time, r.end_time) for r in regular_rules]
 
@@ -116,7 +129,7 @@ def get_available_start_times(teacher, date_val: date, duration_minutes: int):
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
         start_at__lt=day_range_end,
         end_at__gt=day_range_start,
-    ).values_list('start_at', 'end_at')
+    ).values_list("start_at", "end_at")
 
     booked_ranges = list(existing_bookings)
 
@@ -179,47 +192,69 @@ def get_eligible_lesson_options(teacher, student):
     options = []
 
     if trial_eligible:
-        trial_price_display = f"${teacher.trial_price}" if teacher.trial_price else "Free"
-        options.append({
-            'key': 'trial',
-            'title': 'Trial Lesson',
-            'duration_minutes': 25,
-            'duration_display': '25 min',
-            'price': teacher.trial_price,
-            'price_display': trial_price_display,
-            'lesson_type': Booking.LessonType.TRIAL,
-            'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.TRIAL],
-            'is_selected': True,
-            'subtitle': 'Introductory session',
-        })
+        trial_price_display = (
+            f"${teacher.trial_price}" if teacher.trial_price else "Free"
+        )
+        options.append(
+            {
+                "key": "trial",
+                "title": "Trial Lesson",
+                "duration_minutes": 25,
+                "duration_display": "25 min",
+                "price": teacher.trial_price,
+                "price_display": trial_price_display,
+                "lesson_type": Booking.LessonType.TRIAL,
+                "lesson_type_display": dict(Booking.LessonType.choices)[
+                    Booking.LessonType.TRIAL
+                ],
+                "is_selected": True,
+                "subtitle": "Introductory session",
+            }
+        )
 
-    price_25_display = f"${teacher.lesson_price_25}" if (teacher and teacher.lesson_price_25 is not None) else "$0.00"
-    options.append({
-        'key': 'regular_25',
-        'title': 'Regular Lesson (25m)',
-        'duration_minutes': 25,
-        'duration_display': '25 min',
-        'price': teacher.lesson_price_25 if teacher else None,
-        'price_display': price_25_display,
-        'lesson_type': Booking.LessonType.REGULAR,
-        'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.REGULAR],
-        'is_selected': False,
-        'subtitle': 'Quick focused session',
-    })
+    price_25_display = (
+        f"${teacher.lesson_price_25}"
+        if (teacher and teacher.lesson_price_25 is not None)
+        else "$0.00"
+    )
+    options.append(
+        {
+            "key": "regular_25",
+            "title": "Regular Lesson (25m)",
+            "duration_minutes": 25,
+            "duration_display": "25 min",
+            "price": teacher.lesson_price_25 if teacher else None,
+            "price_display": price_25_display,
+            "lesson_type": Booking.LessonType.REGULAR,
+            "lesson_type_display": dict(Booking.LessonType.choices)[
+                Booking.LessonType.REGULAR
+            ],
+            "is_selected": False,
+            "subtitle": "Quick focused session",
+        }
+    )
 
-    price_50_display = f"${teacher.lesson_price}" if (teacher and teacher.lesson_price is not None) else "$0.00"
-    options.append({
-        'key': 'regular_50',
-        'title': 'Regular Lesson (50m)',
-        'duration_minutes': 50,
-        'duration_display': '50 min',
-        'price': teacher.lesson_price if teacher else None,
-        'price_display': price_50_display,
-        'lesson_type': Booking.LessonType.REGULAR,
-        'lesson_type_display': dict(Booking.LessonType.choices)[Booking.LessonType.REGULAR],
-        'is_selected': not trial_eligible,
-        'subtitle': 'Standard comprehensive session',
-    })
+    price_50_display = (
+        f"${teacher.lesson_price}"
+        if (teacher and teacher.lesson_price is not None)
+        else "$0.00"
+    )
+    options.append(
+        {
+            "key": "regular_50",
+            "title": "Regular Lesson (50m)",
+            "duration_minutes": 50,
+            "duration_display": "50 min",
+            "price": teacher.lesson_price if teacher else None,
+            "price_display": price_50_display,
+            "lesson_type": Booking.LessonType.REGULAR,
+            "lesson_type_display": dict(Booking.LessonType.choices)[
+                Booking.LessonType.REGULAR
+            ],
+            "is_selected": not trial_eligible,
+            "subtitle": "Standard comprehensive session",
+        }
+    )
 
     return options
 
@@ -232,23 +267,23 @@ def resolve_lesson_option(teacher, student, lesson_option: str):
     Raises ValidationError on invalid option or ineligibility.
     """
     if not lesson_option:
-        raise ValidationError('lesson_option is required.')
+        raise ValidationError("lesson_option is required.")
 
-    if lesson_option == 'trial':
+    if lesson_option == "trial":
         if not teacher or not teacher.offers_trial:
-            raise ValidationError('Trial lessons are not offered by this teacher.')
+            raise ValidationError("Trial lessons are not offered by this teacher.")
         if not is_trial_eligible(teacher, student):
-            raise ValidationError('You are not eligible for a trial lesson.')
+            raise ValidationError("You are not eligible for a trial lesson.")
         return Booking.LessonType.TRIAL, teacher.trial_price, 25
 
-    elif lesson_option == 'regular_25':
+    elif lesson_option == "regular_25":
         if not teacher or teacher.lesson_price_25 is None:
-            raise ValidationError('25-minute lesson pricing is not configured.')
+            raise ValidationError("25-minute lesson pricing is not configured.")
         return Booking.LessonType.REGULAR, teacher.lesson_price_25, 25
 
-    elif lesson_option == 'regular_50':
+    elif lesson_option == "regular_50":
         if not teacher or teacher.lesson_price is None:
-            raise ValidationError('50-minute lesson pricing is not configured.')
+            raise ValidationError("50-minute lesson pricing is not configured.")
         return Booking.LessonType.REGULAR, teacher.lesson_price, 50
 
     else:
@@ -263,8 +298,16 @@ def get_lesson_type_and_price(teacher, student):
     to prevent duplicate trial requests while one is pending.
     """
     if is_trial_eligible(teacher, student):
-        return Booking.LessonType.TRIAL, teacher.trial_price, teacher.trial_duration_minutes
-    return Booking.LessonType.REGULAR, teacher.lesson_price, teacher.lesson_duration_minutes
+        return (
+            Booking.LessonType.TRIAL,
+            teacher.trial_price,
+            teacher.trial_duration_minutes,
+        )
+    return (
+        Booking.LessonType.REGULAR,
+        teacher.lesson_price,
+        teacher.lesson_duration_minutes,
+    )
 
 
 def get_calendar_grid(year: int, month: int, *, teacher=None, student=None):
@@ -292,8 +335,8 @@ def get_calendar_grid(year: int, month: int, *, teacher=None, student=None):
     range_end = datetime.combine(grid_end_date, time.max, tzinfo=viewer_tz)
 
     booking_filter = {
-        'start_at__lt': range_end,
-        'end_at__gt': range_start,
+        "start_at__lt": range_end,
+        "end_at__gt": range_start,
     }
 
     if teacher is not None:
@@ -320,13 +363,15 @@ def get_calendar_grid(year: int, month: int, *, teacher=None, student=None):
     for week in month_matrix:
         week_data = []
         for day_date in week:
-            week_data.append({
-                "date": day_date,
-                "day": day_date.day,
-                "is_current_month": day_date.month == month,
-                "is_today": day_date == today,
-                "bookings": bookings_by_date.get(day_date, []),
-            })
+            week_data.append(
+                {
+                    "date": day_date,
+                    "day": day_date.day,
+                    "is_current_month": day_date.month == month,
+                    "is_today": day_date == today,
+                    "bookings": bookings_by_date.get(day_date, []),
+                }
+            )
         calendar_grid.append(week_data)
 
     return calendar_grid
@@ -381,7 +426,9 @@ def get_week_data(teacher, student_tz, week_days, duration_minutes: int):
 
     def fetch_slots_for_teacher_day(t_day):
         if t_day not in slots_cache:
-            slots_cache[t_day] = get_available_start_times(teacher, t_day, duration_minutes)
+            slots_cache[t_day] = get_available_start_times(
+                teacher, t_day, duration_minutes
+            )
         return slots_cache[t_day]
 
     duration_delta = timedelta(minutes=duration_minutes)
@@ -398,12 +445,14 @@ def get_week_data(teacher, student_tz, week_days, duration_minutes: int):
             if local_start.date() != day:
                 continue
             local_end = timezone.localtime(slot_start + duration_delta, student_tz)
-            day_slots.append({
-                'start_at': slot_start,
-                'local_start_time': local_start.time(),
-                'local_end_time': local_end.time(),
-            })
+            day_slots.append(
+                {
+                    "start_at": slot_start,
+                    "local_start_time": local_start.time(),
+                    "local_end_time": local_end.time(),
+                }
+            )
 
-        week_data.append({'day': day, 'slots': day_slots})
+        week_data.append({"day": day, "slots": day_slots})
 
     return week_data

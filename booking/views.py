@@ -21,6 +21,14 @@ from portfolio.models import TeacherProfile
 
 from .forms import ReviewForm
 from .models import Booking, RegularAvailability, Review, WeeklyOverride
+from .notifications import (
+    mark_booking_requests_read,
+    notify_booking_cancelled,
+    notify_booking_confirmed,
+    notify_booking_declined,
+    notify_booking_requested,
+    notify_cancellation_requested,
+)
 from .services import (
     expire_stale_bookings,
     get_available_start_times,
@@ -36,15 +44,6 @@ from .tasks import (
     safe_send_booking_declined_email,
     safe_send_cancellation_requested_email,
     send_booking_request_notifications,
-)
-from .notifications import (
-    mark_booking_requests_read,
-    notify_booking_cancelled,
-    notify_booking_confirmed,
-    notify_booking_declined,
-    notify_booking_expired,
-    notify_booking_requested,
-    notify_cancellation_requested,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,52 +67,48 @@ def safe_record_booking_event(booking, event_type: str):
 def _get_student_upcoming_queryset(student, now):
     grace_cutoff = now - timedelta(minutes=Booking.JOIN_WINDOW_POST_END_MINUTES)
     return (
-        Booking.objects
-        .filter(
+        Booking.objects.filter(
             student=student,
             status=Booking.Status.CONFIRMED,
             end_at__gte=grace_cutoff,
         )
-        .select_related('teacher', 'teacher__user')
-        .order_by('start_at')
+        .select_related("teacher", "teacher__user")
+        .order_by("start_at")
     )
 
 
 def _get_student_past_queryset(student, now):
     grace_cutoff = now - timedelta(minutes=Booking.JOIN_WINDOW_POST_END_MINUTES)
     return (
-        Booking.objects
-        .filter(student=student)
+        Booking.objects.filter(student=student)
         .filter(
             Q(status=Booking.Status.COMPLETED)
             | Q(status=Booking.Status.CONFIRMED, end_at__lt=grace_cutoff)
         )
-        .select_related('teacher', 'teacher__user', 'review')
-        .order_by('-start_at')
+        .select_related("teacher", "teacher__user", "review")
+        .order_by("-start_at")
     )
 
 
 def _get_teacher_upcoming_queryset(teacher_user):
     return (
-        Booking.objects
-        .filter(
+        Booking.objects.filter(
             teacher__user=teacher_user,
             status=Booking.Status.CONFIRMED,
         )
-        .select_related('student', 'teacher')
-        .order_by('start_at')
+        .select_related("student", "teacher")
+        .order_by("start_at")
     )
 
 
 def _get_teacher_past_queryset(teacher_user):
     return (
-        Booking.objects
-        .filter(
+        Booking.objects.filter(
             teacher__user=teacher_user,
             status=Booking.Status.COMPLETED,
         )
-        .select_related('student', 'review')
-        .order_by('-start_at')
+        .select_related("student", "review")
+        .order_by("-start_at")
     )
 
 
@@ -121,36 +116,48 @@ def _get_teacher_past_queryset(teacher_user):
 def student_dashboard(request):
     expire_stale_bookings(student=request.user)
 
-    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
     now = timezone.now()
 
     if is_ajax:
-        section = request.GET.get('section')
-        page_number = request.GET.get('page', 1)
+        section = request.GET.get("section")
+        page_number = request.GET.get("page", 1)
 
-        if section == 'upcoming':
+        if section == "upcoming":
             upcoming_qs = _get_student_upcoming_queryset(request.user, now)
             paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
             page_obj = paginator.get_page(page_number)
-            response = render(request, 'partials/_lesson_card_items.html', {
-                'upcoming_bookings': page_obj,
-            })
-            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
-            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            response = render(
+                request,
+                "partials/_lesson_card_items.html",
+                {
+                    "upcoming_bookings": page_obj,
+                },
+            )
+            response["X-Has-Next"] = "true" if page_obj.has_next() else "false"
+            response["X-Next-Page"] = (
+                str(page_obj.next_page_number()) if page_obj.has_next() else ""
+            )
             return response
 
-        elif section == 'past':
+        elif section == "past":
             past_qs = _get_student_past_queryset(request.user, now)
             paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
             page_obj = paginator.get_page(page_number)
-            response = render(request, 'partials/_past_lesson_card_items.html', {
-                'past_bookings': page_obj,
-            })
-            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
-            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            response = render(
+                request,
+                "partials/_past_lesson_card_items.html",
+                {
+                    "past_bookings": page_obj,
+                },
+            )
+            response["X-Has-Next"] = "true" if page_obj.has_next() else "false"
+            response["X-Next-Page"] = (
+                str(page_obj.next_page_number()) if page_obj.has_next() else ""
+            )
             return response
 
-        return HttpResponseBadRequest('Invalid or missing section parameter.')
+        return HttpResponseBadRequest("Invalid or missing section parameter.")
 
     upcoming_qs = _get_student_upcoming_queryset(request.user, now)
     upcoming_paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
@@ -160,12 +167,16 @@ def student_dashboard(request):
     past_paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
     past_page = past_paginator.get_page(1)
 
-    return render(request, 'booking/student_dashboard.html', {
-        'upcoming_bookings': upcoming_page,
-        'upcoming_has_next': upcoming_page.has_next(),
-        'past_bookings': past_page,
-        'past_has_next': past_page.has_next(),
-    })
+    return render(
+        request,
+        "booking/student_dashboard.html",
+        {
+            "upcoming_bookings": upcoming_page,
+            "upcoming_has_next": upcoming_page.has_next(),
+            "past_bookings": past_page,
+            "past_has_next": past_page.has_next(),
+        },
+    )
 
 
 @student_required
@@ -173,7 +184,7 @@ def student_booking(request):
     student_tz = ZoneInfo(request.user.timezone)
     today = timezone.localtime(timezone.now(), student_tz).date()
 
-    week_start_param = request.GET.get('week_start')
+    week_start_param = request.GET.get("week_start")
     if week_start_param:
         try:
             week_start = date.fromisoformat(week_start_param)
@@ -186,34 +197,38 @@ def student_booking(request):
         week_start = today
 
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-    teacher = TeacherProfile.objects.select_related('user').first()
+    teacher = TeacherProfile.objects.select_related("user").first()
 
     lesson_options = get_eligible_lesson_options(teacher, request.user)
-    selected_option = next((opt for opt in lesson_options if opt['is_selected']), None)
-    duration_minutes = selected_option['duration_minutes'] if selected_option else 50
+    selected_option = next((opt for opt in lesson_options if opt["is_selected"]), None)
+    duration_minutes = selected_option["duration_minutes"] if selected_option else 50
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
 
-    teacher_profile_picture = teacher.profile_picture.url if (teacher and teacher.profile_picture) else None
+    teacher_profile_picture = (
+        teacher.profile_picture.url if (teacher and teacher.profile_picture) else None
+    )
 
     context = {
-        'week_data': week_data,
-        'week_start': week_start,
-        'next_week_start': week_start + timedelta(days=7),
-        'prev_week_start': prev_week_start,
-        'can_go_prev': can_go_prev,
-        'today': today,
-        'teacher': teacher,
-        'lesson_options': lesson_options,
-        'selected_option': selected_option,
-        'duration_minutes': duration_minutes,
-        'teacher_avatar_color': get_avatar_color(teacher.user.id) if teacher else '#4F7A62',
-        'teacher_profile_picture': teacher_profile_picture,
-        'viewer_timezone': request.user.timezone,
+        "week_data": week_data,
+        "week_start": week_start,
+        "next_week_start": week_start + timedelta(days=7),
+        "prev_week_start": prev_week_start,
+        "can_go_prev": can_go_prev,
+        "today": today,
+        "teacher": teacher,
+        "lesson_options": lesson_options,
+        "selected_option": selected_option,
+        "duration_minutes": duration_minutes,
+        "teacher_avatar_color": (
+            get_avatar_color(teacher.user.id) if teacher else "#4F7A62"
+        ),
+        "teacher_profile_picture": teacher_profile_picture,
+        "viewer_timezone": request.user.timezone,
     }
-    return render(request, 'booking/student_booking.html', context)
+    return render(request, "booking/student_booking.html", context)
 
 
 @student_required
@@ -221,7 +236,7 @@ def student_booking_week_ajax(request):
     student_tz = ZoneInfo(request.user.timezone)
     today = timezone.localtime(timezone.now(), student_tz).date()
 
-    week_start_param = request.GET.get('week_start')
+    week_start_param = request.GET.get("week_start")
     try:
         week_start = date.fromisoformat(week_start_param)
     except (TypeError, ValueError):
@@ -231,10 +246,10 @@ def student_booking_week_ajax(request):
         week_start = today
 
     week_days = [week_start + timedelta(days=i) for i in range(7)]
-    teacher = TeacherProfile.objects.select_related('user').first()
+    teacher = TeacherProfile.objects.select_related("user").first()
 
-    duration_param = request.GET.get('duration')
-    lesson_option_param = request.GET.get('lesson_option')
+    duration_param = request.GET.get("duration")
+    lesson_option_param = request.GET.get("lesson_option")
 
     duration_minutes = None
     if duration_param:
@@ -247,66 +262,78 @@ def student_booking_week_ajax(request):
 
     if duration_minutes is None and lesson_option_param:
         try:
-            _, _, duration_minutes = resolve_lesson_option(teacher, request.user, lesson_option_param)
+            _, _, duration_minutes = resolve_lesson_option(
+                teacher, request.user, lesson_option_param
+            )
         except ValidationError:
             pass
 
     if duration_minutes is None:
         lesson_options = get_eligible_lesson_options(teacher, request.user)
-        selected_option = next((opt for opt in lesson_options if opt['is_selected']), None)
-        duration_minutes = selected_option['duration_minutes'] if selected_option else 50
+        selected_option = next(
+            (opt for opt in lesson_options if opt["is_selected"]), None
+        )
+        duration_minutes = (
+            selected_option["duration_minutes"] if selected_option else 50
+        )
 
     week_data = get_week_data(teacher, student_tz, week_days, duration_minutes)
 
     prev_week_start = week_start - timedelta(days=7)
     can_go_prev = prev_week_start >= today
 
-    html = render_to_string('partials/_day_picker_columns.html', {'week_data': week_data}, request=request)
+    html = render_to_string(
+        "partials/_day_picker_columns.html", {"week_data": week_data}, request=request
+    )
 
-    return JsonResponse({
-        'html': html,
-        'week_label': f"{week_start.strftime('%b %d')} – {week_days[-1].strftime('%b %d, %Y')}",
-        'prev_week_start': prev_week_start.isoformat(),
-        'next_week_start': (week_start + timedelta(days=7)).isoformat(),
-        'can_go_prev': can_go_prev,
-        'viewer_timezone': request.user.timezone,
-        'duration_minutes': duration_minutes,
-    })
+    return JsonResponse(
+        {
+            "html": html,
+            "week_label": f"{week_start.strftime('%b %d')} – {week_days[-1].strftime('%b %d, %Y')}",
+            "prev_week_start": prev_week_start.isoformat(),
+            "next_week_start": (week_start + timedelta(days=7)).isoformat(),
+            "can_go_prev": can_go_prev,
+            "viewer_timezone": request.user.timezone,
+            "duration_minutes": duration_minutes,
+        }
+    )
 
 
 @student_required
 @require_POST
 def book_slot(request):
     if not request.user.is_email_verified:
-        return JsonResponse({'error': 'email_unverified'}, status=403)
+        return JsonResponse({"error": "email_unverified"}, status=403)
 
-    start_at_str = request.POST.get('start_at')
+    start_at_str = request.POST.get("start_at")
     if not start_at_str:
-        return JsonResponse({'error': 'start_at is required.'}, status=400)
+        return JsonResponse({"error": "start_at is required."}, status=400)
 
-    lesson_option = request.POST.get('lesson_option')
+    lesson_option = request.POST.get("lesson_option")
     if not lesson_option:
-        return JsonResponse({'error': 'lesson_option is required.'}, status=400)
+        return JsonResponse({"error": "lesson_option is required."}, status=400)
 
     try:
         start_at_val = datetime.fromisoformat(start_at_str)
         if timezone.is_naive(start_at_val):
-            return JsonResponse({'error': 'Invalid start_at format.'}, status=400)
+            return JsonResponse({"error": "Invalid start_at format."}, status=400)
     except ValueError:
-        return JsonResponse({'error': 'Invalid start_at format.'}, status=400)
+        return JsonResponse({"error": "Invalid start_at format."}, status=400)
 
-    teacher = TeacherProfile.objects.select_related('user').first()
+    teacher = TeacherProfile.objects.select_related("user").first()
     if not teacher:
-        return JsonResponse({'error': 'No active teacher found.'}, status=404)
+        return JsonResponse({"error": "No active teacher found."}, status=404)
 
     if teacher.user == request.user:
-        return JsonResponse({'error': 'You cannot book your own availability.'}, status=400)
+        return JsonResponse(
+            {"error": "You cannot book your own availability."}, status=400
+        )
 
     try:
         with transaction.atomic():
             teacher = (
                 TeacherProfile.objects.select_for_update()
-                .select_related('user')
+                .select_related("user")
                 .get(pk=teacher.pk)
             )
 
@@ -315,14 +342,21 @@ def book_slot(request):
                     teacher, request.user, lesson_option
                 )
             except ValidationError as e:
-                return JsonResponse({'error': e.message if hasattr(e, 'message') else str(e)}, status=400)
+                return JsonResponse(
+                    {"error": e.message if hasattr(e, "message") else str(e)},
+                    status=400,
+                )
 
             teacher_tz = ZoneInfo(teacher.user.timezone)
             teacher_local_date = timezone.localtime(start_at_val, teacher_tz).date()
-            available_starts = get_available_start_times(teacher, teacher_local_date, duration_minutes)
+            available_starts = get_available_start_times(
+                teacher, teacher_local_date, duration_minutes
+            )
 
             if start_at_val not in available_starts:
-                return JsonResponse({'error': 'This time is no longer available.'}, status=409)
+                return JsonResponse(
+                    {"error": "This time is no longer available."}, status=409
+                )
 
             end_at_val = start_at_val + timedelta(minutes=duration_minutes)
 
@@ -346,23 +380,27 @@ def book_slot(request):
             )
 
     except IntegrityError:
-        return JsonResponse({'error': 'This time is no longer available.'}, status=409)
+        return JsonResponse({"error": "This time is no longer available."}, status=409)
     except ValidationError as e:
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({"error": str(e)}, status=400)
     except Exception:
         logger.exception("Unexpected error in book_slot")
         return JsonResponse(
-            {'error': 'An unexpected error occurred. Please refresh the page to check your booking.'},
+            {
+                "error": "An unexpected error occurred. Please refresh the page to check your booking."
+            },
             status=500,
         )
 
-    return JsonResponse({
-        'success': True,
-        'booking_id': booking.id,
-        'lesson_type': booking.get_lesson_type_display(),
-        'price': str(booking.price) if booking.price is not None else 'Free',
-        'duration_minutes': booking.duration_minutes,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "booking_id": booking.id,
+            "lesson_type": booking.get_lesson_type_display(),
+            "price": str(booking.price) if booking.price is not None else "Free",
+            "duration_minutes": booking.duration_minutes,
+        }
+    )
 
 
 @teacher_required
@@ -370,35 +408,47 @@ def teacher_dashboard(request):
     teacher = request.user.teacher_profile
     expire_stale_bookings(teacher=teacher)
 
-    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
 
     if is_ajax:
-        section = request.GET.get('section')
-        page_number = request.GET.get('page', 1)
+        section = request.GET.get("section")
+        page_number = request.GET.get("page", 1)
 
-        if section == 'upcoming':
+        if section == "upcoming":
             upcoming_qs = _get_teacher_upcoming_queryset(request.user)
             paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
             page_obj = paginator.get_page(page_number)
-            response = render(request, 'partials/_lesson_card_items.html', {
-                'upcoming_bookings': page_obj,
-            })
-            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
-            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            response = render(
+                request,
+                "partials/_lesson_card_items.html",
+                {
+                    "upcoming_bookings": page_obj,
+                },
+            )
+            response["X-Has-Next"] = "true" if page_obj.has_next() else "false"
+            response["X-Next-Page"] = (
+                str(page_obj.next_page_number()) if page_obj.has_next() else ""
+            )
             return response
 
-        elif section == 'past':
+        elif section == "past":
             past_qs = _get_teacher_past_queryset(request.user)
             paginator = Paginator(past_qs, DASHBOARD_PAGE_SIZE)
             page_obj = paginator.get_page(page_number)
-            response = render(request, 'partials/_past_lesson_card_items.html', {
-                'past_bookings': page_obj,
-            })
-            response['X-Has-Next'] = 'true' if page_obj.has_next() else 'false'
-            response['X-Next-Page'] = str(page_obj.next_page_number()) if page_obj.has_next() else ''
+            response = render(
+                request,
+                "partials/_past_lesson_card_items.html",
+                {
+                    "past_bookings": page_obj,
+                },
+            )
+            response["X-Has-Next"] = "true" if page_obj.has_next() else "false"
+            response["X-Next-Page"] = (
+                str(page_obj.next_page_number()) if page_obj.has_next() else ""
+            )
             return response
 
-        return HttpResponseBadRequest('Invalid or missing section parameter.')
+        return HttpResponseBadRequest("Invalid or missing section parameter.")
 
     upcoming_qs = _get_teacher_upcoming_queryset(request.user)
     upcoming_paginator = Paginator(upcoming_qs, DASHBOARD_PAGE_SIZE)
@@ -418,15 +468,19 @@ def teacher_dashboard(request):
         is_approved=False,
     ).count()
 
-    return render(request, 'booking/teacher_dashboard.html', {
-        'teacher': teacher,
-        'upcoming_bookings': upcoming_page,
-        'upcoming_has_next': upcoming_page.has_next(),
-        'past_bookings': past_page,
-        'past_has_next': past_page.has_next(),
-        'lesson_requests_count': lesson_requests_count,
-        'pending_reviews_count': pending_reviews_count,
-    })
+    return render(
+        request,
+        "booking/teacher_dashboard.html",
+        {
+            "teacher": teacher,
+            "upcoming_bookings": upcoming_page,
+            "upcoming_has_next": upcoming_page.has_next(),
+            "past_bookings": past_page,
+            "past_has_next": past_page.has_next(),
+            "lesson_requests_count": lesson_requests_count,
+            "pending_reviews_count": pending_reviews_count,
+        },
+    )
 
 
 @teacher_required
@@ -439,20 +493,24 @@ def teacher_lesson_requests(request):
             Q(status=Booking.Status.PENDING) | Q(cancellation_requested=True),
             teacher__user=request.user,
         )
-        .select_related('student')
-        .order_by('start_at')
+        .select_related("student")
+        .order_by("start_at")
     )
 
     for booking in lesson_requests:
         local_start = timezone.localtime(booking.start_at, viewer_tz)
         local_end = timezone.localtime(booking.end_at, viewer_tz)
         booking.local_date = local_start.date()
-        booking.time_range = f'{local_start:%H:%M}–{local_end:%H:%M}'
+        booking.time_range = f"{local_start:%H:%M}–{local_end:%H:%M}"
         booking.is_cancellation = booking.cancellation_requested
 
-    return render(request, 'partials/_lesson_requests_list.html', {
-        'lesson_requests': lesson_requests,
-    })
+    return render(
+        request,
+        "partials/_lesson_requests_list.html",
+        {
+            "lesson_requests": lesson_requests,
+        },
+    )
 
 
 @teacher_required
@@ -464,9 +522,9 @@ def respond_to_booking(request, booking_id):
         teacher__user=request.user,
     )
 
-    action = request.POST.get('action')
-    if action not in ('accept', 'decline'):
-        return JsonResponse({'error': 'Invalid action.'}, status=400)
+    action = request.POST.get("action")
+    if action not in ("accept", "decline"):
+        return JsonResponse({"error": "Invalid action."}, status=400)
 
     marked_notification_ids = []
     unread_notifications_count = 0
@@ -474,22 +532,26 @@ def respond_to_booking(request, booking_id):
     if booking.cancellation_requested:
         pass
     elif booking.status == Booking.Status.EXPIRED:
-        return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
+        return JsonResponse({"error": "This lesson request has expired."}, status=400)
     elif booking.status == Booking.Status.PENDING:
         if booking.start_at <= timezone.now():
             expire_stale_bookings(teacher=booking.teacher)
-            return JsonResponse({'error': 'This lesson request has expired.'}, status=400)
+            return JsonResponse(
+                {"error": "This lesson request has expired."}, status=400
+            )
     else:
-        return JsonResponse({'error': 'This booking is not awaiting a response.'}, status=400)
+        return JsonResponse(
+            {"error": "This booking is not awaiting a response."}, status=400
+        )
 
     with transaction.atomic():
         if booking.cancellation_requested:
-            was_confirmed = (booking.status == Booking.Status.CONFIRMED)
-            if action == 'accept':
+            was_confirmed = booking.status == Booking.Status.CONFIRMED
+            if action == "accept":
                 booking.status = Booking.Status.CANCELLED
             booking.cancellation_requested = False
             booking.save()
-            if action == 'accept':
+            if action == "accept":
                 transaction.on_commit(
                     lambda: safe_record_booking_event(booking, "booking_cancelled")
                 )
@@ -500,10 +562,14 @@ def respond_to_booking(request, booking_id):
                         lambda: safe_send_booking_cancelled_email(booking_id)
                     )
         elif booking.status == Booking.Status.PENDING:
-            booking.status = Booking.Status.CONFIRMED if action == 'accept' else Booking.Status.CANCELLED
+            booking.status = (
+                Booking.Status.CONFIRMED
+                if action == "accept"
+                else Booking.Status.CANCELLED
+            )
             booking.save()
             booking_id = booking.id
-            if action == 'accept':
+            if action == "accept":
                 notify_booking_confirmed(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_confirmed_email(booking_id)
@@ -511,7 +577,7 @@ def respond_to_booking(request, booking_id):
                 transaction.on_commit(
                     lambda: safe_record_booking_event(booking, "booking_confirmed")
                 )
-            elif action == 'decline':
+            elif action == "decline":
                 notify_booking_declined(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_declined_email(booking_id)
@@ -520,13 +586,17 @@ def respond_to_booking(request, booking_id):
                     lambda: safe_record_booking_event(booking, "booking_cancelled")
                 )
 
-        marked_notification_ids, unread_notifications_count = mark_booking_requests_read(booking)
+        marked_notification_ids, unread_notifications_count = (
+            mark_booking_requests_read(booking)
+        )
 
-    return JsonResponse({
-        'success': True,
-        'unread_notifications_count': unread_notifications_count,
-        'marked_notification_ids': marked_notification_ids,
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "unread_notifications_count": unread_notifications_count,
+            "marked_notification_ids": marked_notification_ids,
+        }
+    )
 
 
 @teacher_required
@@ -547,7 +617,7 @@ def student_management(request):
             teacher__user=request.user,
             student__in=students,
             status__in=[Booking.Status.CONFIRMED, Booking.Status.COMPLETED],
-        ).order_by('start_at')
+        ).order_by("start_at")
     )
 
     bookings_by_student = {student.id: [] for student in students}
@@ -558,11 +628,14 @@ def student_management(request):
         s_bookings = bookings_by_student.get(student.id, [])
 
         past_bookings = [
-            b for b in s_bookings 
-            if b.status == Booking.Status.COMPLETED or (b.status == Booking.Status.CONFIRMED and b.start_at < now)
+            b
+            for b in s_bookings
+            if b.status == Booking.Status.COMPLETED
+            or (b.status == Booking.Status.CONFIRMED and b.start_at < now)
         ]
         upcoming_bookings = [
-            b for b in s_bookings 
+            b
+            for b in s_bookings
             if b.status == Booking.Status.CONFIRMED and b.start_at >= now
         ]
 
@@ -572,24 +645,30 @@ def student_management(request):
         student.next_booking = upcoming_bookings[0] if upcoming_bookings else None
         student.display_name = student.get_full_name() or student.username
 
-    return render(request, 'booking/teacher_student_management.html', {
-        'students': students,
-    })
+    return render(
+        request,
+        "booking/teacher_student_management.html",
+        {
+            "students": students,
+        },
+    )
 
 
 @teacher_required
 def teacher_regular_schedule(request):
     availabilities = RegularAvailability.objects.filter(
         teacher=request.user.teacher_profile,
-    ).order_by('day_of_week', 'start_time')
+    ).order_by("day_of_week", "start_time")
 
     schedule = {str(day): [] for day in range(7)}
     for availability in availabilities:
-        schedule[str(availability.day_of_week)].append({
-            'id': availability.id,
-            'start': availability.start_time.strftime('%H:%M'),
-            'end': availability.end_time.strftime('%H:%M'),
-        })
+        schedule[str(availability.day_of_week)].append(
+            {
+                "id": availability.id,
+                "start": availability.start_time.strftime("%H:%M"),
+                "end": availability.end_time.strftime("%H:%M"),
+            }
+        )
 
     return JsonResponse(schedule)
 
@@ -599,29 +678,33 @@ def teacher_regular_schedule(request):
 def teacher_regular_schedule_add(request):
     if not request.user.is_email_verified:
         return JsonResponse(
-            {'error': 'You must verify your email address before setting availability.'},
+            {
+                "error": "You must verify your email address before setting availability."
+            },
             status=403,
         )
 
     availability = RegularAvailability(
         teacher=request.user.teacher_profile,
-        day_of_week=request.POST.get('day_of_week'),
-        start_time=request.POST.get('start_time'),
-        end_time=request.POST.get('end_time'),
+        day_of_week=request.POST.get("day_of_week"),
+        start_time=request.POST.get("start_time"),
+        end_time=request.POST.get("end_time"),
     )
 
     try:
         availability.full_clean()
         availability.save()
     except ValidationError as e:
-        return JsonResponse({'error': e.message_dict}, status=400)
+        return JsonResponse({"error": e.message_dict}, status=400)
 
-    return JsonResponse({
-        'id': availability.id,
-        'day_of_week': availability.day_of_week,
-        'start': availability.start_time.strftime('%H:%M'),
-        'end': availability.end_time.strftime('%H:%M'),
-    })
+    return JsonResponse(
+        {
+            "id": availability.id,
+            "day_of_week": availability.day_of_week,
+            "start": availability.start_time.strftime("%H:%M"),
+            "end": availability.end_time.strftime("%H:%M"),
+        }
+    )
 
 
 @teacher_required
@@ -633,7 +716,7 @@ def teacher_regular_schedule_delete(request, availability_id):
         teacher=request.user.teacher_profile,
     )
     availability.delete()
-    return JsonResponse({'success': True})
+    return JsonResponse({"success": True})
 
 
 @teacher_required
@@ -641,7 +724,7 @@ def teacher_weekly_override(request):
     today = timezone.localdate()
     default_week_start = today - timedelta(days=today.weekday())
 
-    week_start_param = request.GET.get('week_start')
+    week_start_param = request.GET.get("week_start")
     if week_start_param:
         try:
             week_start = date.fromisoformat(week_start_param)
@@ -656,31 +739,35 @@ def teacher_weekly_override(request):
     regular_availabilities = RegularAvailability.objects.filter(teacher=teacher_profile)
     regular_by_day = {}
     for reg in regular_availabilities:
-        regular_by_day.setdefault(reg.day_of_week, []).append({
-            'start': reg.start_time.strftime('%H:%M'),
-            'end': reg.end_time.strftime('%H:%M'),
-        })
+        regular_by_day.setdefault(reg.day_of_week, []).append(
+            {
+                "start": reg.start_time.strftime("%H:%M"),
+                "end": reg.end_time.strftime("%H:%M"),
+            }
+        )
 
     overrides = WeeklyOverride.objects.filter(
         teacher=teacher_profile,
         date__range=(week_start, week_start + timedelta(days=6)),
         is_available=True,
-    ).order_by('date', 'start_time')
+    ).order_by("date", "start_time")
 
     days = {}
     for day in week_days:
         days[day.isoformat()] = {
-            'is_past': day < today,
-            'regular_ranges': regular_by_day.get(day.weekday(), []),
-            'override_ranges': [],
+            "is_past": day < today,
+            "regular_ranges": regular_by_day.get(day.weekday(), []),
+            "override_ranges": [],
         }
 
     for override in overrides:
-        days[override.date.isoformat()]['override_ranges'].append({
-            'id': override.id,
-            'start': override.start_time.strftime('%H:%M'),
-            'end': override.end_time.strftime('%H:%M'),
-        })
+        days[override.date.isoformat()]["override_ranges"].append(
+            {
+                "id": override.id,
+                "start": override.start_time.strftime("%H:%M"),
+                "end": override.end_time.strftime("%H:%M"),
+            }
+        )
 
     week_end = week_days[-1]
     if week_start.month == week_end.month:
@@ -688,13 +775,15 @@ def teacher_weekly_override(request):
     else:
         week_label = f"{week_start.strftime('%b')} {week_start.day} \u2013 {week_end.strftime('%b')} {week_end.day}, {week_end.year}"
 
-    return JsonResponse({
-        'week_start': week_start.isoformat(),
-        'week_label': week_label,
-        'prev_week_start': (week_start - timedelta(days=7)).isoformat(),
-        'next_week_start': (week_start + timedelta(days=7)).isoformat(),
-        'days': days,
-    })
+    return JsonResponse(
+        {
+            "week_start": week_start.isoformat(),
+            "week_label": week_label,
+            "prev_week_start": (week_start - timedelta(days=7)).isoformat(),
+            "next_week_start": (week_start + timedelta(days=7)).isoformat(),
+            "days": days,
+        }
+    )
 
 
 @teacher_required
@@ -702,15 +791,17 @@ def teacher_weekly_override(request):
 def teacher_weekly_override_add(request):
     if not request.user.is_email_verified:
         return JsonResponse(
-            {'error': 'You must verify your email address before setting availability.'},
+            {
+                "error": "You must verify your email address before setting availability."
+            },
             status=403,
         )
 
     override = WeeklyOverride(
         teacher=request.user.teacher_profile,
-        date=request.POST.get('date'),
-        start_time=request.POST.get('start_time'),
-        end_time=request.POST.get('end_time'),
+        date=request.POST.get("date"),
+        start_time=request.POST.get("start_time"),
+        end_time=request.POST.get("end_time"),
         is_available=True,
     )
 
@@ -718,14 +809,16 @@ def teacher_weekly_override_add(request):
         override.full_clean()
         override.save()
     except ValidationError as e:
-        return JsonResponse({'error': e.message_dict}, status=400)
+        return JsonResponse({"error": e.message_dict}, status=400)
 
-    return JsonResponse({
-        'id': override.id,
-        'date': override.date.isoformat(),
-        'start': override.start_time.strftime('%H:%M'),
-        'end': override.end_time.strftime('%H:%M'),
-    })
+    return JsonResponse(
+        {
+            "id": override.id,
+            "date": override.date.isoformat(),
+            "start": override.start_time.strftime("%H:%M"),
+            "end": override.end_time.strftime("%H:%M"),
+        }
+    )
 
 
 @teacher_required
@@ -737,7 +830,7 @@ def teacher_weekly_override_delete(request, override_id):
         teacher=request.user.teacher_profile,
     )
     override.delete()
-    return JsonResponse({'success': True})
+    return JsonResponse({"success": True})
 
 
 @teacher_required
@@ -821,10 +914,15 @@ def cancel_lesson(request, booking_id):
     )
 
     if booking.is_awaiting_resolution:
-        return JsonResponse({"error": "This lesson has already passed and needs resolution, not cancellation."}, status=400)
+        return JsonResponse(
+            {
+                "error": "This lesson has already passed and needs resolution, not cancellation."
+            },
+            status=400,
+        )
 
     with transaction.atomic():
-        was_confirmed = (booking.status == Booking.Status.CONFIRMED)
+        was_confirmed = booking.status == Booking.Status.CONFIRMED
         booking.status = Booking.Status.CANCELLED
         booking.save()
         booking_id = booking.id
@@ -833,9 +931,7 @@ def cancel_lesson(request, booking_id):
         )
         if was_confirmed:
             notify_booking_cancelled(booking, cancelled_by=request.user)
-            transaction.on_commit(
-                lambda: safe_send_booking_cancelled_email(booking_id)
-            )
+            transaction.on_commit(lambda: safe_send_booking_cancelled_email(booking_id))
     return JsonResponse({"success": True})
 
 
@@ -854,7 +950,7 @@ def complete_lesson(request, booking_id):
         return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
 
     booking.status = Booking.Status.COMPLETED
-    booking.completion_note = request.POST.get('note', '').strip()
+    booking.completion_note = request.POST.get("note", "").strip()
     booking.save()
     return JsonResponse({"success": True})
 
@@ -889,11 +985,16 @@ def update_lesson_note(request, booking_id):
     )
 
     if booking.status != Booking.Status.COMPLETED:
-        return JsonResponse({"error": "Lesson notes can only be updated on completed bookings."}, status=400)
+        return JsonResponse(
+            {"error": "Lesson notes can only be updated on completed bookings."},
+            status=400,
+        )
 
     note = request.POST.get("note", "").strip()
     if len(note) > 2000:
-        return JsonResponse({"error": "Lesson note cannot exceed 2,000 characters."}, status=400)
+        return JsonResponse(
+            {"error": "Lesson note cannot exceed 2,000 characters."}, status=400
+        )
 
     booking.completion_note = note
     booking.save(update_fields=["completion_note"])
@@ -955,7 +1056,7 @@ def lesson_detail_student(request, booking_id):
         and not booking.cancellation_requested
     )
     review_form = None
-    if booking.status == Booking.Status.COMPLETED and not hasattr(booking, 'review'):
+    if booking.status == Booking.Status.COMPLETED and not hasattr(booking, "review"):
         review_form = ReviewForm()
 
     context = {
@@ -1003,32 +1104,40 @@ def submit_review(request, booking_id):
         status=Booking.Status.COMPLETED,
     )
 
-    if hasattr(booking, 'review'):
-        return JsonResponse({'error': 'This lesson already has a review.'}, status=400)
+    if hasattr(booking, "review"):
+        return JsonResponse({"error": "This lesson already has a review."}, status=400)
 
     form = ReviewForm(request.POST)
     if not form.is_valid():
         first_error = next(iter(form.errors.values()))[0]
-        return JsonResponse({'error': first_error}, status=400)
+        return JsonResponse({"error": first_error}, status=400)
 
     review = form.save(commit=False)
     review.student = request.user
     review.booking = booking
     review.save()
 
-    return JsonResponse({'success': True})
+    return JsonResponse({"success": True})
 
 
 @teacher_required
 def teacher_pending_reviews(request):
-    pending_reviews = Review.objects.filter(
-        booking__teacher__user=request.user,
-        is_approved=False,
-    ).select_related('student', 'booking').order_by('-created_at')
+    pending_reviews = (
+        Review.objects.filter(
+            booking__teacher__user=request.user,
+            is_approved=False,
+        )
+        .select_related("student", "booking")
+        .order_by("-created_at")
+    )
 
-    return render(request, 'partials/_pending_reviews_list.html', {
-        'pending_reviews': pending_reviews,
-    })
+    return render(
+        request,
+        "partials/_pending_reviews_list.html",
+        {
+            "pending_reviews": pending_reviews,
+        },
+    )
 
 
 @teacher_required

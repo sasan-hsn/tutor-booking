@@ -1,13 +1,12 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, StudentProfile
+
+from .models import StudentProfile, User
 
 
 class UserAdmin(BaseUserAdmin):
-    fieldsets = BaseUserAdmin.fieldsets + (
-        ('Role', {'fields': ('role',)}),
-    )
-    list_display = BaseUserAdmin.list_display + ('role',)
+    fieldsets = BaseUserAdmin.fieldsets + (("Role", {"fields": ("role",)}),)
+    list_display = BaseUserAdmin.list_display + ("role",)
 
 
 admin.site.register(User, UserAdmin)

@@ -1,6 +1,7 @@
 import logging
 import math
 import time
+
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -8,15 +9,17 @@ logger = logging.getLogger(__name__)
 
 def get_client_ip(request) -> str:
     """Extract client IP address, respecting reverse proxy headers."""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
     if x_forwarded_for:
-        return x_forwarded_for.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR', '')
+        return x_forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
 
 
-def _get_identifiers(user=None, email: str | None = None, ip: str | None = None) -> list[str]:
+def _get_identifiers(
+    user=None, email: str | None = None, ip: str | None = None
+) -> list[str]:
     identifiers = []
-    if user and getattr(user, 'pk', None):
+    if user and getattr(user, "pk", None):
         identifiers.append(f"user:{user.pk}")
     if email and email.strip():
         identifiers.append(f"email:{email.strip().lower()}")
@@ -52,7 +55,7 @@ def check_resend_rate_limit(
                 cd_expiry = cache.get(cd_key)
                 if cd_expiry and cd_expiry > now:
                     remaining = max(1, math.ceil(cd_expiry - now))
-                    return False, 'cooldown', remaining
+                    return False, "cooldown", remaining
 
             # 2. Hourly ceiling check
             hr_key = f"rl:verify_hr:{ident}"
@@ -62,7 +65,7 @@ def check_resend_rate_limit(
             if len(valid_timestamps) >= hourly_limit:
                 oldest = valid_timestamps[0]
                 remaining = max(1, math.ceil(3600 - (now - oldest)))
-                return False, 'ceiling', remaining
+                return False, "ceiling", remaining
 
         return True, None, 0
     except Exception as exc:
@@ -101,14 +104,14 @@ LOGIN_COMPOUND_WINDOW_SECONDS = 300
 LOGIN_IP_LIMIT = 20
 LOGIN_IP_WINDOW_SECONDS = 900
 
-LOCKOUT_TYPE_COMPOUND = 'compound'
-LOCKOUT_TYPE_IP_CEILING = 'ip_ceiling'
+LOCKOUT_TYPE_COMPOUND = "compound"
+LOCKOUT_TYPE_IP_CEILING = "ip_ceiling"
 
 
 def normalize_username(username: str | None) -> str:
     """Normalize username by stripping leading/trailing whitespace and lowercasing."""
     if not username:
-        return ''
+        return ""
     return username.strip().lower()
 
 
@@ -186,7 +189,7 @@ def check_login_rate_limit(
     """
     try:
         now = time.time()
-        clean_ip = ip.strip() if ip else ''
+        clean_ip = ip.strip() if ip else ""
         norm_user = normalize_username(username)
 
         # 1. Global IP ceiling check
@@ -231,12 +234,12 @@ def check_login_rate_limit(
                 lockout_type,
                 retry_after,
                 extra={
-                    'client_ip': clean_ip,
-                    'normalized_username': norm_user,
-                    'lockout_type': lockout_type,
-                    'lockout_reason': lockout_type,
-                    'retry_after': retry_after,
-                    'retry_duration': retry_after,
+                    "client_ip": clean_ip,
+                    "normalized_username": norm_user,
+                    "lockout_type": lockout_type,
+                    "lockout_reason": lockout_type,
+                    "retry_after": retry_after,
+                    "retry_duration": retry_after,
                 },
             )
             return False, retry_after
@@ -256,7 +259,7 @@ def record_login_failure(
     """Record a failed login attempt for the (IP, username) pair and global IP."""
     try:
         now = time.time()
-        clean_ip = ip.strip() if ip else ''
+        clean_ip = ip.strip() if ip else ""
         norm_user = normalize_username(username)
 
         # 1. Record failure in global IP bucket
@@ -288,21 +291,21 @@ def reset_login_rate_limit(ip: str | None, username: str | None) -> None:
 
         cache.delete(key)
     except Exception as exc:
-        logger.warning("Cache failure while resetting login rate limit for key %s: %s", key, exc)
+        logger.warning(
+            "Cache failure while resetting login rate limit for key %s: %s", key, exc
+        )
 
 
 def reset_login_ip_rate_limit(ip: str | None) -> None:
     """Reset the failed attempts counter for the global client IP."""
     try:
-        clean_ip = ip.strip() if ip else ''
+        clean_ip = ip.strip() if ip else ""
         if not clean_ip:
             return
         key = _get_login_ip_cache_key(clean_ip)
         if key:
             cache.delete(key)
     except Exception as exc:
-        logger.warning("Cache failure while resetting IP login rate limit for ip %s: %s", ip, exc)
-
-
-
-
+        logger.warning(
+            "Cache failure while resetting IP login rate limit for ip %s: %s", ip, exc
+        )

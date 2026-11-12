@@ -1,5 +1,6 @@
 import re
 from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.cache import cache
@@ -16,15 +17,15 @@ class EmailVerificationViewsTests(TestCase):
     def setUp(self):
         cache.clear()
         self.student = User.objects.create_user(
-            username='student_test',
-            email='student_test@example.com',
-            password='Password123!',
+            username="student_test",
+            email="student_test@example.com",
+            password="Password123!",
             role=User.Role.STUDENT,
         )
         self.teacher = User.objects.create_user(
-            username='teacher_test',
-            email='teacher_test@example.com',
-            password='Password123!',
+            username="teacher_test",
+            email="teacher_test@example.com",
+            password="Password123!",
             role=User.Role.TEACHER,
         )
 
@@ -33,92 +34,101 @@ class EmailVerificationViewsTests(TestCase):
 
     def test_student_signup_dispatches_verification_email(self):
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(reverse('accounts:student_signup'), {
-                'username': 'fresh_student',
-                'email': 'fresh_student@example.com',
-                'password1': 'ComplexPass123',
-                'password2': 'ComplexPass123',
-            })
+            response = self.client.post(
+                reverse("accounts:student_signup"),
+                {
+                    "username": "fresh_student",
+                    "email": "fresh_student@example.com",
+                    "password1": "ComplexPass123",
+                    "password2": "ComplexPass123",
+                },
+            )
         self.assertEqual(response.status_code, 302)
-        user = User.objects.get(username='fresh_student')
+        user = User.objects.get(username="fresh_student")
         self.assertFalse(user.is_email_verified)
         self.assertEqual(len(mail.outbox), 1)
 
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['fresh_student@example.com'])
-        self.assertIn('Verify your email address', email.subject)
-        self.assertIn('/accounts/verify-email/', email.body)
+        self.assertEqual(email.to, ["fresh_student@example.com"])
+        self.assertIn("Verify your email address", email.subject)
+        self.assertIn("/accounts/verify-email/", email.body)
 
     def test_teacher_signup_dispatches_verification_email(self):
         with self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(reverse('accounts:teacher_signup'), {
-                'username': 'fresh_teacher',
-                'email': 'fresh_teacher@example.com',
-                'password1': 'ComplexPass123',
-                'password2': 'ComplexPass123',
-                'timezone': 'UTC',
-            })
+            response = self.client.post(
+                reverse("accounts:teacher_signup"),
+                {
+                    "username": "fresh_teacher",
+                    "email": "fresh_teacher@example.com",
+                    "password1": "ComplexPass123",
+                    "password2": "ComplexPass123",
+                    "timezone": "UTC",
+                },
+            )
         self.assertEqual(response.status_code, 302)
-        user = User.objects.get(username='fresh_teacher')
+        user = User.objects.get(username="fresh_teacher")
         self.assertFalse(user.is_email_verified)
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['fresh_teacher@example.com'])
+        self.assertEqual(email.to, ["fresh_teacher@example.com"])
 
     def test_student_signup_preserves_next_url_in_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
-                reverse('accounts:student_signup') + '?next=/',
+                reverse("accounts:student_signup") + "?next=/",
                 {
-                    'username': 'next_student',
-                    'email': 'next_student@example.com',
-                    'password1': 'ComplexPass123',
-                    'password2': 'ComplexPass123',
-                    'next': '/',
-                }
+                    "username": "next_student",
+                    "email": "next_student@example.com",
+                    "password1": "ComplexPass123",
+                    "password2": "ComplexPass123",
+                    "next": "/",
+                },
             )
-        self.assertRedirects(response, '/')
+        self.assertRedirects(response, "/")
         email = mail.outbox[0]
-        self.assertIn('next=/', email.body)
+        self.assertIn("next=/", email.body)
 
     def test_verify_email_logged_out_auto_logins_and_verifies(self):
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token})
+        url = reverse("accounts:verify_email", kwargs={"token": token})
 
         response = self.client.get(url)
-        self.assertRedirects(response, reverse('booking:student_dashboard'))
+        self.assertRedirects(response, reverse("booking:student_dashboard"))
 
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
 
         # Check user is logged in
-        self.assertEqual(int(self.client.session['_auth_user_id']), self.student.pk)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.student.pk)
 
     def test_verify_email_logged_out_with_safe_next_redirect(self):
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token}) + '?next=/'
+        url = reverse("accounts:verify_email", kwargs={"token": token}) + "?next=/"
 
         response = self.client.get(url)
-        self.assertRedirects(response, '/')
+        self.assertRedirects(response, "/")
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
 
     def test_verify_email_logged_out_with_unsafe_next_redirect_ignored(self):
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token}) + '?next=https://malicious.com'
+        url = (
+            reverse("accounts:verify_email", kwargs={"token": token})
+            + "?next=https://malicious.com"
+        )
 
         response = self.client.get(url)
-        self.assertRedirects(response, reverse('booking:student_dashboard'))
+        self.assertRedirects(response, reverse("booking:student_dashboard"))
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
 
     def test_verify_email_logged_in_as_same_user(self):
         self.client.force_login(self.student)
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token})
+        url = reverse("accounts:verify_email", kwargs={"token": token})
 
         response = self.client.get(url)
-        self.assertRedirects(response, reverse('booking:student_dashboard'))
+        self.assertRedirects(response, reverse("booking:student_dashboard"))
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
 
@@ -126,30 +136,30 @@ class EmailVerificationViewsTests(TestCase):
         # Teacher is logged in, but clicks link for Student
         self.client.force_login(self.teacher)
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token})
+        url = reverse("accounts:verify_email", kwargs={"token": token})
 
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'accounts/verify_email_conflict.html')
-        self.assertContains(response, 'Account Session Conflict')
+        self.assertTemplateUsed(response, "accounts/verify_email_conflict.html")
+        self.assertContains(response, "Account Session Conflict")
         self.assertContains(response, self.teacher.username)
         self.assertContains(response, self.student.email)
 
         # Neither session nor student state should be mutated
-        self.assertEqual(int(self.client.session['_auth_user_id']), self.teacher.pk)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.teacher.pk)
         self.student.refresh_from_db()
         self.assertFalse(self.student.is_email_verified)
 
     def test_verify_email_expired_token_renders_error_with_resend_form(self):
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token})
+        url = reverse("accounts:verify_email", kwargs={"token": token})
 
-        with patch.object(email_verification_token_generator, 'TOKEN_TTL', -1):
+        with patch.object(email_verification_token_generator, "TOKEN_TTL", -1):
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 400)
-        self.assertTemplateUsed(response, 'accounts/verify_email_invalid.html')
-        self.assertContains(response, 'Verification Link Expired', status_code=400)
+        self.assertTemplateUsed(response, "accounts/verify_email_invalid.html")
+        self.assertContains(response, "Verification Link Expired", status_code=400)
         self.assertContains(response, self.student.email, status_code=400)
 
         self.student.refresh_from_db()
@@ -158,12 +168,12 @@ class EmailVerificationViewsTests(TestCase):
     def test_verify_email_tampered_token_renders_invalid_error(self):
         token = email_verification_token_generator.make_token(self.student)
         bad_token = token + "corrupted"
-        url = reverse('accounts:verify_email', kwargs={'token': bad_token})
+        url = reverse("accounts:verify_email", kwargs={"token": bad_token})
 
         response = self.client.get(url)
         self.assertEqual(response.status_code, 400)
-        self.assertTemplateUsed(response, 'accounts/verify_email_invalid.html')
-        self.assertContains(response, 'Invalid Verification Link', status_code=400)
+        self.assertTemplateUsed(response, "accounts/verify_email_invalid.html")
+        self.assertContains(response, "Invalid Verification Link", status_code=400)
 
         self.student.refresh_from_db()
         self.assertFalse(self.student.is_email_verified)
@@ -173,18 +183,18 @@ class EmailVerificationViewsTests(TestCase):
         self.student.save()
 
         token = email_verification_token_generator.make_token(self.student)
-        url = reverse('accounts:verify_email', kwargs={'token': token})
+        url = reverse("accounts:verify_email", kwargs={"token": token})
 
         response = self.client.get(url)
-        self.assertRedirects(response, reverse('booking:student_dashboard'))
+        self.assertRedirects(response, reverse("booking:student_dashboard"))
 
     def test_resend_verification_requires_post(self):
-        response = self.client.get(reverse('accounts:resend_verification_email'))
+        response = self.client.get(reverse("accounts:resend_verification_email"))
         self.assertEqual(response.status_code, 405)
 
     def test_resend_verification_authenticated_user_success(self):
         self.client.force_login(self.student)
-        response = self.client.post(reverse('accounts:resend_verification_email'))
+        response = self.client.post(reverse("accounts:resend_verification_email"))
         self.assertEqual(response.status_code, 302)
 
         self.assertEqual(len(mail.outbox), 1)
@@ -193,35 +203,36 @@ class EmailVerificationViewsTests(TestCase):
     def test_resend_verification_cooldown_throttle(self):
         self.client.force_login(self.student)
         # First request succeeds
-        r1 = self.client.post(reverse('accounts:resend_verification_email'))
+        self.client.post(reverse("accounts:resend_verification_email"))
         self.assertEqual(len(mail.outbox), 1)
 
         # Immediate second request should be throttled
         r2 = self.client.post(
-            reverse('accounts:resend_verification_email'),
-            headers={'x-requested-with': 'XMLHttpRequest'},
+            reverse("accounts:resend_verification_email"),
+            headers={"x-requested-with": "XMLHttpRequest"},
         )
         self.assertEqual(r2.status_code, 429)
         data = r2.json()
-        self.assertEqual(data.get('reason'), 'cooldown')
-        self.assertGreater(data.get('retry_after'), 0)
+        self.assertEqual(data.get("reason"), "cooldown")
+        self.assertGreater(data.get("retry_after"), 0)
         # Outbox should still only have 1 email
         self.assertEqual(len(mail.outbox), 1)
 
     def test_resend_verification_hourly_ceiling_throttle(self):
         from accounts.rate_limiting import record_resend_attempt
+
         # Record 5 attempts
         for _ in range(5):
             record_resend_attempt(user=self.student, cooldown_seconds=0)
 
         self.client.force_login(self.student)
         response = self.client.post(
-            reverse('accounts:resend_verification_email'),
-            headers={'x-requested-with': 'XMLHttpRequest'},
+            reverse("accounts:resend_verification_email"),
+            headers={"x-requested-with": "XMLHttpRequest"},
         )
         self.assertEqual(response.status_code, 429)
         data = response.json()
-        self.assertEqual(data.get('reason'), 'ceiling')
+        self.assertEqual(data.get("reason"), "ceiling")
         self.assertEqual(len(mail.outbox), 0)
 
     def test_resend_verification_already_verified_user_no_email(self):
@@ -230,27 +241,33 @@ class EmailVerificationViewsTests(TestCase):
         self.client.force_login(self.student)
 
         response = self.client.post(
-            reverse('accounts:resend_verification_email'),
-            headers={'x-requested-with': 'XMLHttpRequest'},
+            reverse("accounts:resend_verification_email"),
+            headers={"x-requested-with": "XMLHttpRequest"},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json().get('already_verified'))
+        self.assertTrue(response.json().get("already_verified"))
         self.assertEqual(len(mail.outbox), 0)
 
     def test_resend_verification_unauthenticated_with_email_success(self):
-        response = self.client.post(reverse('accounts:resend_verification_email'), {
-            'email': self.student.email,
-        })
+        response = self.client.post(
+            reverse("accounts:resend_verification_email"),
+            {
+                "email": self.student.email,
+            },
+        )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.student.email])
 
     def test_password_reset_completion_auto_verifies_email(self):
         self.assertFalse(self.student.is_email_verified)
-        form = StyledSetPasswordForm(user=self.student, data={
-            'new_password1': 'BrandNewPass123!',
-            'new_password2': 'BrandNewPass123!',
-        })
+        form = StyledSetPasswordForm(
+            user=self.student,
+            data={
+                "new_password1": "BrandNewPass123!",
+                "new_password2": "BrandNewPass123!",
+            },
+        )
         self.assertTrue(form.is_valid(), form.errors)
         form.save()
 
@@ -259,52 +276,67 @@ class EmailVerificationViewsTests(TestCase):
 
     def test_styled_set_password_form_save_commit_false(self):
         self.assertFalse(self.student.is_email_verified)
-        form = StyledSetPasswordForm(user=self.student, data={
-            'new_password1': 'BrandNewPass123!',
-            'new_password2': 'BrandNewPass123!',
-        })
+        form = StyledSetPasswordForm(
+            user=self.student,
+            data={
+                "new_password1": "BrandNewPass123!",
+                "new_password2": "BrandNewPass123!",
+            },
+        )
         self.assertTrue(form.is_valid(), form.errors)
         unsaved_user = form.save(commit=False)
 
         self.assertTrue(unsaved_user.is_email_verified)
         db_user = User.objects.get(pk=self.student.pk)
         self.assertFalse(db_user.is_email_verified)
-        self.assertFalse(db_user.check_password('BrandNewPass123!'))
+        self.assertFalse(db_user.check_password("BrandNewPass123!"))
 
         unsaved_user.save()
         self.student.refresh_from_db()
         self.assertTrue(self.student.is_email_verified)
-        self.assertTrue(self.student.check_password('BrandNewPass123!'))
+        self.assertTrue(self.student.check_password("BrandNewPass123!"))
 
-    def test_password_reset_full_lifecycle_auto_verifies_and_invalidates_prior_verification_link(self):
+    def test_password_reset_full_lifecycle_auto_verifies_and_invalidates_prior_verification_link(
+        self,
+    ):
         with self.captureOnCommitCallbacks(execute=True):
-            signup_response = self.client.post(reverse('accounts:student_signup'), {
-                'username': 'lifecycle_student',
-                'email': 'lifecycle@example.com',
-                'password1': 'InitialPass123!',
-                'password2': 'InitialPass123!',
-            })
+            signup_response = self.client.post(
+                reverse("accounts:student_signup"),
+                {
+                    "username": "lifecycle_student",
+                    "email": "lifecycle@example.com",
+                    "password1": "InitialPass123!",
+                    "password2": "InitialPass123!",
+                },
+            )
         self.assertEqual(signup_response.status_code, 302)
-        user = User.objects.get(username='lifecycle_student')
+        user = User.objects.get(username="lifecycle_student")
         self.assertFalse(user.is_email_verified)
         self.assertEqual(len(mail.outbox), 1)
 
         verification_email = mail.outbox[0]
-        verify_match = re.search(r'(/accounts/verify-email/[^\s]+)', verification_email.body)
+        verify_match = re.search(
+            r"(/accounts/verify-email/[^\s]+)", verification_email.body
+        )
         self.assertIsNotNone(verify_match)
         verify_path = verify_match.group(1)
 
         self.client.logout()
 
         mail.outbox.clear()
-        reset_req_response = self.client.post(reverse('accounts:password_reset'), {
-            'email': 'lifecycle@example.com',
-        })
-        self.assertRedirects(reset_req_response, reverse('accounts:password_reset_done'))
+        reset_req_response = self.client.post(
+            reverse("accounts:password_reset"),
+            {
+                "email": "lifecycle@example.com",
+            },
+        )
+        self.assertRedirects(
+            reset_req_response, reverse("accounts:password_reset_done")
+        )
         self.assertEqual(len(mail.outbox), 1)
 
         reset_email = mail.outbox[0]
-        reset_match = re.search(r'(/accounts/reset/[^\s]+)', reset_email.body)
+        reset_match = re.search(r"(/accounts/reset/[^\s]+)", reset_email.body)
         self.assertIsNotNone(reset_match)
         reset_path = reset_match.group(1)
 
@@ -312,37 +344,52 @@ class EmailVerificationViewsTests(TestCase):
         self.assertEqual(confirm_get_response.status_code, 200)
         post_url = confirm_get_response.redirect_chain[0][0]
 
-        confirm_post_response = self.client.post(post_url, {
-            'new_password1': 'BrandNewPass123!',
-            'new_password2': 'BrandNewPass123!',
-        })
-        self.assertRedirects(confirm_post_response, reverse('accounts:password_reset_complete'))
+        confirm_post_response = self.client.post(
+            post_url,
+            {
+                "new_password1": "BrandNewPass123!",
+                "new_password2": "BrandNewPass123!",
+            },
+        )
+        self.assertRedirects(
+            confirm_post_response, reverse("accounts:password_reset_complete")
+        )
 
         user.refresh_from_db()
         self.assertTrue(user.is_email_verified)
-        self.assertTrue(user.check_password('BrandNewPass123!'))
+        self.assertTrue(user.check_password("BrandNewPass123!"))
 
         stale_verify_response = self.client.get(verify_path)
         self.assertEqual(stale_verify_response.status_code, 400)
-        self.assertTemplateUsed(stale_verify_response, 'accounts/verify_email_invalid.html')
-        self.assertContains(stale_verify_response, 'Invalid Verification Link', status_code=400)
+        self.assertTemplateUsed(
+            stale_verify_response, "accounts/verify_email_invalid.html"
+        )
+        self.assertContains(
+            stale_verify_response, "Invalid Verification Link", status_code=400
+        )
 
-        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_logout_view_respects_safe_next_url(self):
         self.client.force_login(self.student)
         token = email_verification_token_generator.make_token(self.teacher)
-        next_destination = reverse('accounts:verify_email', kwargs={'token': token})
-        response = self.client.post(reverse('accounts:logout'), {
-            'next': next_destination,
-        })
+        next_destination = reverse("accounts:verify_email", kwargs={"token": token})
+        response = self.client.post(
+            reverse("accounts:logout"),
+            {
+                "next": next_destination,
+            },
+        )
         self.assertRedirects(response, next_destination, target_status_code=302)
-        self.assertEqual(int(self.client.session['_auth_user_id']), self.teacher.pk)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.teacher.pk)
 
     def test_logout_view_ignores_unsafe_next_url(self):
         self.client.force_login(self.student)
-        response = self.client.post(reverse('accounts:logout'), {
-            'next': 'https://malicious.com',
-        })
-        self.assertRedirects(response, '/')
-        self.assertNotIn('_auth_user_id', self.client.session)
+        response = self.client.post(
+            reverse("accounts:logout"),
+            {
+                "next": "https://malicious.com",
+            },
+        )
+        self.assertRedirects(response, "/")
+        self.assertNotIn("_auth_user_id", self.client.session)

@@ -1,8 +1,9 @@
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
+
 import dj_database_url
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,27 +13,30 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dummy-key-for-ci-and-testing')
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dummy-key-for-ci-and-testing")
 
-DEBUG = os.getenv('DEBUG', 'False') == 'True'
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 
 CSRF_TRUSTED_ORIGINS = [
     origin for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if origin
 ]
 
 # Production error monitoring (Sentry)
-SENTRY_DSN = os.getenv('SENTRY_DSN', '')
-SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', 'production' if not DEBUG else 'development')
-SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', None)
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+SENTRY_ENVIRONMENT = os.getenv(
+    "SENTRY_ENVIRONMENT", "production" if not DEBUG else "development"
+)
+SENTRY_RELEASE = os.getenv("SENTRY_RELEASE", None)
 try:
-    SENTRY_TRACES_SAMPLE_RATE = float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0.0'))
+    SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
 except (ValueError, TypeError):
     SENTRY_TRACES_SAMPLE_RATE = 0.0
 
-if SENTRY_DSN and 'test' not in sys.argv:
+if SENTRY_DSN and "test" not in sys.argv:
     from .sentry import init_sentry
+
     init_sentry(
         dsn=SENTRY_DSN,
         environment=SENTRY_ENVIRONMENT,
@@ -55,13 +59,12 @@ INSTALLED_APPS = [
     "django.contrib.humanize",
     "channels",
     "anymail",
-
     # Local apps
-    'accounts',
-    'booking',
-    'portfolio',
-    'notifications',
-    'chat',
+    "accounts",
+    "booking",
+    "portfolio",
+    "notifications",
+    "chat",
 ]
 
 MIDDLEWARE = [
@@ -86,9 +89,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                'portfolio.context_processors.global_teacher_context',
-                'notifications.context_processors.notification_context',
-                'chat.context_processors.chat_context',
+                "portfolio.context_processors.global_teacher_context",
+                "notifications.context_processors.notification_context",
+                "chat.context_processors.chat_context",
             ],
         },
     },
@@ -102,14 +105,14 @@ ASGI_APPLICATION = "tutor_booking.asgi.application"
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(
+    "default": dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
     )
 }
 
-if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
-    DATABASES['default'].setdefault('OPTIONS', {})['timeout'] = 20
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+    DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = 20
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -127,9 +130,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Fast password hasher for tests
-if 'test' in sys.argv:
+if "test" in sys.argv:
     PASSWORD_HASHERS = [
-        'django.contrib.auth.hashers.MD5PasswordHasher',
+        "django.contrib.auth.hashers.MD5PasswordHasher",
     ]
 
 # Password reset token expiry (24 hours)
@@ -137,36 +140,40 @@ PASSWORD_RESET_TIMEOUT = 60 * 60 * 24
 
 # Security settings behind Nginx reverse proxy
 if not DEBUG:
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Email configuration
 # Site identity and URL for absolute links in emails and tasks
-SITE_NAME = os.getenv('SITE_NAME', 'English with Mary')
-SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000' if DEBUG else 'https://englishwithmary.ir')
+SITE_NAME = os.getenv("SITE_NAME", "English with Mary")
+SITE_URL = os.getenv(
+    "SITE_URL", "http://127.0.0.1:8000" if DEBUG else "https://englishwithmary.ir"
+)
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'{SITE_NAME} <noreply@englishwithmary.ir>')
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", f"{SITE_NAME} <noreply@englishwithmary.ir>"
+)
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
-BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 ANYMAIL = {
-    'BREVO_API_KEY': BREVO_API_KEY,
+    "BREVO_API_KEY": BREVO_API_KEY,
 }
 
 if DEBUG:
-    default_email_backend = 'django.core.mail.backends.console.EmailBackend'
+    default_email_backend = "django.core.mail.backends.console.EmailBackend"
 elif BREVO_API_KEY:
-    default_email_backend = 'anymail.backends.brevo.EmailBackend'
+    default_email_backend = "anymail.backends.brevo.EmailBackend"
 else:
-    default_email_backend = 'django.core.mail.backends.smtp.EmailBackend'
+    default_email_backend = "django.core.mail.backends.smtp.EmailBackend"
 
-EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', default_email_backend)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", default_email_backend)
 
 # SMTP fallback configuration (used if EMAIL_BACKEND is explicitly set to SMTP)
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -180,73 +187,75 @@ USE_I18N = True
 USE_TZ = True
 
 # Custom User Model
-AUTH_USER_MODEL = 'accounts.User'
+AUTH_USER_MODEL = "accounts.User"
 
 
 # Celery configuration
-default_redis_host = '127.0.0.1' if DEBUG else 'redis'
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', f'redis://{default_redis_host}:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
+default_redis_host = "127.0.0.1" if DEBUG else "redis"
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL", f"redis://{default_redis_host}:6379/0"
+)
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
 # Celery task execution mode (eager in automated tests or local dev fallback)
-CELERY_TASK_ALWAYS_EAGER = (
-    os.getenv('CELERY_TASK_ALWAYS_EAGER', '').lower() in ('true', '1')
-    or ('test' in sys.argv)
-)
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "").lower() in (
+    "true",
+    "1",
+) or ("test" in sys.argv)
 CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
 # Cache configuration (Redis DB 1 for cache, isolated from Celery broker on DB 0)
-REDIS_CACHE_URL = os.getenv('REDIS_CACHE_URL', f'redis://{default_redis_host}:6379/1')
-REDIS_PROTOCOL = int(os.getenv('REDIS_PROTOCOL', '2'))
+REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", f"redis://{default_redis_host}:6379/1")
+REDIS_PROTOCOL = int(os.getenv("REDIS_PROTOCOL", "2"))
 
-if 'test' in sys.argv:
+if "test" in sys.argv:
     CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-            'LOCATION': 'tutor-booking-test-cache',
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "tutor-booking-test-cache",
         }
     }
 else:
     CACHES = {
-        'default': {
-            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-            'LOCATION': REDIS_CACHE_URL,
-            'OPTIONS': {
-                'protocol': REDIS_PROTOCOL,
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_CACHE_URL,
+            "OPTIONS": {
+                "protocol": REDIS_PROTOCOL,
             },
         }
     }
 
 # Redis Channel Layer configuration (Redis DB 2 for channels, isolated from Celery DB 0 and Cache DB 1)
 REDIS_CHANNEL_LAYER_URL = os.getenv(
-    'REDIS_CHANNEL_LAYER_URL',
-    os.getenv('REDIS_URL', f'redis://{default_redis_host}:6379/2')
+    "REDIS_CHANNEL_LAYER_URL",
+    os.getenv("REDIS_URL", f"redis://{default_redis_host}:6379/2"),
 )
 
-if 'test' in sys.argv:
+if "test" in sys.argv:
     CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
         },
     }
 else:
     CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [
                     {
-                        'address': REDIS_CHANNEL_LAYER_URL,
-                        'protocol': REDIS_PROTOCOL,
-                        'socket_timeout': None,
-                        'socket_connect_timeout': 5,
-                        'health_check_interval': 30,
+                        "address": REDIS_CHANNEL_LAYER_URL,
+                        "protocol": REDIS_PROTOCOL,
+                        "socket_timeout": None,
+                        "socket_connect_timeout": 5,
+                        "health_check_interval": 30,
                     }
                 ],
             },
@@ -255,21 +264,21 @@ else:
 
 # Celery Beat schedule for periodic background tasks
 CELERY_BEAT_SCHEDULE = {
-    'send-lesson-reminders-every-5-minutes': {
-        'task': 'booking.tasks.send_lesson_reminders',
-        'schedule': 300.0,
+    "send-lesson-reminders-every-5-minutes": {
+        "task": "booking.tasks.send_lesson_reminders",
+        "schedule": 300.0,
     },
-    'expire-pending-bookings-every-15-minutes': {
-        'task': 'booking.tasks.expire_pending_bookings_task',
-        'schedule': 900.0,
+    "expire-pending-bookings-every-15-minutes": {
+        "task": "booking.tasks.expire_pending_bookings_task",
+        "schedule": 900.0,
     },
-    'send-teacher-daily-digest-hourly': {
-        'task': 'booking.tasks.send_daily_schedule_digests',
-        'schedule': 3600.0,
+    "send-teacher-daily-digest-hourly": {
+        "task": "booking.tasks.send_daily_schedule_digests",
+        "schedule": 3600.0,
     },
 }
 
-TEACHER_DAILY_DIGEST_HOUR = int(os.getenv('TEACHER_DAILY_DIGEST_HOUR', '20'))
+TEACHER_DAILY_DIGEST_HOUR = int(os.getenv("TEACHER_DAILY_DIGEST_HOUR", "20"))
 
 
 # Static files (CSS, JavaScript, Images)
@@ -294,7 +303,9 @@ STORAGES = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": os.getenv("STATICFILES_STORAGE_BACKEND", default_staticfiles_backend),
+        "BACKEND": os.getenv(
+            "STATICFILES_STORAGE_BACKEND", default_staticfiles_backend
+        ),
     },
 }
 

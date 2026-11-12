@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
@@ -8,13 +9,16 @@ from channels.layers import get_channel_layer
 from channels.utils import await_many_dispatch
 
 try:
-    from redis.exceptions import TimeoutError as RedisTimeoutError, RedisError
+    from redis.exceptions import RedisError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
 except ImportError:
+
     class RedisTimeoutError(Exception):
         pass
 
     class RedisError(Exception):
         pass
+
 
 from .models import Notification
 
@@ -45,12 +49,16 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                     try:
                         return await self.channel_layer.receive(self.channel_name)
                     except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
-                        logger.debug("Channel layer read timeout; resuming listener: %s", e)
+                        logger.debug(
+                            "Channel layer read timeout; resuming listener: %s", e
+                        )
                         await asyncio.sleep(0.2)
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:
-                        logger.warning("Channel layer read error; resuming listener: %s", e)
+                        logger.warning(
+                            "Channel layer read error; resuming listener: %s", e
+                        )
                         await asyncio.sleep(1.0)
 
             self.channel_receive = resilient_channel_receive
@@ -91,7 +99,13 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
                     self.channel_layer.group_add(self.group_name, self.channel_name),
                     timeout=2.0,
                 )
-            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
+            except (
+                TimeoutError,
+                asyncio.TimeoutError,
+                RedisTimeoutError,
+                RedisError,
+                Exception,
+            ) as e:
                 logger.warning(
                     "Channel layer group_add failed or timed out for user #%s: %s",
                     user.id,
@@ -102,10 +116,18 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
         if hasattr(self, "group_name") and self.group_name and self.channel_layer:
             try:
                 await asyncio.wait_for(
-                    self.channel_layer.group_discard(self.group_name, self.channel_name),
+                    self.channel_layer.group_discard(
+                        self.group_name, self.channel_name
+                    ),
                     timeout=2.0,
                 )
-            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
+            except (
+                TimeoutError,
+                asyncio.TimeoutError,
+                RedisTimeoutError,
+                RedisError,
+                Exception,
+            ) as e:
                 logger.warning(
                     "Channel layer group_discard failed or timed out for group %s: %s",
                     self.group_name,
@@ -156,4 +178,5 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _get_unread_chat_count(self, user_id):
         from chat.services import get_total_unread_chat_count
+
         return get_total_unread_chat_count(user_id)

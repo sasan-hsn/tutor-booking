@@ -1,35 +1,106 @@
 from django.urls import path
+
 from . import views
 
 app_name = "booking"
 urlpatterns = [
     path("student/", views.student_dashboard, name="student_dashboard"),
     path("student/booking/", views.student_booking, name="student_booking"),
-    path("student/book/week/", views.student_booking_week_ajax, name="student_booking_week_ajax"),
+    path(
+        "student/book/week/",
+        views.student_booking_week_ajax,
+        name="student_booking_week_ajax",
+    ),
     path("student/book-slot/", views.book_slot, name="book_slot"),
-    path('teacher/', views.teacher_dashboard, name='teacher_dashboard'),
-    path('teacher/requests/', views.teacher_lesson_requests, name='teacher_lesson_requests'),
-    path('teacher/requests/<int:booking_id>/respond/', views.respond_to_booking, name='respond_to_booking'),
-    path('teacher/students/', views.student_management, name='student_management'),
-    path('teacher/schedule/regular', views.teacher_regular_schedule, name='teacher_regular_schedule'),
-    path('teacher/schedule/regular/add/', views.teacher_regular_schedule_add, name='teacher_regular_schedule_add'),
-    path('teacher/schedule/regular/<int:availability_id>/delete/', views.teacher_regular_schedule_delete, name='teacher_regular_schedule_delete'),
-    path('teacher/schedule/overrides/', views.teacher_weekly_override, name='teacher_weekly_override'),
-    path('teacher/schedule/overrides/add/', views.teacher_weekly_override_add, name='teacher_weekly_override_add'),
-    path('teacher/schedule/overrides/<int:override_id>/delete/', views.teacher_weekly_override_delete, name='teacher_weekly_override_delete'),
+    path("teacher/", views.teacher_dashboard, name="teacher_dashboard"),
+    path(
+        "teacher/requests/",
+        views.teacher_lesson_requests,
+        name="teacher_lesson_requests",
+    ),
+    path(
+        "teacher/requests/<int:booking_id>/respond/",
+        views.respond_to_booking,
+        name="respond_to_booking",
+    ),
+    path("teacher/students/", views.student_management, name="student_management"),
+    path(
+        "teacher/schedule/regular",
+        views.teacher_regular_schedule,
+        name="teacher_regular_schedule",
+    ),
+    path(
+        "teacher/schedule/regular/add/",
+        views.teacher_regular_schedule_add,
+        name="teacher_regular_schedule_add",
+    ),
+    path(
+        "teacher/schedule/regular/<int:availability_id>/delete/",
+        views.teacher_regular_schedule_delete,
+        name="teacher_regular_schedule_delete",
+    ),
+    path(
+        "teacher/schedule/overrides/",
+        views.teacher_weekly_override,
+        name="teacher_weekly_override",
+    ),
+    path(
+        "teacher/schedule/overrides/add/",
+        views.teacher_weekly_override_add,
+        name="teacher_weekly_override_add",
+    ),
+    path(
+        "teacher/schedule/overrides/<int:override_id>/delete/",
+        views.teacher_weekly_override_delete,
+        name="teacher_weekly_override_delete",
+    ),
     path("teacher/calendar/", views.teacher_calendar, name="teacher_calendar"),
-    path("teacher/calendar/ajax/", views.teacher_calendar_ajax, name="teacher_calendar_ajax"),
+    path(
+        "teacher/calendar/ajax/",
+        views.teacher_calendar_ajax,
+        name="teacher_calendar_ajax",
+    ),
     path("teacher/lesson/<int:booking_id>/", views.lesson_detail, name="lesson_detail"),
-    path("teacher/lesson/<int:booking_id>/cancel/", views.cancel_lesson, name="cancel_lesson"),
-    path('lessons/<int:booking_id>/complete/', views.complete_lesson, name='complete_lesson'),
-    path('lessons/<int:booking_id>/not-held/', views.mark_lesson_not_held, name='mark_lesson_not_held'),
-    path('lessons/<int:booking_id>/note/', views.update_lesson_note, name='update_lesson_note'),
+    path(
+        "teacher/lesson/<int:booking_id>/cancel/",
+        views.cancel_lesson,
+        name="cancel_lesson",
+    ),
+    path(
+        "lessons/<int:booking_id>/complete/",
+        views.complete_lesson,
+        name="complete_lesson",
+    ),
+    path(
+        "lessons/<int:booking_id>/not-held/",
+        views.mark_lesson_not_held,
+        name="mark_lesson_not_held",
+    ),
+    path(
+        "lessons/<int:booking_id>/note/",
+        views.update_lesson_note,
+        name="update_lesson_note",
+    ),
     path("student/calendar/", views.student_calendar, name="student_calendar"),
-    path("student/calendar/ajax/", views.student_calendar_ajax, name="student_calendar_ajax"),
-    path("student/lesson/<int:booking_id>/", views.lesson_detail_student, name="lesson_detail_student"),
-    path("student/lesson/<int:booking_id>/request-cancellation/", views.request_cancellation, name="request_cancellation"),
-    path('lessons/<int:booking_id>/review/', views.submit_review, name='submit_review'),
-    path('reviews/', views.teacher_pending_reviews, name='teacher_pending_reviews'),
-    path('reviews/<int:review_id>/approve/', views.approve_review, name='approve_review'),
-    path('reviews/<int:review_id>/reject/', views.reject_review, name='reject_review'),
- ]
+    path(
+        "student/calendar/ajax/",
+        views.student_calendar_ajax,
+        name="student_calendar_ajax",
+    ),
+    path(
+        "student/lesson/<int:booking_id>/",
+        views.lesson_detail_student,
+        name="lesson_detail_student",
+    ),
+    path(
+        "student/lesson/<int:booking_id>/request-cancellation/",
+        views.request_cancellation,
+        name="request_cancellation",
+    ),
+    path("lessons/<int:booking_id>/review/", views.submit_review, name="submit_review"),
+    path("reviews/", views.teacher_pending_reviews, name="teacher_pending_reviews"),
+    path(
+        "reviews/<int:review_id>/approve/", views.approve_review, name="approve_review"
+    ),
+    path("reviews/<int:review_id>/reject/", views.reject_review, name="reject_review"),
+]

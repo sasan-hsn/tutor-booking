@@ -1,4 +1,5 @@
 import logging
+
 from django.urls import reverse
 
 from notifications.models import Notification
@@ -39,7 +40,9 @@ def notify_booking_requested(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit booking_requested notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_requested notification for booking #%s", booking.id
+        )
         return None
 
 
@@ -60,7 +63,9 @@ def notify_booking_confirmed(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit booking_confirmed notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_confirmed notification for booking #%s", booking.id
+        )
         return None
 
 
@@ -81,7 +86,9 @@ def notify_booking_declined(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit booking_declined notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_declined notification for booking #%s", booking.id
+        )
         return None
 
 
@@ -103,7 +110,10 @@ def notify_cancellation_requested(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit cancellation_requested notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit cancellation_requested notification for booking #%s",
+            booking.id,
+        )
         return None
 
 
@@ -126,7 +136,9 @@ def notify_booking_cancelled(booking, cancelled_by=None):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit booking_cancelled notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_cancelled notification for booking #%s", booking.id
+        )
         return None
 
 
@@ -137,7 +149,9 @@ def notify_booking_expired(booking):
     # 1. Notify student
     try:
         action_url_student = reverse("booking:student_dashboard")
-        student_metadata = _build_booking_metadata(booking, booking.teacher_display_name)
+        student_metadata = _build_booking_metadata(
+            booking, booking.teacher_display_name
+        )
         notif_student = create_and_send_notification(
             recipient=booking.student,
             actor=None,
@@ -150,13 +164,18 @@ def notify_booking_expired(booking):
         )
         notifications.append(notif_student)
     except Exception:
-        logger.exception("Failed to emit booking_expired notification to student for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_expired notification to student for booking #%s",
+            booking.id,
+        )
 
     # 2. Notify teacher
     try:
         teacher_user = booking.teacher.user
         action_url_teacher = reverse("booking:teacher_dashboard")
-        teacher_metadata = _build_booking_metadata(booking, booking.student_display_name)
+        teacher_metadata = _build_booking_metadata(
+            booking, booking.student_display_name
+        )
         notif_teacher = create_and_send_notification(
             recipient=teacher_user,
             actor=None,
@@ -169,7 +188,10 @@ def notify_booking_expired(booking):
         )
         notifications.append(notif_teacher)
     except Exception:
-        logger.exception("Failed to emit booking_expired notification to teacher for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit booking_expired notification to teacher for booking #%s",
+            booking.id,
+        )
 
     # 3. Auto-mark teacher's stale booking_requested notification as read
     mark_booking_notifications_as_read(
@@ -213,7 +235,10 @@ def notify_lesson_reminder_24h_student(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit lesson_reminder_24h notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit lesson_reminder_24h notification for booking #%s",
+            booking.id,
+        )
         return None
 
 
@@ -234,7 +259,10 @@ def notify_lesson_reminder_1h_student(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit lesson_reminder_1h student notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit lesson_reminder_1h student notification for booking #%s",
+            booking.id,
+        )
         return None
 
 
@@ -255,7 +283,10 @@ def notify_lesson_reminder_1h_teacher(booking):
             metadata=metadata,
         )
     except Exception:
-        logger.exception("Failed to emit lesson_reminder_1h teacher notification for booking #%s", booking.id)
+        logger.exception(
+            "Failed to emit lesson_reminder_1h teacher notification for booking #%s",
+            booking.id,
+        )
         return None
 
 
@@ -275,12 +306,13 @@ def mark_booking_reminders_read(booking):
                 booking_id=booking.id,
                 event_types=event_types,
             )
-        if hasattr(booking, 'teacher') and booking.teacher and booking.teacher.user:
+        if hasattr(booking, "teacher") and booking.teacher and booking.teacher.user:
             mark_booking_notifications_as_read(
                 recipient=booking.teacher.user,
                 booking_id=booking.id,
                 event_types=event_types,
             )
     except Exception:
-        logger.exception("Failed to mark reminder notifications as read for booking #%s", booking.id)
-
+        logger.exception(
+            "Failed to mark reminder notifications as read for booking #%s", booking.id
+        )

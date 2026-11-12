@@ -1,7 +1,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from django.test import TestCase
+
 from django.core.exceptions import ValidationError
+from django.test import TestCase
+
 from accounts.models import User
 from booking.models import Booking
 
@@ -9,12 +11,12 @@ from booking.models import Booking
 class BookingModelTests(TestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
-            username='testteacher', password='test123', role=User.Role.TEACHER
+            username="testteacher", password="test123", role=User.Role.TEACHER
         )
         self.teacher = self.teacher_user.teacher_profile
 
         self.student_user = User.objects.create_user(
-            username='teststudent', password='test123', role=User.Role.STUDENT
+            username="teststudent", password="test123", role=User.Role.STUDENT
         )
 
         tz = ZoneInfo(self.teacher_user.timezone)
@@ -80,7 +82,7 @@ class BookingModelTests(TestCase):
         )
 
         another_student = User.objects.create_user(
-            username='student2', password='password123'
+            username="student2", password="password123"
         )
         second_booking = Booking(
             student=another_student,
@@ -104,7 +106,7 @@ class BookingModelTests(TestCase):
         first_booking.save()
 
         another_student = User.objects.create_user(
-            username='student2', password='password123'
+            username="student2", password="password123"
         )
         second_booking = Booking(
             student=another_student,
@@ -114,7 +116,9 @@ class BookingModelTests(TestCase):
         )
         second_booking.save()  # should NOT raise
 
-        self.assertEqual(Booking.objects.filter(status=Booking.Status.PENDING).count(), 1)
+        self.assertEqual(
+            Booking.objects.filter(status=Booking.Status.PENDING).count(), 1
+        )
 
     # 6. Duration minutes default and explicit values
     def test_booking_default_duration_is_50(self):
@@ -152,4 +156,4 @@ class BookingModelTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             booking.full_clean()
-        self.assertIn('duration_minutes', ctx.exception.message_dict)
+        self.assertIn("duration_minutes", ctx.exception.message_dict)
