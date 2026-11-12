@@ -1,4 +1,5 @@
 import logging
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.core.cache import cache
@@ -24,7 +25,11 @@ def clear_digest_debounce_flag(recipient_id: int, conversation_id) -> None:
     Clears the atomic digest debounce cache flag for a recipient in a conversation.
     """
     try:
-        cache.delete(DEBOUNCE_FLAG_KEY.format(recipient_id=recipient_id, conversation_id=conversation_id))
+        cache.delete(
+            DEBOUNCE_FLAG_KEY.format(
+                recipient_id=recipient_id, conversation_id=conversation_id
+            )
+        )
     except Exception as exc:
         logger.warning(
             "Failed to clear digest debounce flag for recipient %s in conversation %s: %s",
@@ -49,7 +54,9 @@ def schedule_unread_message_digest(conversation_id, recipient_id: int) -> bool:
         )
         return False
 
-    key = DEBOUNCE_FLAG_KEY.format(recipient_id=recipient_id, conversation_id=conversation_id)
+    key = DEBOUNCE_FLAG_KEY.format(
+        recipient_id=recipient_id, conversation_id=conversation_id
+    )
     is_set = cache.add(key, True, timeout=DEBOUNCE_FLAG_TIMEOUT)
     if not is_set:
         logger.debug(
@@ -201,14 +208,22 @@ def advance_watermark(conversation: Conversation, user, message_id: int) -> int:
 
     clear_digest_debounce_flag(user.id, conversation.id)
 
-    old_val = Conversation.objects.filter(id=conversation.id).values_list(field, flat=True).first() or 0
+    old_val = (
+        Conversation.objects.filter(id=conversation.id)
+        .values_list(field, flat=True)
+        .first()
+        or 0
+    )
     if message_id > old_val:
         Conversation.objects.filter(id=conversation.id).update(
             **{field: Greatest(F(field), message_id)}
         )
-        updated_val = Conversation.objects.filter(id=conversation.id).values_list(
-            field, flat=True
-        ).first() or 0
+        updated_val = (
+            Conversation.objects.filter(id=conversation.id)
+            .values_list(field, flat=True)
+            .first()
+            or 0
+        )
         if updated_val > old_val:
             transaction.on_commit(lambda: broadcast_unread_chat_count(user))
         return updated_val
@@ -229,7 +244,9 @@ def send_message(
 
     stripped_text = text.strip() if text else ""
     if message_type == Message.MessageType.TEXT and not stripped_text:
-        raise ValidationError({"text": "Message text cannot be empty or whitespace only."})
+        raise ValidationError(
+            {"text": "Message text cannot be empty or whitespace only."}
+        )
 
     if snippet is not None:
         resolved_snippet = snippet[:120]
@@ -303,7 +320,10 @@ def record_booking_event(booking, event_type: str) -> Message | None:
         "booking_cancelled",
     }
     if event_type not in valid_events:
-        logger.warning("Unknown booking event_type '%s' passed to record_booking_event.", event_type)
+        logger.warning(
+            "Unknown booking event_type '%s' passed to record_booking_event.",
+            event_type,
+        )
         return None
 
     if not booking or not getattr(booking, "id", None):
@@ -314,7 +334,9 @@ def record_booking_event(booking, event_type: str) -> Message | None:
         student = booking.student
         teacher_user = booking.teacher.user
 
-        conversation, _ = get_or_create_conversation(student=student, teacher=teacher_user)
+        conversation, _ = get_or_create_conversation(
+            student=student, teacher=teacher_user
+        )
 
         if event_type in ("booking_requested", "cancellation_requested"):
             sender = student
@@ -366,4 +388,3 @@ def record_booking_event(booking, event_type: str) -> Message | None:
             exc,
         )
         return None
-

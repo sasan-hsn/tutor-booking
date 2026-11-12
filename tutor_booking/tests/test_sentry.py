@@ -1,7 +1,8 @@
 from unittest.mock import patch
+
+import sentry_sdk
 from django.core.exceptions import DisallowedHost
 from django.test import SimpleTestCase
-import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -71,11 +72,15 @@ class SentryInitializationTests(SimpleTestCase):
 
     def test_get_sentry_integrations_configuration(self):
         integrations = get_sentry_integrations()
-        celery_integ = next((i for i in integrations if isinstance(i, CeleryIntegration)), None)
+        celery_integ = next(
+            (i for i in integrations if isinstance(i, CeleryIntegration)), None
+        )
         self.assertIsNotNone(celery_integ)
         self.assertTrue(getattr(celery_integ, "monitor_beat_tasks", False))
 
-        logging_integ = next((i for i in integrations if isinstance(i, LoggingIntegration)), None)
+        logging_integ = next(
+            (i for i in integrations if isinstance(i, LoggingIntegration)), None
+        )
         self.assertIsNotNone(logging_integ)
 
 
@@ -108,6 +113,7 @@ class SentrySettingsIntegrationTests(SimpleTestCase):
 
     def test_sentry_settings_attributes_exist(self):
         from django.conf import settings
+
         self.assertTrue(hasattr(settings, "SENTRY_DSN"))
         self.assertTrue(hasattr(settings, "SENTRY_ENVIRONMENT"))
         self.assertTrue(hasattr(settings, "SENTRY_RELEASE"))
@@ -115,4 +121,5 @@ class SentrySettingsIntegrationTests(SimpleTestCase):
 
     def test_test_runner_bypasses_sentry_init_even_when_dsn_set(self):
         import sys
+
         self.assertIn("test", sys.argv)

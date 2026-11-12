@@ -8,37 +8,37 @@ class NotificationQuerySet(models.QuerySet):
         return self.filter(recipient=user, is_read=False)
 
     def unread_count_for(self, user):
-        user_id = user.id if hasattr(user, 'id') else user
+        user_id = user.id if hasattr(user, "id") else user
         return self.filter(recipient_id=user_id, is_read=False).count()
 
 
 class Notification(models.Model):
     class EventType(models.TextChoices):
-        BOOKING_REQUESTED = 'booking_requested', 'Booking Requested'
-        BOOKING_CONFIRMED = 'booking_confirmed', 'Booking Confirmed'
-        BOOKING_DECLINED = 'booking_declined', 'Booking Declined'
-        CANCELLATION_REQUESTED = 'cancellation_requested', 'Cancellation Requested'
-        BOOKING_CANCELLED = 'booking_cancelled', 'Booking Cancelled'
-        BOOKING_EXPIRED = 'booking_expired', 'Booking Expired'
-        LESSON_REMINDER_24H = 'lesson_reminder_24h', 'Lesson Reminder 24h'
-        LESSON_REMINDER_1H = 'lesson_reminder_1h', 'Lesson Reminder 1h'
+        BOOKING_REQUESTED = "booking_requested", "Booking Requested"
+        BOOKING_CONFIRMED = "booking_confirmed", "Booking Confirmed"
+        BOOKING_DECLINED = "booking_declined", "Booking Declined"
+        CANCELLATION_REQUESTED = "cancellation_requested", "Cancellation Requested"
+        BOOKING_CANCELLED = "booking_cancelled", "Booking Cancelled"
+        BOOKING_EXPIRED = "booking_expired", "Booking Expired"
+        LESSON_REMINDER_24H = "lesson_reminder_24h", "Lesson Reminder 24h"
+        LESSON_REMINDER_1H = "lesson_reminder_1h", "Lesson Reminder 1h"
 
     class Level(models.TextChoices):
-        INFO = 'info', 'Info'
-        SUCCESS = 'success', 'Success'
-        WARNING = 'warning', 'Warning'
+        INFO = "info", "Info"
+        SUCCESS = "success", "Success"
+        WARNING = "warning", "Warning"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='notifications',
+        related_name="notifications",
     )
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name='notifications_triggered',
+        related_name="notifications_triggered",
     )
     event_type = models.CharField(
         max_length=50,
@@ -61,11 +61,11 @@ class Notification(models.Model):
     objects = NotificationQuerySet.as_manager()
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
         indexes = [
             models.Index(
-                fields=['recipient', 'is_read', '-created_at'],
-                name='notif_recip_read_created_idx',
+                fields=["recipient", "is_read", "-created_at"],
+                name="notif_recip_read_created_idx",
             ),
         ]
 
@@ -77,7 +77,7 @@ class Notification(models.Model):
         if not self.is_read:
             self.is_read = True
             self.read_at = timezone.now()
-            self.save(update_fields=['is_read', 'read_at'])
+            self.save(update_fields=["is_read", "read_at"])
 
     def to_ws_payload(self, unread_count):
         return {

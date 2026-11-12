@@ -1,26 +1,37 @@
 import threading
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from django.test import TransactionTestCase, Client
+
+from django.db import connection
+from django.test import Client, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
-from django.db import connection
+
 from accounts.models import User
-from booking.models import RegularAvailability, Booking
+from booking.models import Booking, RegularAvailability
 
 
 class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
-            username='testteacher', password='test123', role=User.Role.TEACHER, is_email_verified=True
+            username="testteacher",
+            password="test123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
         )
         self.teacher = self.teacher_user.teacher_profile
 
         self.student1 = User.objects.create_user(
-            username='student1', password='test123', role=User.Role.STUDENT, is_email_verified=True
+            username="student1",
+            password="test123",
+            role=User.Role.STUDENT,
+            is_email_verified=True,
         )
         self.student2 = User.objects.create_user(
-            username='student2', password='test123', role=User.Role.STUDENT, is_email_verified=True
+            username="student2",
+            password="test123",
+            role=User.Role.STUDENT,
+            is_email_verified=True,
         )
 
         # Ensure slot is on a future Monday
@@ -30,7 +41,9 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             days_until_next_monday += 7
         next_monday = today + timedelta(days=days_until_next_monday)
         self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
-        self.slot_start_at = datetime.combine(next_monday, time(10, 0), tzinfo=self.teacher_tz)
+        self.slot_start_at = datetime.combine(
+            next_monday, time(10, 0), tzinfo=self.teacher_tz
+        )
 
         RegularAvailability.objects.create(
             teacher=self.teacher,
@@ -39,7 +52,7 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
             end_time=time(11, 0),
         )
 
-        self.book_url = reverse('booking:book_slot')
+        self.book_url = reverse("booking:book_slot")
 
     def test_concurrent_requests_to_endpoint_only_one_succeeds(self):
         """Two real HTTP POST requests hitting book_slot at the same time — only one should succeed."""
@@ -47,16 +60,19 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
 
         def make_request(username):
             client = Client()
-            client.login(username=username, password='test123')
-            response = client.post(self.book_url, {
-                'start_at': self.slot_start_at.isoformat(),
-                'lesson_option': 'trial',
-            })
+            client.login(username=username, password="test123")
+            response = client.post(
+                self.book_url,
+                {
+                    "start_at": self.slot_start_at.isoformat(),
+                    "lesson_option": "trial",
+                },
+            )
             status_codes.append(response.status_code)
             connection.close()
 
-        thread1 = threading.Thread(target=make_request, args=('student1',))
-        thread2 = threading.Thread(target=make_request, args=('student2',))
+        thread1 = threading.Thread(target=make_request, args=("student1",))
+        thread2 = threading.Thread(target=make_request, args=("student2",))
 
         thread1.start()
         thread2.start()

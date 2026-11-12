@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
-from django.contrib.staticfiles.storage import staticfiles_storage
 from django.core.management import call_command
 from django.template import Context, Template
 from django.test import SimpleTestCase, override_settings
@@ -24,13 +23,18 @@ class StaticCacheBustingTests(SimpleTestCase):
 
     def test_production_storage_backend_selection(self):
         """When DEBUG is False and 'test' is not in argv, ResilientManifestStaticFilesStorage is selected."""
-        with patch("tutor_booking.settings.DEBUG", False), patch("sys.argv", ["manage.py", "runserver"]):
+        with (
+            patch("tutor_booking.settings.DEBUG", False),
+            patch("sys.argv", ["manage.py", "runserver"]),
+        ):
             backend = (
                 "django.contrib.staticfiles.storage.StaticFilesStorage"
                 if settings.DEBUG or ("test" in ["manage.py", "runserver"])
                 else "tutor_booking.storage.ResilientManifestStaticFilesStorage"
             )
-            self.assertEqual(backend, "tutor_booking.storage.ResilientManifestStaticFilesStorage")
+            self.assertEqual(
+                backend, "tutor_booking.storage.ResilientManifestStaticFilesStorage"
+            )
 
     def test_resilient_manifest_storage_missing_file_fallback(self):
         """Missing or unmanifested assets should fall back gracefully to unhashed paths without 500 errors."""
@@ -63,7 +67,10 @@ class StaticCacheBustingTests(SimpleTestCase):
                 call_command("collectstatic", interactive=False, verbosity=0)
 
                 manifest_file = tmp_path / "staticfiles.json"
-                self.assertTrue(manifest_file.exists(), "staticfiles.json manifest must be generated")
+                self.assertTrue(
+                    manifest_file.exists(),
+                    "staticfiles.json manifest must be generated",
+                )
 
                 manifest_data = json.loads(manifest_file.read_text())
                 paths = manifest_data.get("paths", {})
@@ -73,7 +80,10 @@ class StaticCacheBustingTests(SimpleTestCase):
                 self.assertIn("js/main.js", paths)
 
                 hashed_css = paths["css/style.css"]
-                self.assertTrue((tmp_path / hashed_css).exists(), f"Hashed file {hashed_css} must exist on disk")
+                self.assertTrue(
+                    (tmp_path / hashed_css).exists(),
+                    f"Hashed file {hashed_css} must exist on disk",
+                )
                 self.assertNotEqual(hashed_css, "css/style.css")
                 self.assertTrue(hashed_css.startswith("css/style."))
                 self.assertTrue(hashed_css.endswith(".css"))
@@ -87,7 +97,9 @@ class StaticCacheBustingTests(SimpleTestCase):
         """In production mode (DEBUG=False), template {% static %} tags render fingerprinted URLs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            storage_backend = "tutor_booking.storage.ResilientManifestStaticFilesStorage"
+            storage_backend = (
+                "tutor_booking.storage.ResilientManifestStaticFilesStorage"
+            )
             with override_settings(
                 DEBUG=False,
                 STATIC_ROOT=tmp_path,
@@ -102,7 +114,9 @@ class StaticCacheBustingTests(SimpleTestCase):
             ):
                 call_command("collectstatic", interactive=False, verbosity=0)
 
-                template = Template("{% load static %}<link rel='stylesheet' href='{% static \"css/style.css\" %}'>")
+                template = Template(
+                    "{% load static %}<link rel='stylesheet' href='{% static \"css/style.css\" %}'>"
+                )
                 rendered = template.render(Context({}))
 
                 manifest_data = json.loads((tmp_path / "staticfiles.json").read_text())
@@ -112,7 +126,9 @@ class StaticCacheBustingTests(SimpleTestCase):
 
     def test_template_rendering_with_unhashed_static_in_debug(self):
         """In development mode (DEBUG=True), template {% static %} tags render unhashed URLs."""
-        template = Template("{% load static %}<link rel='stylesheet' href='{% static \"css/style.css\" %}'>")
+        template = Template(
+            "{% load static %}<link rel='stylesheet' href='{% static \"css/style.css\" %}'>"
+        )
         with override_settings(DEBUG=True):
             rendered = template.render(Context({}))
             self.assertIn("/static/css/style.css", rendered)

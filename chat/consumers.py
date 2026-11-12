@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
+
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.db import database_sync_to_async
 from channels.exceptions import StopConsumer
@@ -10,13 +11,16 @@ from channels.layers import get_channel_layer
 from channels.utils import await_many_dispatch
 
 try:
-    from redis.exceptions import TimeoutError as RedisTimeoutError, RedisError
+    from redis.exceptions import RedisError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
 except ImportError:
+
     class RedisTimeoutError(Exception):
         pass
 
     class RedisError(Exception):
         pass
+
 
 from .models import Conversation
 from .presence import add_room_presence, remove_room_presence
@@ -44,12 +48,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     try:
                         return await self.channel_layer.receive(self.channel_name)
                     except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError) as e:
-                        logger.debug("Chat channel layer read timeout; resuming listener: %s", e)
+                        logger.debug(
+                            "Chat channel layer read timeout; resuming listener: %s", e
+                        )
                         await asyncio.sleep(0.2)
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:
-                        logger.warning("Chat channel layer read error; resuming listener: %s", e)
+                        logger.warning(
+                            "Chat channel layer read error; resuming listener: %s", e
+                        )
                         await asyncio.sleep(1.0)
 
             self.channel_receive = resilient_channel_receive
@@ -83,7 +91,9 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
 
-        raw_conv_id = self.scope.get("url_route", {}).get("kwargs", {}).get("conversation_id")
+        raw_conv_id = (
+            self.scope.get("url_route", {}).get("kwargs", {}).get("conversation_id")
+        )
         if not raw_conv_id:
             await self.close()
             return
@@ -114,7 +124,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     self.channel_layer.group_add(self.group_name, self.channel_name),
                     timeout=2.0,
                 )
-            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
+            except (
+                TimeoutError,
+                asyncio.TimeoutError,
+                RedisTimeoutError,
+                RedisError,
+                Exception,
+            ) as e:
                 logger.warning(
                     "Channel layer group_add failed or timed out for conversation %s: %s",
                     self.conversation_id,
@@ -122,16 +138,29 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 )
 
     async def disconnect(self, close_code):
-        if hasattr(self, "conversation_id") and hasattr(self, "user") and self.user and self.conversation_id:
+        if (
+            hasattr(self, "conversation_id")
+            and hasattr(self, "user")
+            and self.user
+            and self.conversation_id
+        ):
             await self._remove_presence()
 
         if hasattr(self, "group_name") and self.group_name and self.channel_layer:
             try:
                 await asyncio.wait_for(
-                    self.channel_layer.group_discard(self.group_name, self.channel_name),
+                    self.channel_layer.group_discard(
+                        self.group_name, self.channel_name
+                    ),
                     timeout=2.0,
                 )
-            except (TimeoutError, asyncio.TimeoutError, RedisTimeoutError, RedisError, Exception) as e:
+            except (
+                TimeoutError,
+                asyncio.TimeoutError,
+                RedisTimeoutError,
+                RedisError,
+                Exception,
+            ) as e:
                 logger.warning(
                     "Channel layer group_discard failed for conversation %s: %s",
                     self.group_name,
@@ -176,35 +205,43 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         Handler invoked when a new message payload is broadcast to the conversation group.
         """
-        await self.send_json({
-            "type": "new_message",
-            "message": event["message"],
-        })
+        await self.send_json(
+            {
+                "type": "new_message",
+                "message": event["message"],
+            }
+        )
 
     async def chat_read_receipt(self, event):
         """
         Handler invoked when a read receipt frame is broadcast to the conversation group.
         """
-        await self.send_json({
-            "type": "read_receipt",
-            "reader_id": event["reader_id"],
-            "watermark": event["watermark"],
-        })
+        await self.send_json(
+            {
+                "type": "read_receipt",
+                "reader_id": event["reader_id"],
+                "watermark": event["watermark"],
+            }
+        )
 
     async def chat_user_typing(self, event):
         """
         Handler invoked when an ephemeral typing indicator is broadcast to the conversation group.
         """
-        await self.send_json({
-            "type": "user_typing",
-            "user_id": event["user_id"],
-            "username": event["username"],
-        })
+        await self.send_json(
+            {
+                "type": "user_typing",
+                "user_id": event["user_id"],
+                "username": event["username"],
+            }
+        )
 
     @database_sync_to_async
     def _get_verified_conversation(self, conv_uuid, user):
         try:
-            conv = Conversation.objects.select_related("student", "teacher").get(id=conv_uuid)
+            conv = Conversation.objects.select_related("student", "teacher").get(
+                id=conv_uuid
+            )
             if user.id in (conv.student_id, conv.teacher_id):
                 return conv
             return None
@@ -224,4 +261,3 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     def _remove_presence(self):
         channel_name = getattr(self, "channel_name", "") or str(id(self))
         remove_room_presence(self.conversation_id, self.user.id, channel_name)
-

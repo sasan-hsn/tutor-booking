@@ -1,11 +1,11 @@
 import logging
 import smtplib
 import uuid
+
+import requests
 from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
-import requests
 
 from .emails import send_chat_unread_digest_email
 from .models import Conversation, Message
@@ -57,13 +57,20 @@ def send_unread_message_digest(self, conversation_id, recipient_id):
     try:
         conv_uuid = uuid.UUID(str(conversation_id))
     except (ValueError, TypeError):
-        logger.warning("Invalid conversation_id '%s' passed to send_unread_message_digest.", conversation_id)
+        logger.warning(
+            "Invalid conversation_id '%s' passed to send_unread_message_digest.",
+            conversation_id,
+        )
         return
 
     try:
-        conversation = Conversation.objects.select_related("student", "teacher").get(id=conv_uuid)
+        conversation = Conversation.objects.select_related("student", "teacher").get(
+            id=conv_uuid
+        )
     except Conversation.DoesNotExist:
-        logger.warning("Conversation %s not found; skipping unread message digest.", conv_uuid)
+        logger.warning(
+            "Conversation %s not found; skipping unread message digest.", conv_uuid
+        )
         return
 
     if recipient_id not in (conversation.student_id, conversation.teacher_id):
@@ -74,7 +81,11 @@ def send_unread_message_digest(self, conversation_id, recipient_id):
         )
         return
 
-    recipient = conversation.student if recipient_id == conversation.student_id else conversation.teacher
+    recipient = (
+        conversation.student
+        if recipient_id == conversation.student_id
+        else conversation.teacher
+    )
     sender = conversation.get_counterpart(recipient)
 
     # 1. Re-check unread messages from counterpart

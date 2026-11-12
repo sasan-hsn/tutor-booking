@@ -1,4 +1,5 @@
 import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -39,11 +40,17 @@ class Conversation(models.Model):
         super().clean()
         if self.student_id and self.teacher_id:
             if self.student_id == self.teacher_id:
-                raise ValidationError({"teacher": "Self-conversations are not permitted."})
+                raise ValidationError(
+                    {"teacher": "Self-conversations are not permitted."}
+                )
             if hasattr(self.student, "role") and self.student.role != "student":
-                raise ValidationError({"student": "Student must have the student role."})
+                raise ValidationError(
+                    {"student": "Student must have the student role."}
+                )
             if hasattr(self.teacher, "role") and self.teacher.role != "teacher":
-                raise ValidationError({"teacher": "Teacher must have the teacher role."})
+                raise ValidationError(
+                    {"teacher": "Teacher must have the teacher role."}
+                )
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -74,7 +81,9 @@ class Conversation(models.Model):
         return self.messages.filter(id__gt=watermark).exclude(sender=user).count()
 
     def __str__(self):
-        return f"Conversation between {self.student.username} and {self.teacher.username}"
+        return (
+            f"Conversation between {self.student.username} and {self.teacher.username}"
+        )
 
 
 class Message(models.Model):
@@ -105,7 +114,9 @@ class Message(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["conversation", "id"], name="chat_msg_conv_id_idx"),
-            models.Index(fields=["conversation", "created_at"], name="chat_msg_conv_created_idx"),
+            models.Index(
+                fields=["conversation", "created_at"], name="chat_msg_conv_created_idx"
+            ),
         ]
         ordering = ["id"]
 
@@ -113,13 +124,22 @@ class Message(models.Model):
         super().clean()
         if self.message_type == self.MessageType.TEXT:
             if not self.text or not self.text.strip():
-                raise ValidationError({"text": "Message text cannot be empty or whitespace only."})
+                raise ValidationError(
+                    {"text": "Message text cannot be empty or whitespace only."}
+                )
             if len(self.text) > 2000:
-                raise ValidationError({"text": "Message text cannot exceed 2000 characters."})
+                raise ValidationError(
+                    {"text": "Message text cannot exceed 2000 characters."}
+                )
 
         if self.conversation_id and self.sender_id:
-            if self.sender_id not in (self.conversation.student_id, self.conversation.teacher_id):
-                raise ValidationError({"sender": "Sender must be a participant of the conversation."})
+            if self.sender_id not in (
+                self.conversation.student_id,
+                self.conversation.teacher_id,
+            ):
+                raise ValidationError(
+                    {"sender": "Sender must be a participant of the conversation."}
+                )
 
     def save(self, *args, **kwargs):
         self.full_clean()

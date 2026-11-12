@@ -3,7 +3,6 @@ from django.test import RequestFactory
 
 from accounts.tests.base import RoleTestCase
 from chat.context_processors import chat_context
-from chat.models import Conversation, Message
 from chat.services import get_or_create_conversation, send_message
 
 User = get_user_model()

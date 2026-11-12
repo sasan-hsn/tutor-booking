@@ -1,7 +1,8 @@
 import logging
 from typing import Any, Optional
-from django.core.exceptions import DisallowedHost
+
 import sentry_sdk
+from django.core.exceptions import DisallowedHost
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -9,7 +10,9 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 logger = logging.getLogger(__name__)
 
 
-def strip_sensitive_user_data(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:
+def strip_sensitive_user_data(
+    event: dict[str, Any], hint: dict[str, Any]
+) -> dict[str, Any]:
     """
     Ensure user context in Sentry events contains only the surrogate ID.
     Strips raw email addresses, usernames, and IP addresses to enforce privacy.
@@ -65,4 +68,3 @@ def init_sentry(
         before_send=strip_sensitive_user_data,
     )
     return True
-

@@ -1,18 +1,24 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from django.test import TestCase
+
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
+from django.test import TestCase
+
 from accounts.models import User
 from booking.models import Booking, Review
-from django.db import IntegrityError
 
 
 class ReviewModelTests(TestCase):
     def setUp(self):
-        self.teacher_user = User.objects.create_user(username='testteacher', password='test123', role=User.Role.TEACHER)
+        self.teacher_user = User.objects.create_user(
+            username="testteacher", password="test123", role=User.Role.TEACHER
+        )
         self.teacher = self.teacher_user.teacher_profile
 
-        self.student_user = User.objects.create_user(username='teststudent', password='test123', role=User.Role.STUDENT)
+        self.student_user = User.objects.create_user(
+            username="teststudent", password="test123", role=User.Role.STUDENT
+        )
 
         tz = ZoneInfo(self.teacher_user.timezone)
         self.booking = Booking.objects.create(
@@ -30,7 +36,7 @@ class ReviewModelTests(TestCase):
             student=self.student_user,
             booking=self.booking,
             rating=5,
-            comment="Great lesson!"
+            comment="Great lesson!",
         )
         self.assertEqual(review.booking, self.booking)
         self.assertEqual(review.rating, 5)
@@ -53,19 +59,21 @@ class ReviewModelTests(TestCase):
                 student=self.student_user,
                 booking=pending_booking,
                 rating=4,
-                comment="Good lesson!"
+                comment="Good lesson!",
             )
 
     # 3. Another student cannot review someone else's booking
     def test_another_student_cannot_review(self):
         """Test that a student cannot create a review for a booking they did not make."""
-        another_student = User.objects.create_user(username='anotherstudent', password='test123', role=User.Role.STUDENT)
+        another_student = User.objects.create_user(
+            username="anotherstudent", password="test123", role=User.Role.STUDENT
+        )
         with self.assertRaises(ValidationError):
             Review.objects.create(
                 student=another_student,
                 booking=self.booking,
                 rating=3,
-                comment="Not my lesson!"
+                comment="Not my lesson!",
             )
 
     # 4. Cannot create duplicate reviews for the same booking

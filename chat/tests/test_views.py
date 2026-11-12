@@ -1,7 +1,7 @@
 import json
-import uuid
 from datetime import timedelta
 from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import Client, TestCase
@@ -9,10 +9,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from booking.models import Booking
-from portfolio.models import TeacherProfile
-from chat.models import Conversation, Message
+from chat.models import Conversation
 from chat.services import record_booking_event, send_message
 from chat.utils import CHAT_RATE_LIMIT, record_chat_message
+from portfolio.models import TeacherProfile
 
 User = get_user_model()
 
@@ -64,14 +64,20 @@ class ChatViewsIntegrationTests(TestCase):
     # --- Test /messages/with/<teacher_username>/ ---
 
     def test_start_conversation_redirects_unauthenticated(self):
-        url = reverse("chat:start_conversation", kwargs={"teacher_username": self.teacher.username})
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"teacher_username": self.teacher.username},
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/accounts/login/", response.url)
 
     def test_start_conversation_blocked_for_unverified_student(self):
         self.client.force_login(self.unverified_student)
-        url = reverse("chat:start_conversation", kwargs={"teacher_username": self.teacher.username})
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"teacher_username": self.teacher.username},
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
         self.assertContains(response, "Please verify your email", status_code=403)
@@ -79,37 +85,55 @@ class ChatViewsIntegrationTests(TestCase):
     def test_start_conversation_validates_teacher_role(self):
         self.client.force_login(self.student)
         # Attempting with another student should 404 or 400
-        url = reverse("chat:start_conversation", kwargs={"teacher_username": self.other_student.username})
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"teacher_username": self.other_student.username},
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 404)
 
         # Non-existent user should 404
-        url_nonexistent = reverse("chat:start_conversation", kwargs={"teacher_username": "nobody"})
+        url_nonexistent = reverse(
+            "chat:start_conversation", kwargs={"teacher_username": "nobody"}
+        )
         response = self.client.get(url_nonexistent)
         self.assertEqual(response.status_code, 404)
 
     def test_start_conversation_as_teacher_blocked(self):
         self.client.force_login(self.teacher)
-        url = reverse("chat:start_conversation", kwargs={"teacher_username": self.other_teacher.username})
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"teacher_username": self.other_teacher.username},
+        )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
 
     def test_start_conversation_creates_and_redirects_idempotently(self):
         self.client.force_login(self.student)
-        url = reverse("chat:start_conversation", kwargs={"teacher_username": self.teacher.username})
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"teacher_username": self.teacher.username},
+        )
 
         # First visit: creates conversation and redirects
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
         conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
-        expected_url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        expected_url = reverse(
+            "chat:conversation_detail", kwargs={"conversation_id": conv.id}
+        )
         self.assertRedirects(response, expected_url)
 
         # Second visit: idempotently redirects to same conversation
         response2 = self.client.get(url)
         self.assertEqual(response2.status_code, 302)
         self.assertRedirects(response2, expected_url)
-        self.assertEqual(Conversation.objects.filter(student=self.student, teacher=self.teacher).count(), 1)
+        self.assertEqual(
+            Conversation.objects.filter(
+                student=self.student, teacher=self.teacher
+            ).count(),
+            1,
+        )
 
     # --- Test /messages/<conversation_id>/ ---
 
@@ -138,8 +162,10 @@ class ChatViewsIntegrationTests(TestCase):
 
     def test_conversation_detail_advances_watermark_for_viewer(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
-        msg1 = send_message(conversation=conv, sender=self.student, text="Hello!")
-        msg2 = send_message(conversation=conv, sender=self.student, text="Are you available?")
+        send_message(conversation=conv, sender=self.student, text="Hello!")
+        msg2 = send_message(
+            conversation=conv, sender=self.student, text="Are you available?"
+        )
 
         self.client.force_login(self.teacher)
         url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
@@ -151,7 +177,7 @@ class ChatViewsIntegrationTests(TestCase):
 
     def test_conversation_detail_renders_linkified_text(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
-        msg = send_message(
+        send_message(
             conversation=conv,
             sender=self.student,
             text="Check our resource: https://example.com/grammar",
@@ -168,7 +194,7 @@ class ChatViewsIntegrationTests(TestCase):
     def test_conversation_detail_renders_read_receipts_and_typing_indicator(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
         msg1 = send_message(conversation=conv, sender=self.student, text="Read message")
-        msg2 = send_message(conversation=conv, sender=self.student, text="Unread message")
+        send_message(conversation=conv, sender=self.student, text="Unread message")
 
         # Teacher has read msg1 but not msg2
         conv.teacher_last_read_message_id = msg1.id
@@ -194,7 +220,9 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 302)
 
     def test_send_message_unverified_student_blocked(self):
-        conv = Conversation.objects.create(student=self.unverified_student, teacher=self.teacher)
+        conv = Conversation.objects.create(
+            student=self.unverified_student, teacher=self.teacher
+        )
         self.client.force_login(self.unverified_student)
         url = reverse("chat:send_message", kwargs={"conversation_id": conv.id})
         response = self.client.post(url, {"text": "Test message"})
@@ -231,7 +259,9 @@ class ChatViewsIntegrationTests(TestCase):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
         self.client.force_login(self.student)
         url = reverse("chat:send_message", kwargs={"conversation_id": conv.id})
-        response = self.client.post(url, {"text": "Hello teacher, look at https://example.com!"})
+        response = self.client.post(
+            url, {"text": "Hello teacher, look at https://example.com!"}
+        )
 
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
@@ -239,11 +269,13 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertIn("message", data)
         msg_data = data["message"]
         self.assertEqual(msg_data["sender_id"], self.student.id)
-        self.assertIn("href=\"https://example.com\"", msg_data["rendered_text"])
+        self.assertIn('href="https://example.com"', msg_data["rendered_text"])
 
         conv.refresh_from_db()
         self.assertEqual(conv.student_last_read_message_id, msg_data["id"])
-        self.assertEqual(conv.last_message_snippet, "Hello teacher, look at https://example.com!")
+        self.assertEqual(
+            conv.last_message_snippet, "Hello teacher, look at https://example.com!"
+        )
 
     def test_send_message_rate_limiting(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
@@ -273,8 +305,12 @@ class ChatViewsIntegrationTests(TestCase):
         conv1 = Conversation.objects.create(student=self.student, teacher=self.teacher)
         send_message(conv1, sender=self.student, text="First conversation message")
 
-        conv2 = Conversation.objects.create(student=self.student, teacher=self.other_teacher)
-        send_message(conv2, sender=self.other_teacher, text="Second conversation message")
+        conv2 = Conversation.objects.create(
+            student=self.student, teacher=self.other_teacher
+        )
+        send_message(
+            conv2, sender=self.other_teacher, text="Second conversation message"
+        )
 
         # Third conversation that is uninitiated
         third_teacher = User.objects.create_user(
@@ -284,7 +320,7 @@ class ChatViewsIntegrationTests(TestCase):
             role=User.Role.TEACHER,
             is_email_verified=True,
         )
-        conv3 = Conversation.objects.create(student=self.student, teacher=third_teacher)
+        Conversation.objects.create(student=self.student, teacher=third_teacher)
 
         self.client.force_login(self.student)
         url = reverse("chat:inbox")
@@ -311,7 +347,7 @@ class ChatViewsIntegrationTests(TestCase):
     def test_inbox_displays_counterpart_info_and_unread_count(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
         msg1 = send_message(conv, sender=self.teacher, text="Message 1 from teacher")
-        msg2 = send_message(conv, sender=self.teacher, text="Message 2 from teacher")
+        send_message(conv, sender=self.teacher, text="Message 2 from teacher")
 
         # Student has not read any message
         self.client.force_login(self.student)
@@ -322,12 +358,16 @@ class ChatViewsIntegrationTests(TestCase):
         item = response.context["conversations"][0]
         self.assertEqual(item["counterpart"], self.teacher)
         self.assertEqual(item["unread_count"], 2)
-        self.assertEqual(item["conversation"].last_message_snippet, "Message 2 from teacher")
+        self.assertEqual(
+            item["conversation"].last_message_snippet, "Message 2 from teacher"
+        )
         self.assertContains(response, self.teacher.username)
         self.assertContains(response, "Message 2 from teacher")
 
         # Now student marks msg1 as read
-        Conversation.objects.filter(id=conv.id).update(student_last_read_message_id=msg1.id)
+        Conversation.objects.filter(id=conv.id).update(
+            student_last_read_message_id=msg1.id
+        )
         response = self.client.get(url)
         item = response.context["conversations"][0]
         self.assertEqual(item["unread_count"], 1)
@@ -374,7 +414,9 @@ class ChatViewsIntegrationTests(TestCase):
 
         # Initial page view only loads the latest 30 messages (Message 16 to 45)
         self.client.force_login(self.student)
-        detail_url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        detail_url = reverse(
+            "chat:conversation_detail", kwargs={"conversation_id": conv.id}
+        )
         response = self.client.get(detail_url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.context["messages"]), 30)
@@ -383,7 +425,9 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertEqual(oldest_initial.text, "Message 16")
 
         # Now paginate before oldest_initial.id
-        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        history_url = reverse(
+            "chat:conversation_history", kwargs={"conversation_id": conv.id}
+        )
         history_response = self.client.get(f"{history_url}?before={oldest_initial.id}")
         self.assertEqual(history_response.status_code, 200)
         data = json.loads(history_response.content)
@@ -402,7 +446,9 @@ class ChatViewsIntegrationTests(TestCase):
             messages.append(msg)
 
         self.client.force_login(self.student)
-        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        history_url = reverse(
+            "chat:conversation_history", kwargs={"conversation_id": conv.id}
+        )
 
         # Request before msg 70 (latest)
         latest_id = messages[-1].id
@@ -433,7 +479,9 @@ class ChatViewsIntegrationTests(TestCase):
         send_message(conv, sender=self.student, text="Hello")
 
         self.client.force_login(self.student)
-        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        history_url = reverse(
+            "chat:conversation_history", kwargs={"conversation_id": conv.id}
+        )
 
         # Non-integer before
         res = self.client.get(f"{history_url}?before=abc")
@@ -448,7 +496,10 @@ class ChatViewsIntegrationTests(TestCase):
     def test_conversation_detail_displays_upcoming_booking_in_drawer(self):
         teacher_profile, _ = TeacherProfile.objects.get_or_create(
             user=self.teacher,
-            defaults={"hourly_rate": Decimal("30.00"), "meeting_link": "https://meet.jit.si/lesson-123"},
+            defaults={
+                "hourly_rate": Decimal("30.00"),
+                "meeting_link": "https://meet.jit.si/lesson-123",
+            },
         )
         now = timezone.now() + timedelta(days=1)
         booking = Booking.objects.create(
@@ -490,7 +541,7 @@ class ChatViewsIntegrationTests(TestCase):
             status=Booking.Status.PENDING,
             price=Decimal("30.00"),
         )
-        msg = record_booking_event(booking, "booking_requested")
+        record_booking_event(booking, "booking_requested")
 
         conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
 
@@ -503,7 +554,9 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertContains(response, "chat-system-event-pill")
         self.assertContains(response, "Lesson request submitted for")
         self.assertContains(response, "Waiting for confirmation")
-        self.assertNotContains(response, f'<a href="{reverse("booking:teacher_dashboard")}"')
+        self.assertNotContains(
+            response, f'<a href="{reverse("booking:teacher_dashboard")}"'
+        )
 
         # 2. Teacher view: actionable notice with Review Request button
         self.client.force_login(self.teacher)
@@ -511,7 +564,9 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertEqual(response_teacher.status_code, 200)
         self.assertContains(response_teacher, "chat-system-event-pill")
         self.assertContains(response_teacher, "Lesson request from")
-        self.assertContains(response_teacher, f'<a href="{reverse("booking:teacher_dashboard")}"')
+        self.assertContains(
+            response_teacher, f'<a href="{reverse("booking:teacher_dashboard")}"'
+        )
         self.assertContains(response_teacher, "Review Request")
 
     def test_conversation_history_includes_message_type_and_metadata(self):
@@ -534,10 +589,14 @@ class ChatViewsIntegrationTests(TestCase):
 
         conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
         # Add another message so we can query ?before=
-        later_msg = send_message(conv, sender=self.student, text="Thank you for confirming!")
+        later_msg = send_message(
+            conv, sender=self.student, text="Thank you for confirming!"
+        )
 
         self.client.force_login(self.student)
-        history_url = reverse("chat:conversation_history", kwargs={"conversation_id": conv.id})
+        history_url = reverse(
+            "chat:conversation_history", kwargs={"conversation_id": conv.id}
+        )
         response = self.client.get(f"{history_url}?before={later_msg.id}")
 
         self.assertEqual(response.status_code, 200)
@@ -549,6 +608,3 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertIn("metadata", item)
         self.assertEqual(item["metadata"]["event_type"], "booking_confirmed")
         self.assertEqual(item["metadata"]["booking_id"], booking.id)
-
-
-

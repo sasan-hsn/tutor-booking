@@ -1,5 +1,5 @@
 import smtplib
-from datetime import date, time, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -26,19 +26,19 @@ class LessonReminderEmailTasksTests(RoleTestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.teacher = cls.teacher_user.teacher_profile
-        cls.teacher.meeting_link = 'https://meet.google.com/test-room'
+        cls.teacher.meeting_link = "https://meet.google.com/test-room"
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -65,40 +65,42 @@ class LessonReminderEmailTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Reminder', email.subject)
-        self.assertIn('Tomorrow', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Reminder", email.subject)
+        self.assertIn("Tomorrow", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student timezone
         local_start = timezone.localtime(self.booking.start_at, self.student_tz)
         local_end = timezone.localtime(self.booking.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('https://meet.google.com/test-room', email.body)
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("https://meet.google.com/test-room", email.body)
 
         # Check HTML alternative
         self.assertEqual(len(email.alternatives), 1)
         html_content, mimetype = email.alternatives[0]
-        self.assertEqual(mimetype, 'text/html')
+        self.assertEqual(mimetype, "text/html")
         self.assertIn(expected_date_str, html_content)
         self.assertIn(expected_time_str, html_content)
-        self.assertIn('https://meet.google.com/test-room', html_content)
+        self.assertIn("https://meet.google.com/test-room", html_content)
 
     def test_send_24h_student_reminder_fallback_without_meeting_link(self):
-        self.teacher.meeting_link = ''
+        self.teacher.meeting_link = ""
         self.teacher.save()
 
         send_booking_reminder_24h_student_email_task(self.booking.id)
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertIn('share the meeting link with you prior', email.body)
-        self.assertIn('share the meeting link with you prior', email.alternatives[0][0])
+        self.assertIn("share the meeting link with you prior", email.body)
+        self.assertIn("share the meeting link with you prior", email.alternatives[0][0])
 
     def test_send_24h_student_reminder_skips_non_confirmed_status(self):
         self.booking.status = Booking.Status.CANCELLED
@@ -114,16 +116,21 @@ class LessonReminderEmailTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_24h_student_reminder_missing_email_skips(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_reminder_24h_student_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_24h_student_reminder_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_reminder_24h_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_reminder_24h_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_reminder_24h_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_reminder_24h_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     # --- 1h Student Reminder Task Tests ---
 
@@ -132,24 +139,26 @@ class LessonReminderEmailTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['student@example.com'])
-        self.assertIn('Lesson Starting in 1 Hour', email.subject)
-        self.assertIn('Mary Smith', email.subject)
+        self.assertEqual(email.to, ["student@example.com"])
+        self.assertIn("Lesson Starting in 1 Hour", email.subject)
+        self.assertIn("Mary Smith", email.subject)
 
         # Check localized time in student timezone
         local_start = timezone.localtime(self.booking.start_at, self.student_tz)
         local_end = timezone.localtime(self.booking.end_at, self.student_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('America/New_York', email.body)
-        self.assertIn('https://meet.google.com/test-room', email.body)
+        self.assertIn("America/New_York", email.body)
+        self.assertIn("https://meet.google.com/test-room", email.body)
 
         html_content = email.alternatives[0][0]
-        self.assertIn('Join Lesson Now', html_content)
-        self.assertIn('https://meet.google.com/test-room', html_content)
+        self.assertIn("Join Lesson Now", html_content)
+        self.assertIn("https://meet.google.com/test-room", html_content)
 
     def test_send_1h_student_reminder_skips_non_confirmed_status(self):
         self.booking.status = Booking.Status.EXPIRED
@@ -159,16 +168,21 @@ class LessonReminderEmailTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_1h_student_reminder_missing_email_skips(self):
-        self.student_user.email = ''
+        self.student_user.email = ""
         self.student_user.save()
 
         send_booking_reminder_1h_student_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_1h_student_reminder_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_reminder_1h_student_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_reminder_1h_student_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_reminder_1h_student_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_reminder_1h_student_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
     # --- 1h Teacher Reminder Task Tests ---
 
@@ -177,25 +191,27 @@ class LessonReminderEmailTasksTests(RoleTestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         email = mail.outbox[0]
-        self.assertEqual(email.to, ['teacher@englishwithmary.ir'])
-        self.assertIn('Upcoming Lesson in 1 Hour', email.subject)
-        self.assertIn('John Doe', email.subject)
+        self.assertEqual(email.to, ["teacher@englishwithmary.ir"])
+        self.assertIn("Upcoming Lesson in 1 Hour", email.subject)
+        self.assertIn("John Doe", email.subject)
 
         # Check localized time in teacher timezone
         local_start = timezone.localtime(self.booking.start_at, self.teacher_tz)
         local_end = timezone.localtime(self.booking.end_at, self.teacher_tz)
-        expected_time_str = f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
-        expected_date_str = local_start.strftime('%A, %B %d, %Y')
+        expected_time_str = (
+            f"{local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+        )
+        expected_date_str = local_start.strftime("%A, %B %d, %Y")
 
         self.assertIn(expected_date_str, email.body)
         self.assertIn(expected_time_str, email.body)
-        self.assertIn('Asia/Tehran', email.body)
-        self.assertIn('John Doe', email.body)
-        self.assertIn('https://meet.google.com/test-room', email.body)
+        self.assertIn("Asia/Tehran", email.body)
+        self.assertIn("John Doe", email.body)
+        self.assertIn("https://meet.google.com/test-room", email.body)
 
         html_content = email.alternatives[0][0]
-        self.assertIn('Open Classroom', html_content)
-        self.assertIn('https://meet.google.com/test-room', html_content)
+        self.assertIn("Open Classroom", html_content)
+        self.assertIn("https://meet.google.com/test-room", html_content)
 
     def test_send_1h_teacher_reminder_skips_non_confirmed_status(self):
         self.booking.status = Booking.Status.CANCELLED
@@ -205,18 +221,23 @@ class LessonReminderEmailTasksTests(RoleTestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_1h_teacher_reminder_missing_email_skips(self):
-        self.teacher_user.email = ''
+        self.teacher_user.email = ""
         self.teacher_user.save()
-        self.teacher.contact_email = ''
+        self.teacher.contact_email = ""
         self.teacher.save()
 
         send_booking_reminder_1h_teacher_email_task(self.booking.id)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_send_1h_teacher_reminder_retries_on_transient_error(self):
-        with patch('booking.emails.send_booking_reminder_1h_teacher_email', side_effect=smtplib.SMTPException('SMTP error')):
+        with patch(
+            "booking.emails.send_booking_reminder_1h_teacher_email",
+            side_effect=smtplib.SMTPException("SMTP error"),
+        ):
             with self.assertRaises(Exception):
-                send_booking_reminder_1h_teacher_email_task.apply(args=[self.booking.id], throw=True)
+                send_booking_reminder_1h_teacher_email_task.apply(
+                    args=[self.booking.id], throw=True
+                )
 
 
 class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
@@ -226,16 +247,16 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         cls.teacher = cls.teacher_user.teacher_profile
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
     def setUp(self):
@@ -266,7 +287,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.assertEqual(notif.title, "Upcoming Lesson Reminder")
         self.assertIn("scheduled for tomorrow", notif.message)
         self.assertEqual(notif.metadata["booking_id"], self.booking.id)
-        self.assertEqual(notif.action_url, f"/dashboard/student/#booking-{self.booking.id}")
+        self.assertEqual(
+            notif.action_url, f"/dashboard/student/#booking-{self.booking.id}"
+        )
 
     def test_send_24h_student_notification_task_idempotency(self):
         send_booking_reminder_24h_student_notification_task(self.booking.id)
@@ -284,7 +307,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.booking.save()
 
         send_booking_reminder_24h_student_notification_task(self.booking.id)
-        self.assertEqual(Notification.objects.filter(recipient=self.student_user).count(), 0)
+        self.assertEqual(
+            Notification.objects.filter(recipient=self.student_user).count(), 0
+        )
 
     def test_send_24h_student_notification_task_skips_nonexistent_booking(self):
         send_booking_reminder_24h_student_notification_task(999999)
@@ -304,7 +329,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.assertEqual(notif.title, "Lesson Starting Soon")
         self.assertIn("starts in 1 hour", notif.message)
         self.assertEqual(notif.metadata["booking_id"], self.booking.id)
-        self.assertEqual(notif.action_url, f"/dashboard/student/#booking-{self.booking.id}")
+        self.assertEqual(
+            notif.action_url, f"/dashboard/student/#booking-{self.booking.id}"
+        )
 
     def test_send_1h_student_notification_task_idempotency(self):
         send_booking_reminder_1h_student_notification_task(self.booking.id)
@@ -322,7 +349,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.booking.save()
 
         send_booking_reminder_1h_student_notification_task(self.booking.id)
-        self.assertEqual(Notification.objects.filter(recipient=self.student_user).count(), 0)
+        self.assertEqual(
+            Notification.objects.filter(recipient=self.student_user).count(), 0
+        )
 
     def test_send_1h_teacher_notification_task_success(self):
         send_booking_reminder_1h_teacher_notification_task(self.booking.id)
@@ -338,7 +367,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.assertEqual(notif.title, "Lesson Starting Soon")
         self.assertIn("starts in 1 hour", notif.message)
         self.assertEqual(notif.metadata["booking_id"], self.booking.id)
-        self.assertEqual(notif.action_url, f"/dashboard/teacher/#booking-{self.booking.id}")
+        self.assertEqual(
+            notif.action_url, f"/dashboard/teacher/#booking-{self.booking.id}"
+        )
 
     def test_send_1h_teacher_notification_task_idempotency(self):
         send_booking_reminder_1h_teacher_notification_task(self.booking.id)
@@ -356,7 +387,9 @@ class LessonReminderInPlatformNotificationTasksTests(RoleTestCase):
         self.booking.save()
 
         send_booking_reminder_1h_teacher_notification_task(self.booking.id)
-        self.assertEqual(Notification.objects.filter(recipient=self.teacher_user).count(), 0)
+        self.assertEqual(
+            Notification.objects.filter(recipient=self.teacher_user).count(), 0
+        )
 
 
 class LessonReminderSweeperTests(RoleTestCase):
@@ -364,22 +397,24 @@ class LessonReminderSweeperTests(RoleTestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.teacher = cls.teacher_user.teacher_profile
-        cls.teacher.meeting_link = 'https://meet.google.com/test-room'
+        cls.teacher.meeting_link = "https://meet.google.com/test-room"
         cls.teacher.save()
 
-        cls.teacher_user.email = 'teacher@englishwithmary.ir'
-        cls.teacher_user.first_name = 'Mary'
-        cls.teacher_user.last_name = 'Smith'
-        cls.teacher_user.timezone = 'Asia/Tehran'
+        cls.teacher_user.email = "teacher@englishwithmary.ir"
+        cls.teacher_user.first_name = "Mary"
+        cls.teacher_user.last_name = "Smith"
+        cls.teacher_user.timezone = "Asia/Tehran"
         cls.teacher_user.save()
 
-        cls.student_user.email = 'student@example.com'
-        cls.student_user.first_name = 'John'
-        cls.student_user.last_name = 'Doe'
-        cls.student_user.timezone = 'America/New_York'
+        cls.student_user.email = "student@example.com"
+        cls.student_user.first_name = "John"
+        cls.student_user.last_name = "Doe"
+        cls.student_user.timezone = "America/New_York"
         cls.student_user.save()
 
-    def _create_booking(self, start_at, status=Booking.Status.CONFIRMED, created_at=None):
+    def _create_booking(
+        self, start_at, status=Booking.Status.CONFIRMED, created_at=None
+    ):
         booking = Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
@@ -405,15 +440,15 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 1)
+        self.assertEqual(result["reminders_24h"], 1)
         booking_24h.refresh_from_db()
         self.assertTrue(booking_24h.reminder_24h_sent)
         self.assertFalse(booking_24h.reminder_1h_sent)
 
         # Must send exactly 1 email to student ONLY (no teacher 24h reminder to avoid alert fatigue)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['student@example.com'])
-        self.assertIn('Tomorrow', mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, ["student@example.com"])
+        self.assertIn("Tomorrow", mail.outbox[0].subject)
 
         # Must send 1 in-platform notification to student ONLY
         student_notifs = Notification.objects.filter(
@@ -421,7 +456,9 @@ class LessonReminderSweeperTests(RoleTestCase):
             event_type=Notification.EventType.LESSON_REMINDER_24H,
         )
         self.assertEqual(student_notifs.count(), 1)
-        self.assertEqual(Notification.objects.filter(recipient=self.teacher_user).count(), 0)
+        self.assertEqual(
+            Notification.objects.filter(recipient=self.teacher_user).count(), 0
+        )
 
     def test_24h_reminder_sweep_bounds_exclude_out_of_window_bookings(self):
         """Bookings too far in the future or too close are not matched by the 24h sweep."""
@@ -432,14 +469,14 @@ class LessonReminderSweeperTests(RoleTestCase):
             created_at=now - timedelta(days=2),
         )
         # 22 hours away (already past 23-25h window)
-        booking_22h = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=22),
             created_at=now - timedelta(days=2),
         )
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 0)
+        self.assertEqual(result["reminders_24h"], 0)
         self.assertEqual(len(mail.outbox), 0)
         booking_26h.refresh_from_db()
         self.assertFalse(booking_26h.reminder_24h_sent)
@@ -448,19 +485,19 @@ class LessonReminderSweeperTests(RoleTestCase):
         """Bookings created <24 hours before start do not trigger 24h reminders."""
         now = timezone.now()
         # Booked 12 hours before start (instant tutoring / same-day)
-        booking_short_notice = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=12),
             created_at=now - timedelta(hours=1),
         )
         # Booked 23.5 hours before start (inside 23-25h window, but lead time < 24h)
-        booking_just_under_24h = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=23, minutes=30),
             created_at=now - timedelta(minutes=10),
         )
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 0)
+        self.assertEqual(result["reminders_24h"], 0)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_1h_reminder_sweep_matches_and_sends_to_both_student_and_teacher(self):
@@ -473,25 +510,31 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_1h'], 1)
+        self.assertEqual(result["reminders_1h"], 1)
         booking_1h.refresh_from_db()
         self.assertTrue(booking_1h.reminder_1h_sent)
 
         self.assertEqual(len(mail.outbox), 2)
         recipients = {email.to[0] for email in mail.outbox}
-        self.assertEqual(recipients, {'student@example.com', 'teacher@englishwithmary.ir'})
+        self.assertEqual(
+            recipients, {"student@example.com", "teacher@englishwithmary.ir"}
+        )
 
-        student_mail = next(e for e in mail.outbox if e.to == ['student@example.com'])
-        teacher_mail = next(e for e in mail.outbox if e.to == ['teacher@englishwithmary.ir'])
+        student_mail = next(e for e in mail.outbox if e.to == ["student@example.com"])
+        teacher_mail = next(
+            e for e in mail.outbox if e.to == ["teacher@englishwithmary.ir"]
+        )
 
-        self.assertIn('1 Hour', student_mail.subject)
-        self.assertIn('1 Hour', teacher_mail.subject)
-        self.assertIn('https://meet.google.com/test-room', student_mail.body)
-        self.assertIn('https://meet.google.com/test-room', teacher_mail.body)
+        self.assertIn("1 Hour", student_mail.subject)
+        self.assertIn("1 Hour", teacher_mail.subject)
+        self.assertIn("https://meet.google.com/test-room", student_mail.body)
+        self.assertIn("https://meet.google.com/test-room", teacher_mail.body)
 
         # Must send 1h notifications to both student and teacher
         self.assertEqual(
-            Notification.objects.filter(event_type=Notification.EventType.LESSON_REMINDER_1H).count(),
+            Notification.objects.filter(
+                event_type=Notification.EventType.LESSON_REMINDER_1H
+            ).count(),
             2,
         )
         self.assertTrue(
@@ -517,7 +560,7 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_1h'], 1)
+        self.assertEqual(result["reminders_1h"], 1)
         self.assertTrue(
             Notification.objects.filter(
                 recipient=self.student_user,
@@ -542,14 +585,14 @@ class LessonReminderSweeperTests(RoleTestCase):
             created_at=now - timedelta(days=1),
         )
         # Past booking
-        booking_past = self._create_booking(
+        self._create_booking(
             start_at=now - timedelta(minutes=10),
             created_at=now - timedelta(days=1),
         )
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_1h'], 0)
+        self.assertEqual(result["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 0)
         booking_80m.refresh_from_db()
         self.assertFalse(booking_80m.reminder_1h_sent)
@@ -570,8 +613,8 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 0)
-        self.assertEqual(result['reminders_1h'], 0)
+        self.assertEqual(result["reminders_24h"], 0)
+        self.assertEqual(result["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 0)
         booking_24h_pending.refresh_from_db()
         booking_1h_pending.refresh_from_db()
@@ -581,12 +624,12 @@ class LessonReminderSweeperTests(RoleTestCase):
     def test_sweeper_excludes_cancelled_bookings(self):
         """Cancelled bookings never receive 24h or 1h reminders."""
         now = timezone.now()
-        booking_24h_cancelled = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=24),
             status=Booking.Status.CANCELLED,
             created_at=now - timedelta(days=2),
         )
-        booking_1h_cancelled = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(minutes=45),
             status=Booking.Status.CANCELLED,
             created_at=now - timedelta(days=1),
@@ -594,19 +637,19 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 0)
-        self.assertEqual(result['reminders_1h'], 0)
+        self.assertEqual(result["reminders_24h"], 0)
+        self.assertEqual(result["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_sweeper_excludes_expired_bookings(self):
         """Expired bookings never receive 24h or 1h reminders."""
         now = timezone.now()
-        booking_24h_expired = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=24),
             status=Booking.Status.EXPIRED,
             created_at=now - timedelta(days=2),
         )
-        booking_1h_expired = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(minutes=45),
             status=Booking.Status.EXPIRED,
             created_at=now - timedelta(days=1),
@@ -614,40 +657,44 @@ class LessonReminderSweeperTests(RoleTestCase):
 
         result = send_lesson_reminders(now=now)
 
-        self.assertEqual(result['reminders_24h'], 0)
-        self.assertEqual(result['reminders_1h'], 0)
+        self.assertEqual(result["reminders_24h"], 0)
+        self.assertEqual(result["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 0)
 
     def test_sweeper_idempotency_consecutive_runs(self):
         """Consecutive sweeper ticks do not dispatch duplicate reminder emails."""
         now = timezone.now()
-        booking_24h = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(hours=24),
             created_at=now - timedelta(days=2),
         )
-        booking_1h = self._create_booking(
+        self._create_booking(
             start_at=now + timedelta(minutes=45),
             created_at=now - timedelta(days=1),
         )
 
         # First run dispatches
         first_run = send_lesson_reminders(now=now)
-        self.assertEqual(first_run['reminders_24h'], 1)
-        self.assertEqual(first_run['reminders_1h'], 1)
-        self.assertEqual(len(mail.outbox), 3)  # 1 student 24h + 1 student 1h + 1 teacher 1h
+        self.assertEqual(first_run["reminders_24h"], 1)
+        self.assertEqual(first_run["reminders_1h"], 1)
+        self.assertEqual(
+            len(mail.outbox), 3
+        )  # 1 student 24h + 1 student 1h + 1 teacher 1h
         self.assertEqual(Notification.objects.count(), 3)
 
         # Second run immediately afterwards
         second_run = send_lesson_reminders(now=now + timedelta(minutes=1))
-        self.assertEqual(second_run['reminders_24h'], 0)
-        self.assertEqual(second_run['reminders_1h'], 0)
+        self.assertEqual(second_run["reminders_24h"], 0)
+        self.assertEqual(second_run["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 3)  # No new emails sent
-        self.assertEqual(Notification.objects.count(), 3)  # No new notifications created
+        self.assertEqual(
+            Notification.objects.count(), 3
+        )  # No new notifications created
 
         # Third run at 5 minutes interval
         third_run = send_lesson_reminders(now=now + timedelta(minutes=5))
-        self.assertEqual(third_run['reminders_24h'], 0)
-        self.assertEqual(third_run['reminders_1h'], 0)
+        self.assertEqual(third_run["reminders_24h"], 0)
+        self.assertEqual(third_run["reminders_1h"], 0)
         self.assertEqual(len(mail.outbox), 3)
         self.assertEqual(Notification.objects.count(), 3)
 
@@ -687,23 +734,22 @@ class CeleryBeatScheduleConfigurationTests(RoleTestCase):
         from tutor_booking.celery import app
 
         schedule = app.conf.beat_schedule
-        self.assertIn('send-lesson-reminders-every-5-minutes', schedule)
+        self.assertIn("send-lesson-reminders-every-5-minutes", schedule)
         self.assertEqual(
-            schedule['send-lesson-reminders-every-5-minutes']['task'],
-            'booking.tasks.send_lesson_reminders',
+            schedule["send-lesson-reminders-every-5-minutes"]["task"],
+            "booking.tasks.send_lesson_reminders",
         )
         self.assertEqual(
-            schedule['send-lesson-reminders-every-5-minutes']['schedule'],
+            schedule["send-lesson-reminders-every-5-minutes"]["schedule"],
             300.0,
         )
 
-        self.assertIn('expire-pending-bookings-every-15-minutes', schedule)
+        self.assertIn("expire-pending-bookings-every-15-minutes", schedule)
         self.assertEqual(
-            schedule['expire-pending-bookings-every-15-minutes']['task'],
-            'booking.tasks.expire_pending_bookings_task',
+            schedule["expire-pending-bookings-every-15-minutes"]["task"],
+            "booking.tasks.expire_pending_bookings_task",
         )
         self.assertEqual(
-            schedule['expire-pending-bookings-every-15-minutes']['schedule'],
+            schedule["expire-pending-bookings-every-15-minutes"]["schedule"],
             900.0,
         )
-

@@ -1,8 +1,11 @@
 from decimal import Decimal
+
 from django import forms
+
 from accounts.forms import EmailNormalizationAndUniquenessMixin
 from accounts.models import User
 from accounts.utils import get_timezone_choices
+
 from .models import Certificate, TeacherProfile
 
 
@@ -18,44 +21,47 @@ class TeacherAccountSettingsForm(EmailNormalizationAndUniquenessMixin, forms.For
         self.user = user
         self.profile = profile
         super().__init__(*args, **kwargs)
-        self.fields['timezone'].choices = [(tz, tz) for tz in get_timezone_choices()]
+        self.fields["timezone"].choices = [(tz, tz) for tz in get_timezone_choices()]
 
         if user:
-            self.fields['username'].initial = user.username
-            self.fields['email'].initial = user.email
-            self.fields['first_name'].initial = user.first_name
-            self.fields['last_name'].initial = user.last_name
-            self.fields['timezone'].initial = user.timezone
+            self.fields["username"].initial = user.username
+            self.fields["email"].initial = user.email
+            self.fields["first_name"].initial = user.first_name
+            self.fields["last_name"].initial = user.last_name
+            self.fields["timezone"].initial = user.timezone
 
         for name, field in self.fields.items():
-            widget_class = 'form-select' if name == 'timezone' else 'form-control'
-            field.widget.attrs.update({'class': widget_class})
+            widget_class = "form-select" if name == "timezone" else "form-control"
+            field.widget.attrs.update({"class": widget_class})
 
     def clean_username(self):
-        username = self.cleaned_data['username']
-        if self.user and User.objects.exclude(pk=self.user.pk).filter(username=username).exists():
-            raise forms.ValidationError('This username is already taken.')
+        username = self.cleaned_data["username"]
+        if (
+            self.user
+            and User.objects.exclude(pk=self.user.pk).filter(username=username).exists()
+        ):
+            raise forms.ValidationError("This username is already taken.")
         return username
 
     def save(self):
-        email = self.cleaned_data.get('email')
+        email = self.cleaned_data.get("email")
         email_changed = False
         if email and self.user:
-            current_email = (self.user.email or '').strip().lower()
+            current_email = (self.user.email or "").strip().lower()
             if email != current_email:
-                if (self.user.pending_email or '').strip().lower() != email:
+                if (self.user.pending_email or "").strip().lower() != email:
                     self.user.pending_email = email
                     email_changed = True
 
         if self.user:
-            self.user.username = self.cleaned_data['username']
-            self.user.first_name = self.cleaned_data['first_name']
-            self.user.last_name = self.cleaned_data['last_name']
-            self.user.timezone = self.cleaned_data['timezone']
+            self.user.username = self.cleaned_data["username"]
+            self.user.first_name = self.cleaned_data["first_name"]
+            self.user.last_name = self.cleaned_data["last_name"]
+            self.user.timezone = self.cleaned_data["timezone"]
             self.user.save()
 
-        if self.profile and self.cleaned_data.get('profile_picture'):
-            self.profile.profile_picture = self.cleaned_data['profile_picture']
+        if self.profile and self.cleaned_data.get("profile_picture"):
+            self.profile.profile_picture = self.cleaned_data["profile_picture"]
             self.profile.save()
 
         return email_changed
@@ -64,39 +70,64 @@ class TeacherAccountSettingsForm(EmailNormalizationAndUniquenessMixin, forms.For
 class TeacherPortfolioSettingsForm(forms.ModelForm):
     hero_image = forms.ImageField(
         required=False,
-        label='Homepage Cover Photo',
-        help_text='A large photo shown at the top of your public page.',
-        widget=forms.FileInput(attrs={'class': 'form-control'}),
+        label="Homepage Cover Photo",
+        help_text="A large photo shown at the top of your public page.",
+        widget=forms.FileInput(attrs={"class": "form-control"}),
     )
 
     class Meta:
         model = TeacherProfile
         fields = [
-            'headline', 'bio', 'teaching_philosophy', 'intro_video_url', 'hero_image',
-            'contact_email', 'whatsapp_number', 'telegram_username', 'instagram_username',
+            "headline",
+            "bio",
+            "teaching_philosophy",
+            "intro_video_url",
+            "hero_image",
+            "contact_email",
+            "whatsapp_number",
+            "telegram_username",
+            "instagram_username",
         ]
         widgets = {
-            'headline': forms.TextInput(attrs={'class': 'form-control'}),
-            'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
-            'teaching_philosophy': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
-            'intro_video_url': forms.URLInput(attrs={'class': 'form-control'}),
-            'contact_email': forms.EmailInput(attrs={'class': 'form-control'}),
-            'whatsapp_number': forms.TextInput(attrs={'class': 'form-control'}),
-            'telegram_username': forms.TextInput(attrs={'class': 'form-control'}),
-            'instagram_username': forms.TextInput(attrs={'class': 'form-control'}),
+            "headline": forms.TextInput(attrs={"class": "form-control"}),
+            "bio": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
+            "teaching_philosophy": forms.Textarea(
+                attrs={"class": "form-control", "rows": 4}
+            ),
+            "intro_video_url": forms.URLInput(attrs={"class": "form-control"}),
+            "contact_email": forms.EmailInput(attrs={"class": "form-control"}),
+            "whatsapp_number": forms.TextInput(attrs={"class": "form-control"}),
+            "telegram_username": forms.TextInput(attrs={"class": "form-control"}),
+            "instagram_username": forms.TextInput(attrs={"class": "form-control"}),
         }
 
 
 class CertificateForm(forms.ModelForm):
     class Meta:
         model = Certificate
-        fields = ['title', 'issued_by', 'issue_date', 'certificate_number', 'credential_url']
+        fields = [
+            "title",
+            "issued_by",
+            "issue_date",
+            "certificate_number",
+            "credential_url",
+        ]
         widgets = {
-            'title': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Certificate title'}),
-            'issued_by': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Issued by'}),
-            'issue_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
-            'certificate_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional'}),
-            'credential_url': forms.URLInput(attrs={'class': 'form-control', 'placeholder': 'Optional link'}),
+            "title": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Certificate title"}
+            ),
+            "issued_by": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Issued by"}
+            ),
+            "issue_date": forms.DateInput(
+                attrs={"class": "form-control", "type": "date"}
+            ),
+            "certificate_number": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Optional"}
+            ),
+            "credential_url": forms.URLInput(
+                attrs={"class": "form-control", "placeholder": "Optional link"}
+            ),
         }
 
 
@@ -104,73 +135,99 @@ class TeacherBookingSettingsForm(forms.ModelForm):
     lesson_price_25 = forms.DecimalField(
         required=False,
         decimal_places=2,
-        label='25-minute Lesson Price ($)',
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+        label="25-minute Lesson Price ($)",
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "step": "0.01", "min": "0"}
+        ),
     )
     lesson_price = forms.DecimalField(
         required=False,
         decimal_places=2,
-        label='50-minute Lesson Price ($)',
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+        label="50-minute Lesson Price ($)",
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "step": "0.01", "min": "0"}
+        ),
     )
     trial_price = forms.DecimalField(
         required=False,
         decimal_places=2,
-        label='Trial Lesson Price ($)',
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+        label="Trial Lesson Price ($)",
+        widget=forms.NumberInput(
+            attrs={"class": "form-control", "step": "0.01", "min": "0"}
+        ),
     )
 
     class Meta:
         model = TeacherProfile
         fields = [
-            'meeting_link',
-            'lesson_price_25',
-            'lesson_price',
-            'offers_trial',
-            'trial_price',
-            'instant_tutoring_enabled',
+            "meeting_link",
+            "lesson_price_25",
+            "lesson_price",
+            "offers_trial",
+            "trial_price",
+            "instant_tutoring_enabled",
         ]
         widgets = {
-            'meeting_link': forms.URLInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...',
-            }),
-            'offers_trial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
-            'instant_tutoring_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
+            "meeting_link": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://meet.google.com/xyz-abcd-efg or https://zoom.us/j/...",
+                }
+            ),
+            "offers_trial": forms.CheckboxInput(
+                attrs={"class": "form-check-input", "role": "switch"}
+            ),
+            "instant_tutoring_enabled": forms.CheckboxInput(
+                attrs={"class": "form-check-input", "role": "switch"}
+            ),
         }
 
     def clean(self):
         cleaned_data = super().clean()
-        offers_trial = cleaned_data.get('offers_trial')
-        trial_price = cleaned_data.get('trial_price')
-        lesson_price = cleaned_data.get('lesson_price')
-        lesson_price_25 = cleaned_data.get('lesson_price_25')
+        offers_trial = cleaned_data.get("offers_trial")
+        trial_price = cleaned_data.get("trial_price")
+        lesson_price = cleaned_data.get("lesson_price")
+        lesson_price_25 = cleaned_data.get("lesson_price_25")
 
         # If trial is offered, ensure trial_price is not negative
-        if offers_trial and trial_price is not None and trial_price < Decimal('0.00'):
-            self.add_error('trial_price', 'Trial price cannot be negative.')
+        if offers_trial and trial_price is not None and trial_price < Decimal("0.00"):
+            self.add_error("trial_price", "Trial price cannot be negative.")
 
         # Negative checks
-        if lesson_price is not None and lesson_price < Decimal('0.00'):
-            self.add_error('lesson_price', 'Lesson price cannot be negative.')
+        if lesson_price is not None and lesson_price < Decimal("0.00"):
+            self.add_error("lesson_price", "Lesson price cannot be negative.")
 
-        if lesson_price_25 is not None and lesson_price_25 < Decimal('0.00'):
-            self.add_error('lesson_price_25', '25-minute lesson price cannot be negative.')
+        if lesson_price_25 is not None and lesson_price_25 < Decimal("0.00"):
+            self.add_error(
+                "lesson_price_25", "25-minute lesson price cannot be negative."
+            )
 
         # Booking pricing validation
-        has_50m = lesson_price is not None and lesson_price > Decimal('0.00')
-        has_25m = lesson_price_25 is not None and lesson_price_25 > Decimal('0.00')
+        has_50m = lesson_price is not None and lesson_price > Decimal("0.00")
+        has_25m = lesson_price_25 is not None and lesson_price_25 > Decimal("0.00")
 
         if has_50m:
             if lesson_price_25 is None:
-                self.add_error('lesson_price_25', '25-minute lesson price is required when booking is configured.')
-            elif lesson_price_25 == Decimal('0.00'):
-                self.add_error('lesson_price_25', '25-minute lesson price must be greater than zero.')
+                self.add_error(
+                    "lesson_price_25",
+                    "25-minute lesson price is required when booking is configured.",
+                )
+            elif lesson_price_25 == Decimal("0.00"):
+                self.add_error(
+                    "lesson_price_25",
+                    "25-minute lesson price must be greater than zero.",
+                )
             elif lesson_price_25 > lesson_price:
-                self.add_error('lesson_price_25', '25-minute lesson price cannot exceed the 50-minute lesson price.')
+                self.add_error(
+                    "lesson_price_25",
+                    "25-minute lesson price cannot exceed the 50-minute lesson price.",
+                )
         elif has_25m:
-            if not lesson_price or lesson_price <= Decimal('0.00'):
-                self.add_error('lesson_price', '50-minute lesson price is required when booking is configured.')
+            if not lesson_price or lesson_price <= Decimal("0.00"):
+                self.add_error(
+                    "lesson_price",
+                    "50-minute lesson price is required when booking is configured.",
+                )
 
         return cleaned_data
 

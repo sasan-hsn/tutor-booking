@@ -1,17 +1,23 @@
 import logging
 import smtplib
-from datetime import date as dt_date, datetime, time as dt_time, timedelta
+from datetime import date as dt_date
+from datetime import datetime
+from datetime import time as dt_time
+from datetime import timedelta
 from zoneinfo import ZoneInfo
-from anymail.exceptions import AnymailAPIError, AnymailRequestsAPIError
+
+import requests
+from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
-import requests
+
 from notifications.models import Notification
 from portfolio.models import TeacherProfile
-from .models import Booking, TeacherDailyDigestRecord
+
 from . import emails, notifications
+from .models import Booking, TeacherDailyDigestRecord
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +35,7 @@ def is_transient_email_error(exc: Exception) -> bool:
     """Determine whether an email error is temporary and safe to retry."""
     if isinstance(exc, AnymailAPIError):
         # 429 Too Many Requests and 5xx Server Errors from Brevo API are transient
-        return getattr(exc, 'status_code', None) in (429, 500, 502, 503, 504)
+        return getattr(exc, "status_code", None) in (429, 500, 502, 503, 504)
     if isinstance(exc, TRANSIENT_EMAIL_ERRORS):
         return True
     return False
@@ -44,9 +50,13 @@ def is_transient_email_error(exc: Exception) -> bool:
 def send_booking_request_student_email_task(self, booking_id: int):
     """Send student confirmation email for a newly requested lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping student notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping student notification.", booking_id
+        )
         return
 
     try:
@@ -70,9 +80,13 @@ def send_booking_request_student_email_task(self, booking_id: int):
 def send_booking_request_teacher_email_task(self, booking_id: int):
     """Send teacher alert email for a newly requested lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping teacher notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping teacher notification.", booking_id
+        )
         return
 
     try:
@@ -92,12 +106,16 @@ def send_booking_request_notifications(booking_id: int):
     try:
         send_booking_request_student_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue student notification task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue student notification task for booking #%s", booking_id
+        )
 
     try:
         send_booking_request_teacher_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue teacher notification task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue teacher notification task for booking #%s", booking_id
+        )
 
 
 def safe_send_booking_confirmed_email(booking_id: int):
@@ -105,7 +123,9 @@ def safe_send_booking_confirmed_email(booking_id: int):
     try:
         send_booking_confirmed_student_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue confirmed student email task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue confirmed student email task for booking #%s", booking_id
+        )
 
 
 def safe_send_booking_declined_email(booking_id: int):
@@ -113,7 +133,9 @@ def safe_send_booking_declined_email(booking_id: int):
     try:
         send_booking_declined_student_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue declined student email task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue declined student email task for booking #%s", booking_id
+        )
 
 
 def safe_send_booking_cancelled_email(booking_id: int):
@@ -121,7 +143,9 @@ def safe_send_booking_cancelled_email(booking_id: int):
     try:
         send_booking_cancelled_student_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue cancelled student email task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue cancelled student email task for booking #%s", booking_id
+        )
 
 
 def safe_send_cancellation_requested_email(booking_id: int):
@@ -129,7 +153,10 @@ def safe_send_cancellation_requested_email(booking_id: int):
     try:
         send_cancellation_requested_teacher_email_task.delay(booking_id)
     except Exception:
-        logger.exception("Failed to enqueue cancellation requested teacher email task for booking #%s", booking_id)
+        logger.exception(
+            "Failed to enqueue cancellation requested teacher email task for booking #%s",
+            booking_id,
+        )
 
 
 @shared_task(
@@ -141,9 +168,14 @@ def safe_send_cancellation_requested_email(booking_id: int):
 def send_booking_confirmed_student_email_task(self, booking_id: int):
     """Send student confirmation email with meeting link and calendar invite for a confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping confirmed student notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping confirmed student notification.",
+            booking_id,
+        )
         return
 
     try:
@@ -167,9 +199,13 @@ def send_booking_confirmed_student_email_task(self, booking_id: int):
 def send_booking_declined_student_email_task(self, booking_id: int):
     """Send student notification email when teacher declines a lesson request."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping declined student notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping declined student notification.", booking_id
+        )
         return
 
     try:
@@ -193,9 +229,14 @@ def send_booking_declined_student_email_task(self, booking_id: int):
 def send_booking_cancelled_student_email_task(self, booking_id: int):
     """Send student notification email when teacher cancels a confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping cancelled student notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping cancelled student notification.",
+            booking_id,
+        )
         return
 
     try:
@@ -219,9 +260,14 @@ def send_booking_cancelled_student_email_task(self, booking_id: int):
 def send_cancellation_requested_teacher_email_task(self, booking_id: int):
     """Send teacher alert email when student requests lesson cancellation."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping teacher cancellation request notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping teacher cancellation request notification.",
+            booking_id,
+        )
         return
 
     try:
@@ -245,9 +291,13 @@ def send_cancellation_requested_teacher_email_task(self, booking_id: int):
 def send_booking_reminder_24h_student_email_task(self, booking_id: int):
     """Send student 24-hour reminder email for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 24h reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 24h reminder notification.", booking_id
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -279,9 +329,14 @@ def send_booking_reminder_24h_student_email_task(self, booking_id: int):
 def send_booking_reminder_1h_student_email_task(self, booking_id: int):
     """Send student 1-hour reminder email for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 1h student reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 1h student reminder notification.",
+            booking_id,
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -313,9 +368,14 @@ def send_booking_reminder_1h_student_email_task(self, booking_id: int):
 def send_booking_reminder_1h_teacher_email_task(self, booking_id: int):
     """Send teacher 1-hour reminder email for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 1h teacher reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 1h teacher reminder notification.",
+            booking_id,
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -342,9 +402,13 @@ def send_booking_reminder_1h_teacher_email_task(self, booking_id: int):
 def send_booking_reminder_24h_student_notification_task(booking_id: int):
     """Send student 24-hour in-platform reminder notification for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 24h reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 24h reminder notification.", booking_id
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -361,7 +425,9 @@ def send_booking_reminder_24h_student_notification_task(booking_id: int):
             event_type=Notification.EventType.LESSON_REMINDER_24H,
             metadata__booking_id=booking.id,
         ).exists():
-            logger.info("24h reminder notification already exists for booking #%s", booking_id)
+            logger.info(
+                "24h reminder notification already exists for booking #%s", booking_id
+            )
             return
 
         notifications.notify_lesson_reminder_24h_student(booking)
@@ -371,9 +437,14 @@ def send_booking_reminder_24h_student_notification_task(booking_id: int):
 def send_booking_reminder_1h_student_notification_task(booking_id: int):
     """Send student 1-hour in-platform reminder notification for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 1h student reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 1h student reminder notification.",
+            booking_id,
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -390,7 +461,10 @@ def send_booking_reminder_1h_student_notification_task(booking_id: int):
             event_type=Notification.EventType.LESSON_REMINDER_1H,
             metadata__booking_id=booking.id,
         ).exists():
-            logger.info("1h reminder notification already exists for student on booking #%s", booking_id)
+            logger.info(
+                "1h reminder notification already exists for student on booking #%s",
+                booking_id,
+            )
             return
 
         notifications.notify_lesson_reminder_1h_student(booking)
@@ -400,9 +474,14 @@ def send_booking_reminder_1h_student_notification_task(booking_id: int):
 def send_booking_reminder_1h_teacher_notification_task(booking_id: int):
     """Send teacher 1-hour in-platform reminder notification for an upcoming confirmed lesson."""
     try:
-        booking = Booking.objects.select_related('student', 'teacher__user').get(pk=booking_id)
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
     except Booking.DoesNotExist:
-        logger.warning("Booking #%s not found; skipping 1h teacher reminder notification.", booking_id)
+        logger.warning(
+            "Booking #%s not found; skipping 1h teacher reminder notification.",
+            booking_id,
+        )
         return
 
     if booking.status != Booking.Status.CONFIRMED:
@@ -419,7 +498,10 @@ def send_booking_reminder_1h_teacher_notification_task(booking_id: int):
             event_type=Notification.EventType.LESSON_REMINDER_1H,
             metadata__booking_id=booking.id,
         ).exists():
-            logger.info("1h reminder notification already exists for teacher on booking #%s", booking_id)
+            logger.info(
+                "1h reminder notification already exists for teacher on booking #%s",
+                booking_id,
+            )
             return
 
         notifications.notify_lesson_reminder_1h_teacher(booking)
@@ -456,13 +538,15 @@ def send_lesson_reminders(now=None):
             start_at__gt=now,
             start_at__gte=window_24h_start,
             start_at__lte=window_24h_end,
-            created_at__lte=models.F('start_at') - timedelta(hours=24),
-        ).values_list('id', flat=True)
+            created_at__lte=models.F("start_at") - timedelta(hours=24),
+        ).values_list("id", flat=True)
     )
 
     reminders_24h_count = 0
     for booking_id in eligible_24h_ids:
-        updated = Booking.objects.filter(pk=booking_id, reminder_24h_sent=False).update(reminder_24h_sent=True)
+        updated = Booking.objects.filter(pk=booking_id, reminder_24h_sent=False).update(
+            reminder_24h_sent=True
+        )
         if updated:
             send_booking_reminder_24h_student_email_task.delay(booking_id)
             send_booking_reminder_24h_student_notification_task.delay(booking_id)
@@ -484,12 +568,14 @@ def send_lesson_reminders(now=None):
             reminder_1h_sent=False,
             start_at__gt=now,
             start_at__lte=window_1h_end,
-        ).values_list('id', flat=True)
+        ).values_list("id", flat=True)
     )
 
     reminders_1h_count = 0
     for booking_id in eligible_1h_ids:
-        updated = Booking.objects.filter(pk=booking_id, reminder_1h_sent=False).update(reminder_1h_sent=True)
+        updated = Booking.objects.filter(pk=booking_id, reminder_1h_sent=False).update(
+            reminder_1h_sent=True
+        )
         if updated:
             send_booking_reminder_1h_student_email_task.delay(booking_id)
             send_booking_reminder_1h_teacher_email_task.delay(booking_id)
@@ -503,8 +589,8 @@ def send_lesson_reminders(now=None):
         reminders_1h_count,
     )
     return {
-        'reminders_24h': reminders_24h_count,
-        'reminders_1h': reminders_1h_count,
+        "reminders_24h": reminders_24h_count,
+        "reminders_1h": reminders_1h_count,
     }
 
 
@@ -524,7 +610,9 @@ def expire_pending_bookings_task():
     default_retry_delay=60,
     retry_backoff=True,
 )
-def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str: str, skip_empty: bool = True):
+def send_teacher_daily_digest_email_task(
+    self, teacher_id: int, target_date_str: str, skip_empty: bool = True
+):
     """
     Send teacher daily schedule digest email for target_date.
     Idempotent: skips if TeacherDailyDigestRecord exists for (teacher, target_date).
@@ -536,10 +624,12 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
         with transaction.atomic():
             teacher = (
                 TeacherProfile.objects.select_for_update()
-                .select_related('user')
+                .select_related("user")
                 .get(pk=teacher_id)
             )
-            if TeacherDailyDigestRecord.objects.filter(teacher=teacher, target_date=target_date).exists():
+            if TeacherDailyDigestRecord.objects.filter(
+                teacher=teacher, target_date=target_date
+            ).exists():
                 logger.info(
                     "Daily digest already recorded for teacher #%s on %s; skipping.",
                     teacher_id,
@@ -548,8 +638,12 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
                 return
 
             teacher_tz = ZoneInfo(teacher.user.timezone)
-            day_start = datetime.combine(target_date, dt_time.min).replace(tzinfo=teacher_tz)
-            day_end = datetime.combine(target_date + timedelta(days=1), dt_time.min).replace(tzinfo=teacher_tz)
+            day_start = datetime.combine(target_date, dt_time.min).replace(
+                tzinfo=teacher_tz
+            )
+            day_end = datetime.combine(
+                target_date + timedelta(days=1), dt_time.min
+            ).replace(tzinfo=teacher_tz)
 
             bookings = list(
                 Booking.objects.filter(
@@ -558,8 +652,8 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
                     start_at__gte=day_start,
                     start_at__lt=day_end,
                 )
-                .select_related('student', 'teacher__user')
-                .order_by('start_at')
+                .select_related("student", "teacher__user")
+                .order_by("start_at")
             )
 
             if len(bookings) == 0 and skip_empty:
@@ -585,7 +679,9 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
                     status=TeacherDailyDigestRecord.Status.SENT,
                 )
             except TRANSIENT_EMAIL_ERRORS as exc:
-                if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+                if isinstance(exc, AnymailAPIError) and not is_transient_email_error(
+                    exc
+                ):
                     raise
                 logger.exception(
                     "Transient error sending daily digest email for teacher #%s on %s. Retrying...",
@@ -594,7 +690,9 @@ def send_teacher_daily_digest_email_task(self, teacher_id: int, target_date_str:
                 )
                 raise self.retry(exc=exc)
     except TeacherProfile.DoesNotExist:
-        logger.warning("TeacherProfile #%s not found; skipping daily digest task.", teacher_id)
+        logger.warning(
+            "TeacherProfile #%s not found; skipping daily digest task.", teacher_id
+        )
         return
 
 
@@ -608,8 +706,8 @@ def send_daily_schedule_digests(now=None):
     if now is None:
         now = timezone.now()
 
-    target_hour = getattr(settings, 'TEACHER_DAILY_DIGEST_HOUR', 20)
-    teachers = TeacherProfile.objects.select_related('user').all()
+    target_hour = getattr(settings, "TEACHER_DAILY_DIGEST_HOUR", 20)
+    teachers = TeacherProfile.objects.select_related("user").all()
 
     evaluated_count = 0
     dispatched_count = 0
@@ -624,7 +722,9 @@ def send_daily_schedule_digests(now=None):
 
         target_date = teacher_local_now.date() + timedelta(days=1)
 
-        if TeacherDailyDigestRecord.objects.filter(teacher=teacher, target_date=target_date).exists():
+        if TeacherDailyDigestRecord.objects.filter(
+            teacher=teacher, target_date=target_date
+        ).exists():
             continue
 
         send_teacher_daily_digest_email_task.delay(teacher.id, target_date.isoformat())
@@ -636,10 +736,6 @@ def send_daily_schedule_digests(now=None):
         dispatched_count,
     )
     return {
-        'evaluated_teachers': evaluated_count,
-        'dispatched_digests': dispatched_count,
+        "evaluated_teachers": evaluated_count,
+        "dispatched_digests": dispatched_count,
     }
-
-
-
-

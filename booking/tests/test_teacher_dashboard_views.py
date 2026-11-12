@@ -1,6 +1,8 @@
 from datetime import timedelta
+
 from django.urls import reverse
 from django.utils import timezone
+
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking
 
@@ -12,9 +14,9 @@ class TeacherDashboardLessonRequestsBadgeTests(RoleTestCase):
 
     def test_lesson_requests_badge_zero_count_renders_persistent_hidden_badge(self):
         """When lesson_requests_count is 0, #lessonRequestsBadge is rendered with d-none and aria-live="polite"."""
-        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        response = self.teacher_client.get(reverse("booking:teacher_dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context['lesson_requests_count'], 0)
+        self.assertEqual(response.context["lesson_requests_count"], 0)
 
         expected_badge = (
             '<span class="badge-count d-none" id="lessonRequestsBadge" '
@@ -46,13 +48,13 @@ class TeacherDashboardLessonRequestsBadgeTests(RoleTestCase):
             cancellation_requested=True,
         )
 
-        response = self.teacher_client.get(reverse('booking:teacher_dashboard'))
+        response = self.teacher_client.get(reverse("booking:teacher_dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context['lesson_requests_count'], 2)
+        self.assertEqual(response.context["lesson_requests_count"], 2)
 
         expected_badge = (
             '<span class="badge-count" id="lessonRequestsBadge" '
             'aria-live="polite">2</span>'
         )
         self.assertContains(response, expected_badge, html=False)
-        self.assertNotContains(response, 'badge-count d-none')
+        self.assertNotContains(response, "badge-count d-none")

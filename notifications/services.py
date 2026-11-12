@@ -1,4 +1,5 @@
 import logging
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import transaction
@@ -70,7 +71,7 @@ def mark_booking_notifications_as_read(recipient, booking_id, event_types=None):
     if event_types:
         qs = qs.filter(event_type__in=event_types)
 
-    marked_ids = list(qs.values_list('id', flat=True))
+    marked_ids = list(qs.values_list("id", flat=True))
     if not marked_ids:
         return [], Notification.objects.unread_count_for(recipient)
 

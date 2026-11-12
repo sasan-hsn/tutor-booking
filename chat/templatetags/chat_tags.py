@@ -1,7 +1,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 from django import template
 from django.utils import timezone
+
 from chat.utils import linkify_message_text
 
 register = template.Library()
@@ -48,4 +50,3 @@ def local_date_time(value, user=None):
         except Exception:
             pass
     return dt
-

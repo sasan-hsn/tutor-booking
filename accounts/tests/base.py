@@ -1,5 +1,5 @@
-from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 
 User = get_user_model()
 
@@ -12,16 +12,16 @@ class RoleTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.teacher_user = User.objects.create_user(
-            username='access_teacher',
-            email='access_teacher@example.com',
-            password='password123',
+            username="access_teacher",
+            email="access_teacher@example.com",
+            password="password123",
             role=User.Role.TEACHER,
             is_email_verified=True,
         )
         cls.student_user = User.objects.create_user(
-            username='access_student',
-            email='access_student@example.com',
-            password='password123',
+            username="access_student",
+            email="access_student@example.com",
+            password="password123",
             role=User.Role.STUDENT,
             is_email_verified=True,
         )

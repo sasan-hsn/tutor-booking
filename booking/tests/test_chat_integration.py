@@ -2,6 +2,7 @@ from datetime import time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
+
 from django.urls import reverse
 from django.utils import timezone
 
@@ -65,9 +66,13 @@ class BookingChatIntegrationTests(RoleTestCase):
             student=self.student_user, teacher=self.teacher_user
         ).first()
         self.assertIsNotNone(conv)
-        self.assertTrue(conv.last_message_snippet.startswith("📅 Lesson Request submitted for"))
+        self.assertTrue(
+            conv.last_message_snippet.startswith("📅 Lesson Request submitted for")
+        )
 
-        msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).first()
+        msg = conv.messages.filter(
+            message_type=Message.MessageType.SYSTEM_EVENT
+        ).first()
         self.assertIsNotNone(msg)
         self.assertEqual(msg.sender, self.student_user)
         self.assertEqual(msg.metadata["event_type"], "booking_requested")
@@ -84,7 +89,9 @@ class BookingChatIntegrationTests(RoleTestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CONFIRMED)
 
-        conv = Conversation.objects.get(student=self.student_user, teacher=self.teacher_user)
+        conv = Conversation.objects.get(
+            student=self.student_user, teacher=self.teacher_user
+        )
         self.assertTrue(conv.last_message_snippet.startswith("✅ Lesson Confirmed for"))
 
         msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).last()
@@ -103,7 +110,9 @@ class BookingChatIntegrationTests(RoleTestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CANCELLED)
 
-        conv = Conversation.objects.get(student=self.student_user, teacher=self.teacher_user)
+        conv = Conversation.objects.get(
+            student=self.student_user, teacher=self.teacher_user
+        )
         self.assertTrue(conv.last_message_snippet.startswith("❌ Lesson Cancelled for"))
 
         msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).last()
@@ -111,7 +120,9 @@ class BookingChatIntegrationTests(RoleTestCase):
         self.assertEqual(msg.metadata["event_type"], "booking_cancelled")
         self.assertEqual(msg.metadata["booking_id"], booking.id)
 
-    def test_respond_to_cancellation_request_accept_records_booking_cancelled_event(self):
+    def test_respond_to_cancellation_request_accept_records_booking_cancelled_event(
+        self,
+    ):
         booking = self._make_booking(Booking.Status.CONFIRMED)
         booking.cancellation_requested = True
         booking.save()
@@ -124,7 +135,9 @@ class BookingChatIntegrationTests(RoleTestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CANCELLED)
 
-        conv = Conversation.objects.get(student=self.student_user, teacher=self.teacher_user)
+        conv = Conversation.objects.get(
+            student=self.student_user, teacher=self.teacher_user
+        )
         self.assertTrue(conv.last_message_snippet.startswith("❌ Lesson Cancelled for"))
 
         msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).last()
@@ -141,7 +154,9 @@ class BookingChatIntegrationTests(RoleTestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CANCELLED)
 
-        conv = Conversation.objects.get(student=self.student_user, teacher=self.teacher_user)
+        conv = Conversation.objects.get(
+            student=self.student_user, teacher=self.teacher_user
+        )
         self.assertTrue(conv.last_message_snippet.startswith("❌ Lesson Cancelled for"))
 
         msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).last()
@@ -159,8 +174,12 @@ class BookingChatIntegrationTests(RoleTestCase):
         booking.refresh_from_db()
         self.assertTrue(booking.cancellation_requested)
 
-        conv = Conversation.objects.get(student=self.student_user, teacher=self.teacher_user)
-        self.assertTrue(conv.last_message_snippet.startswith("⚠️ Cancellation Requested for"))
+        conv = Conversation.objects.get(
+            student=self.student_user, teacher=self.teacher_user
+        )
+        self.assertTrue(
+            conv.last_message_snippet.startswith("⚠️ Cancellation Requested for")
+        )
 
         msg = conv.messages.filter(message_type=Message.MessageType.SYSTEM_EVENT).last()
         self.assertEqual(msg.sender, self.student_user)
@@ -172,7 +191,9 @@ class BookingChatIntegrationTests(RoleTestCase):
             "start_at": self.valid_start.isoformat(),
             "lesson_option": "trial",
         }
-        with patch("booking.views.record_booking_event", side_effect=Exception("Redis/DB down")):
+        with patch(
+            "booking.views.record_booking_event", side_effect=Exception("Redis/DB down")
+        ):
             with self.captureOnCommitCallbacks(execute=True):
                 response = self.student_client.post(reverse("booking:book_slot"), data)
 

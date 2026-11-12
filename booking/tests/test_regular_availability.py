@@ -1,15 +1,17 @@
 from datetime import time
-from django.test import TestCase
+
 from django.core.exceptions import ValidationError
+from django.test import TestCase
+
 from accounts.models import User
-from portfolio.models import TeacherProfile
 from booking.models import RegularAvailability
+from portfolio.models import TeacherProfile
 
 
 class RegularAvailabilityValidationTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='teacher1', password='password123', is_email_verified=True
+            username="teacher1", password="password123", is_email_verified=True
         )
         self.teacher = TeacherProfile.objects.create(user=self.user)
 
@@ -84,4 +86,7 @@ class RegularAvailabilityValidationTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             availability.full_clean()
-        self.assertIn('You must verify your email address before setting availability.', str(ctx.exception))
+        self.assertIn(
+            "You must verify your email address before setting availability.",
+            str(ctx.exception),
+        )

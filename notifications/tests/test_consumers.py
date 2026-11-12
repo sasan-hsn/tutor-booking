@@ -17,9 +17,9 @@ User = get_user_model()
 @database_sync_to_async
 def create_authenticated_session(user):
     session = SessionStore()
-    session['_auth_user_id'] = str(user.pk)
-    session['_auth_user_backend'] = 'django.contrib.auth.backends.ModelBackend'
-    session['_auth_user_hash'] = user.get_session_auth_hash()
+    session["_auth_user_id"] = str(user.pk)
+    session["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
+    session["_auth_user_hash"] = user.get_session_auth_hash()
     session.save()
     return session.session_key
 
@@ -35,14 +35,14 @@ async def get_authenticated_communicator(app, path, user):
 class NotificationConsumerTests(TransactionTestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='ws_user',
-            email='ws_user@example.com',
-            password='password123',
+            username="ws_user",
+            email="ws_user@example.com",
+            password="password123",
         )
         self.other_user = User.objects.create_user(
-            username='other_ws_user',
-            email='other_ws_user@example.com',
-            password='password123',
+            username="other_ws_user",
+            email="other_ws_user@example.com",
+            password="password123",
         )
 
     async def test_unauthenticated_connection_rejected(self):
@@ -52,7 +52,9 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator.disconnect()
 
     async def test_authenticated_connection_accepted(self):
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
         await communicator.disconnect()
@@ -61,17 +63,19 @@ class NotificationConsumerTests(TransactionTestCase):
         await Notification.objects.acreate(
             recipient=self.user,
             event_type=Notification.EventType.BOOKING_REQUESTED,
-            title='Unread 1',
-            message='Message 1',
+            title="Unread 1",
+            message="Message 1",
         )
         await Notification.objects.acreate(
             recipient=self.user,
             event_type=Notification.EventType.BOOKING_REQUESTED,
-            title='Unread 2',
-            message='Message 2',
+            title="Unread 2",
+            message="Message 2",
         )
 
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
 
@@ -82,7 +86,9 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator.disconnect()
 
     async def test_non_dict_json_frame_does_not_crash_consumer(self):
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
 
@@ -99,11 +105,15 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator.disconnect()
 
     async def test_receives_broadcast_frame_on_private_group(self):
-        communicator1 = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator1 = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected1, _ = await communicator1.connect()
         self.assertTrue(connected1)
 
-        communicator2 = await get_authenticated_communicator(application, "/ws/notifications/", self.other_user)
+        communicator2 = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.other_user
+        )
         connected2, _ = await communicator2.connect()
         self.assertTrue(connected2)
 
@@ -121,7 +131,9 @@ class NotificationConsumerTests(TransactionTestCase):
         }
 
         # Broadcast only to self.user's group
-        await channel_layer.group_send(Notification.get_group_name(self.user.id), payload)
+        await channel_layer.group_send(
+            Notification.get_group_name(self.user.id), payload
+        )
 
         response = await communicator1.receive_json_from()
         self.assertEqual(response, payload)
@@ -133,7 +145,9 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator2.disconnect()
 
     async def test_receives_unread_chat_count_broadcast(self):
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
 
@@ -143,7 +157,9 @@ class NotificationConsumerTests(TransactionTestCase):
             "count": 4,
         }
 
-        await channel_layer.group_send(Notification.get_group_name(self.user.id), payload)
+        await channel_layer.group_send(
+            Notification.get_group_name(self.user.id), payload
+        )
 
         response = await communicator.receive_json_from()
         self.assertEqual(response, payload)
@@ -151,7 +167,9 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator.disconnect()
 
     async def test_get_unread_chat_count_action(self):
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
 
@@ -162,7 +180,9 @@ class NotificationConsumerTests(TransactionTestCase):
         await communicator.disconnect()
 
     async def test_end_to_end_service_emission_to_websocket_communicator(self):
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         connected, _ = await communicator.connect()
         self.assertTrue(connected)
 
@@ -172,24 +192,24 @@ class NotificationConsumerTests(TransactionTestCase):
                 notif = create_and_send_notification(
                     recipient=self.user,
                     event_type=Notification.EventType.BOOKING_CONFIRMED,
-                    title='Confirmed Lesson',
-                    message='Lesson has been confirmed.',
+                    title="Confirmed Lesson",
+                    message="Lesson has been confirmed.",
                     level=Notification.Level.SUCCESS,
-                    action_url='/dashboard/student/',
+                    action_url="/dashboard/student/",
                 )
             return notif.id
 
         notif_id = await create_notification_in_transaction()
 
         frame = await communicator.receive_json_from()
-        self.assertEqual(frame['type'], 'notification_message')
-        self.assertEqual(frame['id'], notif_id)
-        self.assertEqual(frame['event_type'], Notification.EventType.BOOKING_CONFIRMED)
-        self.assertEqual(frame['level'], Notification.Level.SUCCESS)
-        self.assertEqual(frame['title'], 'Confirmed Lesson')
-        self.assertEqual(frame['message'], 'Lesson has been confirmed.')
-        self.assertEqual(frame['action_url'], '/dashboard/student/')
-        self.assertEqual(frame['unread_count'], 1)
+        self.assertEqual(frame["type"], "notification_message")
+        self.assertEqual(frame["id"], notif_id)
+        self.assertEqual(frame["event_type"], Notification.EventType.BOOKING_CONFIRMED)
+        self.assertEqual(frame["level"], Notification.Level.SUCCESS)
+        self.assertEqual(frame["title"], "Confirmed Lesson")
+        self.assertEqual(frame["message"], "Lesson has been confirmed.")
+        self.assertEqual(frame["action_url"], "/dashboard/student/")
+        self.assertEqual(frame["unread_count"], 1)
 
         await communicator.disconnect()
 
@@ -201,7 +221,9 @@ class NotificationConsumerTests(TransactionTestCase):
         async def failing_group_add(*args, **kwargs):
             raise TimeoutError("Timeout reading from localhost:6379")
 
-        communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.user
+        )
         with patch.object(channel_layer, "group_add", side_effect=failing_group_add):
             connected, _ = await communicator.connect()
             self.assertTrue(connected)
@@ -216,6 +238,7 @@ class NotificationConsumerTests(TransactionTestCase):
     async def test_channel_layer_receive_timeout_resilience_preserves_connection(self):
         import asyncio
         from unittest.mock import patch
+
         from redis.exceptions import TimeoutError as RedisTimeoutError
 
         channel_layer = get_channel_layer()
@@ -230,7 +253,9 @@ class NotificationConsumerTests(TransactionTestCase):
             return await original_receive(channel_name)
 
         with patch.object(channel_layer, "receive", side_effect=failing_receive_once):
-            communicator = await get_authenticated_communicator(application, "/ws/notifications/", self.user)
+            communicator = await get_authenticated_communicator(
+                application, "/ws/notifications/", self.user
+            )
             connected, _ = await communicator.connect()
             self.assertTrue(connected)
 
@@ -249,7 +274,9 @@ class NotificationConsumerTests(TransactionTestCase):
                 "created_at": "2026-10-21T10:00:00Z",
                 "unread_count": 1,
             }
-            await channel_layer.group_send(Notification.get_group_name(self.user.id), payload)
+            await channel_layer.group_send(
+                Notification.get_group_name(self.user.id), payload
+            )
 
             response = await communicator.receive_json_from()
             self.assertEqual(response, payload)

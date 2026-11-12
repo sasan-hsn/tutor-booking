@@ -1,10 +1,9 @@
 import logging
 import math
-import re
 import time
+
 from django.core.cache import cache
-from django.utils.html import Urlizer, escape, mark_safe
-from accounts.rate_limiting import get_client_ip
+from django.utils.html import Urlizer, escape
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +12,9 @@ CHAT_RATE_WINDOW_SECONDS = 60
 
 
 class SafeChatUrlizer(Urlizer):
-    url_template = '<a href="{href}" target="_blank" rel="noopener noreferrer">{url}</a>'
+    url_template = (
+        '<a href="{href}" target="_blank" rel="noopener noreferrer">{url}</a>'
+    )
 
     def is_email_simple(self, value):
         return False

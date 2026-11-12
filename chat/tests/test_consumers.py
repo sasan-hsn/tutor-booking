@@ -1,7 +1,7 @@
 import asyncio
 import uuid
+
 from channels.db import database_sync_to_async
-from channels.layers import get_channel_layer
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -11,8 +11,8 @@ from django.db import transaction
 from django.test import Client, TransactionTestCase
 from django.urls import reverse
 
-from chat.models import Conversation, Message
-from chat.services import advance_watermark, send_message
+from chat.models import Conversation
+from chat.services import send_message
 from tutor_booking.asgi import application
 
 User = get_user_model()
@@ -162,7 +162,9 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         self.assertEqual(frame_t["message"]["sender_id"], self.student.id)
         self.assertEqual(frame_t["message"]["sender_username"], "student_alice")
         self.assertIn("Hello Bob!", frame_t["message"]["text"])
-        self.assertIn("<a href=\"https://example.com\"", frame_t["message"]["rendered_text"])
+        self.assertIn(
+            '<a href="https://example.com"', frame_t["message"]["rendered_text"]
+        )
 
         frame_s = await student_comm.receive_json_from()
         self.assertEqual(frame_s["type"], "new_message")
@@ -182,7 +184,9 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         def post_message_via_client():
             client = Client()
             client.force_login(self.student)
-            url = reverse("chat:send_message", kwargs={"conversation_id": self.conversation.id})
+            url = reverse(
+                "chat:send_message", kwargs={"conversation_id": self.conversation.id}
+            )
             return client.post(url, {"text": "Message via HTTP POST"})
 
         response = await post_message_via_client()
@@ -289,10 +293,12 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         await teacher_comm.receive_json_from()
 
         # Teacher reads the message and sends advance_watermark action
-        await teacher_comm.send_json_to({
-            "action": "advance_watermark",
-            "message_id": msg.id,
-        })
+        await teacher_comm.send_json_to(
+            {
+                "action": "advance_watermark",
+                "message_id": msg.id,
+            }
+        )
 
         # Student should receive read_receipt frame
         receipt_s = await student_comm.receive_json_from()
@@ -320,19 +326,23 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         self.assertTrue(connected)
 
         # Advance to 10
-        await teacher_comm.send_json_to({
-            "action": "advance_watermark",
-            "message_id": 10,
-        })
+        await teacher_comm.send_json_to(
+            {
+                "action": "advance_watermark",
+                "message_id": 10,
+            }
+        )
         frame1 = await teacher_comm.receive_json_from()
         self.assertEqual(frame1["type"], "read_receipt")
         self.assertEqual(frame1["watermark"], 10)
 
         # Attempt to advance to 5 (regression)
-        await teacher_comm.send_json_to({
-            "action": "advance_watermark",
-            "message_id": 5,
-        })
+        await teacher_comm.send_json_to(
+            {
+                "action": "advance_watermark",
+                "message_id": 5,
+            }
+        )
         frame2 = await teacher_comm.receive_json_from()
         self.assertEqual(frame2["type"], "read_receipt")
         self.assertEqual(frame2["watermark"], 10)
@@ -355,19 +365,27 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
         self.assertTrue(connected)
 
         # Invalid message_id types/values
-        await teacher_comm.send_json_to({"action": "advance_watermark", "message_id": -1})
-        await teacher_comm.send_json_to({"action": "advance_watermark", "message_id": "invalid"})
+        await teacher_comm.send_json_to(
+            {"action": "advance_watermark", "message_id": -1}
+        )
+        await teacher_comm.send_json_to(
+            {"action": "advance_watermark", "message_id": "invalid"}
+        )
         await teacher_comm.send_json_to({"action": "advance_watermark"})
 
         # Consumer should still be healthy
-        await teacher_comm.send_json_to({"action": "advance_watermark", "message_id": 1})
+        await teacher_comm.send_json_to(
+            {"action": "advance_watermark", "message_id": 1}
+        )
         frame = await teacher_comm.receive_json_from()
         self.assertEqual(frame["type"], "read_receipt")
         self.assertEqual(frame["watermark"], 1)
 
         await teacher_comm.disconnect()
 
-    async def _assert_presence(self, conversation_id, user_id, expected: bool, timeout: float = 1.0):
+    async def _assert_presence(
+        self, conversation_id, user_id, expected: bool, timeout: float = 1.0
+    ):
         from chat.presence import is_user_in_room
 
         loop = asyncio.get_event_loop()
@@ -393,7 +411,6 @@ class ChatConsumerIntegrationTests(TransactionTestCase):
 
         await teacher_comm.disconnect()
         await self._assert_presence(self.conversation.id, self.teacher.id, False)
-
 
     # --- Typing Indicator Tests ---
 

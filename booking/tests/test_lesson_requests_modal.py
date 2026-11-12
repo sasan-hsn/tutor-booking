@@ -1,7 +1,9 @@
 from datetime import timedelta
 from zoneinfo import ZoneInfo
+
 from django.urls import reverse
 from django.utils import timezone
+
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking
 
@@ -83,37 +85,43 @@ class LessonRequestsModalContentTests(RoleTestCase):
 
     def test_pending_regular_request_displays_weekday_date_and_badges(self):
         """A pending regular request displays formatted weekday + date, type badge, and duration badge."""
-        response = self.teacher_client.get(reverse('booking:teacher_lesson_requests'))
+        response = self.teacher_client.get(reverse("booking:teacher_lesson_requests"))
         self.assertEqual(response.status_code, 200)
 
         # Date and time formatting: Sat, Oct 31, 14:00–14:50
         self.assertContains(response, self.sat_expected)
         # Lesson type badge
-        self.assertContains(response, '<span class="badge-lesson-type">Regular Lesson</span>')
+        self.assertContains(
+            response, '<span class="badge-lesson-type">Regular Lesson</span>'
+        )
         # Duration badge
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
 
     def test_pending_trial_request_displays_weekday_date_and_badges(self):
         """A pending trial request displays formatted weekday + date, type badge, and duration badge."""
-        response = self.teacher_client.get(reverse('booking:teacher_lesson_requests'))
+        response = self.teacher_client.get(reverse("booking:teacher_lesson_requests"))
         self.assertEqual(response.status_code, 200)
 
         # Date and time formatting: Sun, Nov 01, 16:00–16:25
         self.assertContains(response, self.sun_expected)
         # Lesson type badge
-        self.assertContains(response, '<span class="badge-lesson-type">Trial Lesson</span>')
+        self.assertContains(
+            response, '<span class="badge-lesson-type">Trial Lesson</span>'
+        )
         # Duration badge
         self.assertContains(response, '<span class="badge-duration">25 min</span>')
 
     def test_cancellation_request_displays_weekday_date_and_badges(self):
         """A cancellation request displays formatted weekday + date, type badge, and duration badge."""
-        response = self.teacher_client.get(reverse('booking:teacher_lesson_requests'))
+        response = self.teacher_client.get(reverse("booking:teacher_lesson_requests"))
         self.assertEqual(response.status_code, 200)
 
         # Date and time formatting: Mon, Nov 02, 11:00–11:50
         self.assertContains(response, self.mon_expected)
         # Lesson type badge
-        self.assertContains(response, '<span class="badge-lesson-type">Regular Lesson</span>')
+        self.assertContains(
+            response, '<span class="badge-lesson-type">Regular Lesson</span>'
+        )
         # Duration badge
         self.assertContains(response, '<span class="badge-duration">50 min</span>')
         # Cancellation badge
@@ -130,7 +138,7 @@ class LessonRequestsModalContentTests(RoleTestCase):
             fri_date, timezone.datetime.min.time(), tzinfo=ZoneInfo("UTC")
         ).replace(hour=22, minute=30)
 
-        midnight_booking = Booking.objects.create(
+        Booking.objects.create(
             student=self.student_user,
             teacher=self.teacher,
             start_at=utc_dt,
@@ -140,7 +148,7 @@ class LessonRequestsModalContentTests(RoleTestCase):
             status=Booking.Status.PENDING,
         )
 
-        response = self.teacher_client.get(reverse('booking:teacher_lesson_requests'))
+        response = self.teacher_client.get(reverse("booking:teacher_lesson_requests"))
         self.assertEqual(response.status_code, 200)
 
         expected_crossover = f"Sat, {sat_date.strftime('%b %d')}, 02:00–02:25"

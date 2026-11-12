@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -10,34 +11,40 @@ from django.utils import timezone
 
 class RegularAvailability(models.Model):
     class DayOfWeek(models.IntegerChoices):
-        MONDAY = 0, 'Monday'
-        TUESDAY = 1, 'Tuesday'
-        WEDNESDAY = 2, 'Wednesday'
-        THURSDAY = 3, 'Thursday'
-        FRIDAY = 4, 'Friday'
-        SATURDAY = 5, 'Saturday'
-        SUNDAY = 6, 'Sunday'
+        MONDAY = 0, "Monday"
+        TUESDAY = 1, "Tuesday"
+        WEDNESDAY = 2, "Wednesday"
+        THURSDAY = 3, "Thursday"
+        FRIDAY = 4, "Friday"
+        SATURDAY = 5, "Saturday"
+        SUNDAY = 6, "Sunday"
 
     teacher = models.ForeignKey(
-        'portfolio.TeacherProfile',
+        "portfolio.TeacherProfile",
         on_delete=models.CASCADE,
-        related_name='regular_availabilities',
+        related_name="regular_availabilities",
     )
     day_of_week = models.PositiveSmallIntegerField(choices=DayOfWeek.choices)
     start_time = models.TimeField()
     end_time = models.TimeField()
 
     class Meta:
-        ordering = ['day_of_week', 'start_time']
+        ordering = ["day_of_week", "start_time"]
 
     def clean(self):
         super().clean()
 
-        if self.teacher_id and hasattr(self.teacher, 'user') and not self.teacher.user.is_email_verified:
-            raise ValidationError("You must verify your email address before setting availability.")
+        if (
+            self.teacher_id
+            and hasattr(self.teacher, "user")
+            and not self.teacher.user.is_email_verified
+        ):
+            raise ValidationError(
+                "You must verify your email address before setting availability."
+            )
 
         if self.start_time and self.end_time and self.start_time >= self.end_time:
-            raise ValidationError({'end_time': 'End time must be after start time.'})
+            raise ValidationError({"end_time": "End time must be after start time."})
 
         overlapping = RegularAvailability.objects.filter(
             teacher=self.teacher,
@@ -50,7 +57,9 @@ class RegularAvailability(models.Model):
             overlapping = overlapping.exclude(pk=self.pk)
 
         if overlapping.exists():
-            raise ValidationError("This time slot overlaps with an existing availability.")
+            raise ValidationError(
+                "This time slot overlaps with an existing availability."
+            )
 
     def __str__(self):
         return f"{self.get_day_of_week_display()}: {self.start_time} - {self.end_time}"
@@ -58,9 +67,9 @@ class RegularAvailability(models.Model):
 
 class WeeklyOverride(models.Model):
     teacher = models.ForeignKey(
-        'portfolio.TeacherProfile',
+        "portfolio.TeacherProfile",
         on_delete=models.CASCADE,
-        related_name='weekly_overrides',
+        related_name="weekly_overrides",
     )
     date = models.DateField()
     start_time = models.TimeField(null=True, blank=True)
@@ -68,19 +77,25 @@ class WeeklyOverride(models.Model):
     is_available = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ['date', 'start_time']
+        ordering = ["date", "start_time"]
 
     def clean(self):
         super().clean()
 
-        if self.teacher_id and hasattr(self.teacher, 'user') and not self.teacher.user.is_email_verified:
-            raise ValidationError("You must verify your email address before setting availability.")
+        if (
+            self.teacher_id
+            and hasattr(self.teacher, "user")
+            and not self.teacher.user.is_email_verified
+        ):
+            raise ValidationError(
+                "You must verify your email address before setting availability."
+            )
 
         # Case 1: Full-day off override (is_available = False)
         if not self.is_available:
             if self.start_time or self.end_time:
                 raise ValidationError(
-                    'Start and end times must be empty when marking a day as full-day off.'
+                    "Start and end times must be empty when marking a day as full-day off."
                 )
 
             existing_overrides = WeeklyOverride.objects.filter(
@@ -90,17 +105,21 @@ class WeeklyOverride(models.Model):
                 existing_overrides = existing_overrides.exclude(pk=self.pk)
 
             if existing_overrides.exists():
-                raise ValidationError('An override entry already exists for this date.')
+                raise ValidationError("An override entry already exists for this date.")
 
         # Case 2: Active availability slot (is_available = True)
         else:
             if not self.start_time or not self.end_time:
-                raise ValidationError({
-                    'start_time': 'Start and end times are required for active availability slots.'
-                })
+                raise ValidationError(
+                    {
+                        "start_time": "Start and end times are required for active availability slots."
+                    }
+                )
 
             if self.start_time >= self.end_time:
-                raise ValidationError({'end_time': 'End time must be after start time.'})
+                raise ValidationError(
+                    {"end_time": "End time must be after start time."}
+                )
 
             off_override = WeeklyOverride.objects.filter(
                 teacher=self.teacher, date=self.date, is_available=False
@@ -110,7 +129,7 @@ class WeeklyOverride(models.Model):
 
             if off_override.exists():
                 raise ValidationError(
-                    'This date is already marked as full-day off. Remove that entry first.'
+                    "This date is already marked as full-day off. Remove that entry first."
                 )
 
             overlapping_qs = WeeklyOverride.objects.filter(
@@ -125,40 +144,50 @@ class WeeklyOverride(models.Model):
 
             if overlapping_qs.exists():
                 raise ValidationError(
-                    'This time slot overlaps with another active availability slot on the same date.'
+                    "This time slot overlaps with another active availability slot on the same date."
                 )
 
     def __str__(self):
         status = "Available" if self.is_available else "Unavailable"
-        return f"{self.date} ({status}): {self.start_time or ''} - {self.end_time or ''}"
+        return (
+            f"{self.date} ({status}): {self.start_time or ''} - {self.end_time or ''}"
+        )
 
 
 class Booking(models.Model):
     class LessonType(models.TextChoices):
-        TRIAL = 'trial', 'Trial Lesson'
-        REGULAR = 'regular', 'Regular Lesson'
+        TRIAL = "trial", "Trial Lesson"
+        REGULAR = "regular", "Regular Lesson"
 
     class Status(models.TextChoices):
-        PENDING = 'pending', 'Pending'
-        CONFIRMED = 'confirmed', 'Confirmed'
-        COMPLETED = 'completed', 'Completed'
-        CANCELLED = 'cancelled', 'Cancelled'
-        DISPUTING = 'disputing', 'Disputing'
-        EXPIRED = 'expired', 'Expired'
+        PENDING = "pending", "Pending"
+        CONFIRMED = "confirmed", "Confirmed"
+        COMPLETED = "completed", "Completed"
+        CANCELLED = "cancelled", "Cancelled"
+        DISPUTING = "disputing", "Disputing"
+        EXPIRED = "expired", "Expired"
 
     JOIN_WINDOW_PRE_START_MINUTES = 10
     JOIN_WINDOW_POST_END_MINUTES = 10
 
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings')
-    teacher = models.ForeignKey('portfolio.TeacherProfile', on_delete=models.CASCADE, related_name='bookings')
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bookings"
+    )
+    teacher = models.ForeignKey(
+        "portfolio.TeacherProfile", on_delete=models.CASCADE, related_name="bookings"
+    )
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
     duration_minutes = models.PositiveSmallIntegerField(
         default=50,
         validators=[MinValueValidator(1)],
     )
-    lesson_type = models.CharField(max_length=10, choices=LessonType.choices, default=LessonType.REGULAR)
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    lesson_type = models.CharField(
+        max_length=10, choices=LessonType.choices, default=LessonType.REGULAR
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
     cancellation_requested = models.BooleanField(default=False)
     completion_note = models.TextField(blank=True, null=True)
     price = models.DecimalField(
@@ -166,7 +195,7 @@ class Booking(models.Model):
         decimal_places=2,
         null=True,
         blank=True,
-        validators=[MinValueValidator(Decimal('0.00'))],
+        validators=[MinValueValidator(Decimal("0.00"))],
     )
     reminder_24h_sent = models.BooleanField(default=False, db_index=True)
     reminder_1h_sent = models.BooleanField(default=False, db_index=True)
@@ -174,17 +203,17 @@ class Booking(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Booking'
-        verbose_name_plural = 'Bookings'
+        ordering = ["-created_at"]
+        verbose_name = "Booking"
+        verbose_name_plural = "Bookings"
         indexes = [
-            models.Index(fields=['status', 'start_at']),
+            models.Index(fields=["status", "start_at"]),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=['teacher', 'start_at'],
-                condition=models.Q(status__in=['pending', 'confirmed']),
-                name='unique_active_teacher_datetime_booking',
+                fields=["teacher", "start_at"],
+                condition=models.Q(status__in=["pending", "confirmed"]),
+                name="unique_active_teacher_datetime_booking",
             )
         ]
 
@@ -192,13 +221,21 @@ class Booking(models.Model):
         super().clean()
 
         if self.start_at and self.end_at and self.start_at >= self.end_at:
-            raise ValidationError({'end_at': 'End time must be after start time.'})
+            raise ValidationError({"end_at": "End time must be after start time."})
 
         if self.duration_minutes is not None and self.duration_minutes <= 0:
-            raise ValidationError({'duration_minutes': 'Duration must be greater than zero.'})
+            raise ValidationError(
+                {"duration_minutes": "Duration must be greater than zero."}
+            )
 
-        if self.teacher_id and self.student_id and self.teacher.user_id == self.student_id:
-            raise ValidationError({'student': 'A teacher cannot book their own availability.'})
+        if (
+            self.teacher_id
+            and self.student_id
+            and self.teacher.user_id == self.student_id
+        ):
+            raise ValidationError(
+                {"student": "A teacher cannot book their own availability."}
+            )
 
         if self.teacher_id and self.start_at and self.end_at:
             overlapping = Booking.objects.filter(
@@ -211,7 +248,9 @@ class Booking(models.Model):
                 overlapping = overlapping.exclude(pk=self.pk)
 
             if overlapping.exists():
-                raise ValidationError('This time overlaps with another booking for this teacher.')
+                raise ValidationError(
+                    "This time overlaps with another booking for this teacher."
+                )
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -251,7 +290,10 @@ class Booking(models.Model):
 
     @property
     def is_live(self):
-        return self.status == self.Status.CONFIRMED and self.start_at <= timezone.now() < self.end_at
+        return (
+            self.status == self.Status.CONFIRMED
+            and self.start_at <= timezone.now() < self.end_at
+        )
 
     @property
     def is_awaiting_resolution(self):
@@ -263,19 +305,27 @@ class Booking(models.Model):
 
     @property
     def student_local_start(self):
-        return timezone.localtime(self.start_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+        return timezone.localtime(
+            self.start_at, ZoneInfo(self.student.timezone)
+        ).replace(tzinfo=None)
 
     @property
     def teacher_local_start(self):
-        return timezone.localtime(self.start_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
+        return timezone.localtime(
+            self.start_at, ZoneInfo(self.teacher.user.timezone)
+        ).replace(tzinfo=None)
 
     @property
     def student_local_end(self):
-        return timezone.localtime(self.end_at, ZoneInfo(self.student.timezone)).replace(tzinfo=None)
+        return timezone.localtime(self.end_at, ZoneInfo(self.student.timezone)).replace(
+            tzinfo=None
+        )
 
     @property
     def teacher_local_end(self):
-        return timezone.localtime(self.end_at, ZoneInfo(self.teacher.user.timezone)).replace(tzinfo=None)
+        return timezone.localtime(
+            self.end_at, ZoneInfo(self.teacher.user.timezone)
+        ).replace(tzinfo=None)
 
     @property
     def duration_display(self):
@@ -283,34 +333,40 @@ class Booking(models.Model):
 
     def __str__(self):
         return (
-            f'Booking #{self.id} | {self.student} |'
-            f' {self.get_lesson_type_display()} | {self.get_status_display()}'
+            f"Booking #{self.id} | {self.student} |"
+            f" {self.get_lesson_type_display()} | {self.get_status_display()}"
         )
 
 
 class Review(models.Model):
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews')
-    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
-    rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reviews"
+    )
+    booking = models.OneToOneField(
+        Booking, on_delete=models.CASCADE, related_name="review"
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
     comment = models.TextField(blank=True, null=True)
     is_approved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Review'
-        verbose_name_plural = 'Reviews'
+        ordering = ["-created_at"]
+        verbose_name = "Review"
+        verbose_name_plural = "Reviews"
 
     def clean(self):
         super().clean()
 
-        if hasattr(self, 'booking') and self.booking:
+        if hasattr(self, "booking") and self.booking:
             if self.booking.status != Booking.Status.COMPLETED:
-                raise ValidationError('You can only review completed bookings.')
+                raise ValidationError("You can only review completed bookings.")
 
-            if hasattr(self, 'student') and self.student:
+            if hasattr(self, "student") and self.student:
                 if self.booking.student != self.student:
-                    raise ValidationError('You can only review your own bookings.')
+                    raise ValidationError("You can only review your own bookings.")
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -321,18 +377,18 @@ class Review(models.Model):
         return [True] * self.rating + [False] * (5 - self.rating)
 
     def __str__(self):
-        return f'Review for Booking #{self.booking.id} | Rating: {self.rating}'
+        return f"Review for Booking #{self.booking.id} | Rating: {self.rating}"
 
 
 class TeacherDailyDigestRecord(models.Model):
     class Status(models.TextChoices):
-        SENT = 'sent', 'Sent'
-        SKIPPED_EMPTY = 'skipped_empty', 'Skipped Empty'
+        SENT = "sent", "Sent"
+        SKIPPED_EMPTY = "skipped_empty", "Skipped Empty"
 
     teacher = models.ForeignKey(
-        'portfolio.TeacherProfile',
+        "portfolio.TeacherProfile",
         on_delete=models.CASCADE,
-        related_name='daily_digest_records',
+        related_name="daily_digest_records",
     )
     target_date = models.DateField(
         help_text="The date of the schedule summarized in this digest (in teacher's timezone).",
@@ -346,11 +402,11 @@ class TeacherDailyDigestRecord(models.Model):
     sent_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-target_date']
+        ordering = ["-target_date"]
         constraints = [
             models.UniqueConstraint(
-                fields=['teacher', 'target_date'],
-                name='unique_teacher_daily_digest_target_date',
+                fields=["teacher", "target_date"],
+                name="unique_teacher_daily_digest_target_date",
             )
         ]
 

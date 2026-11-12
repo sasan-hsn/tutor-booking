@@ -1,10 +1,11 @@
 from datetime import date, time
-from django.core.exceptions import ValidationError
+
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from portfolio.models import TeacherProfile
 from booking.models import WeeklyOverride
+from portfolio.models import TeacherProfile
 
 User = get_user_model()
 
@@ -12,7 +13,7 @@ User = get_user_model()
 class WeeklyOverrideModelTest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='test_teacher', password='password123', is_email_verified=True
+            username="test_teacher", password="password123", is_email_verified=True
         )
         self.teacher = TeacherProfile.objects.create(user=self.user)
         self.target_date = date(2026, 9, 20)
@@ -154,4 +155,7 @@ class WeeklyOverrideModelTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             override.full_clean()
-        self.assertIn('You must verify your email address before setting availability.', str(ctx.exception))
+        self.assertIn(
+            "You must verify your email address before setting availability.",
+            str(ctx.exception),
+        )

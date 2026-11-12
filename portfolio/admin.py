@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import TeacherProfile, Certificate
+
+from .models import Certificate, TeacherProfile
 
 
 class CertificateInline(admin.TabularInline):

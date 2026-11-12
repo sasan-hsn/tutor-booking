@@ -1,12 +1,12 @@
-from datetime import date, time, datetime, timedelta
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
-from django.utils import timezone
 from zoneinfo import ZoneInfo
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
-from portfolio.models import TeacherProfile
-from booking.models import RegularAvailability, WeeklyOverride, Booking
+from booking.models import Booking, RegularAvailability, WeeklyOverride
 from booking.services import (
     get_availability_windows,
     get_available_start_times,
@@ -16,6 +16,7 @@ from booking.services import (
     is_trial_eligible,
     resolve_lesson_option,
 )
+from portfolio.models import TeacherProfile
 
 User = get_user_model()
 
@@ -23,7 +24,7 @@ User = get_user_model()
 class AvailabilityWindowsServiceTest(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username='teacher_test', password='password123', is_email_verified=True
+            username="teacher_test", password="password123", is_email_verified=True
         )
         self.teacher = TeacherProfile.objects.create(
             user=self.user,
@@ -113,7 +114,7 @@ class AvailabilityWindowsServiceTest(TestCase):
         week_days = [self.target_monday + timedelta(days=i) for i in range(7)]
         week_data = get_week_data(self.teacher, self.tz, week_days, 60)
         for day_entry in week_data:
-            self.assertEqual(day_entry['slots'], [])
+            self.assertEqual(day_entry["slots"], [])
 
     def test_full_day_off_override_returns_no_windows(self):
         """A full-day-off WeeklyOverride results in zero available windows."""
@@ -142,7 +143,9 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(12, 0),
         )
 
-        start_times = get_available_start_times(self.teacher, self.target_monday, duration_minutes=60)
+        start_times = get_available_start_times(
+            self.teacher, self.target_monday, duration_minutes=60
+        )
 
         # With a 60-min lesson in a 10:00-12:00 window and 30-min steps,
         # valid starts are 10:00, 10:30, 11:00 (11:00+60min=12:00 fits exactly)
@@ -164,7 +167,9 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(12, 0),
         )
 
-        student = User.objects.create_user(username='student_test', password='password123')
+        student = User.objects.create_user(
+            username="student_test", password="password123"
+        )
         Booking.objects.create(
             student=student,
             teacher=self.teacher,
@@ -173,18 +178,20 @@ class AvailabilityWindowsServiceTest(TestCase):
             status=Booking.Status.CONFIRMED,
         )
 
-        start_times = get_available_start_times(self.teacher, self.target_monday, duration_minutes=60)
+        start_times = get_available_start_times(
+            self.teacher, self.target_monday, duration_minutes=60
+        )
 
         # 10:00 would end at 11:00 -> overlaps booking (10:30-11:30) -> excluded
         # 10:30 exactly matches booking -> excluded
         # 11:00 would end at 12:00 -> overlaps booking (ends 11:30) -> excluded
         self.assertEqual(start_times, [])
 
-    @patch('django.utils.timezone.now')
+    @patch("django.utils.timezone.now")
     def test_available_start_times_excludes_past_slots(self, mock_now):
         """Start times earlier than 'now' must never be returned, even
         when they fall inside an otherwise-open availability window."""
-        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo('UTC'))
+        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo("UTC"))
         mock_now.return_value = fixed_now
 
         self.teacher.instant_tutoring_enabled = True
@@ -196,11 +203,15 @@ class AvailabilityWindowsServiceTest(TestCase):
         RegularAvailability.objects.create(
             teacher=self.teacher,
             day_of_week=today.weekday(),
-            start_time=(now - timedelta(hours=2)).time().replace(second=0, microsecond=0),
+            start_time=(now - timedelta(hours=2))
+            .time()
+            .replace(second=0, microsecond=0),
             end_time=(now + timedelta(hours=2)).time().replace(second=0, microsecond=0),
         )
 
-        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+        start_times = get_available_start_times(
+            self.teacher, today, duration_minutes=30
+        )
 
         self.assertTrue(all(st > now for st in start_times))
         self.assertTrue(len(start_times) > 0)
@@ -209,7 +220,9 @@ class AvailabilityWindowsServiceTest(TestCase):
         """A COMPLETED booking's original slot is in the past, so it must
         stay excluded — regardless of COMPLETED not being in the
         'occupied' status filter used for overlap checks."""
-        yesterday = (timezone.localtime(timezone.now(), self.tz) - timedelta(days=1)).date()
+        yesterday = (
+            timezone.localtime(timezone.now(), self.tz) - timedelta(days=1)
+        ).date()
 
         RegularAvailability.objects.create(
             teacher=self.teacher,
@@ -218,7 +231,9 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(12, 0),
         )
 
-        student = User.objects.create_user(username='student_completed', password='password123')
+        student = User.objects.create_user(
+            username="student_completed", password="password123"
+        )
         Booking.objects.create(
             student=student,
             teacher=self.teacher,
@@ -227,10 +242,11 @@ class AvailabilityWindowsServiceTest(TestCase):
             status=Booking.Status.COMPLETED,
         )
 
-        start_times = get_available_start_times(self.teacher, yesterday, duration_minutes=60)
+        start_times = get_available_start_times(
+            self.teacher, yesterday, duration_minutes=60
+        )
 
         self.assertEqual(start_times, [])
-
 
     def test_instant_tutoring_disabled_hides_entire_current_day(self):
         """When instant_tutoring_enabled is False, no slots are offered
@@ -246,16 +262,18 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(23, 59),
         )
 
-        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+        start_times = get_available_start_times(
+            self.teacher, today, duration_minutes=30
+        )
 
         self.assertEqual(start_times, [])
 
-    @patch('django.utils.timezone.now')
+    @patch("django.utils.timezone.now")
     def test_instant_tutoring_enabled_respects_buffer(self, mock_now):
         """When instant_tutoring_enabled is True, same-day slots inside
         the 1-hour buffer are excluded, but slots beyond the buffer are
         offered."""
-        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo('UTC'))
+        fixed_now = datetime(2026, 6, 1, 12, 0, tzinfo=ZoneInfo("UTC"))
         mock_now.return_value = fixed_now
 
         self.teacher.instant_tutoring_enabled = True
@@ -271,7 +289,9 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(23, 59),
         )
 
-        start_times = get_available_start_times(self.teacher, today, duration_minutes=30)
+        start_times = get_available_start_times(
+            self.teacher, today, duration_minutes=30
+        )
 
         buffer_cutoff = now + timedelta(hours=1)
         self.assertTrue(all(st > buffer_cutoff for st in start_times))
@@ -284,7 +304,9 @@ class AvailabilityWindowsServiceTest(TestCase):
     def test_instant_tutoring_disabled_does_not_affect_future_days(self):
         """The current-day restriction only applies to today — future
         days behave exactly as before, regardless of the toggle."""
-        tomorrow = (timezone.localtime(timezone.now(), self.tz) + timedelta(days=1)).date()
+        tomorrow = (
+            timezone.localtime(timezone.now(), self.tz) + timedelta(days=1)
+        ).date()
 
         RegularAvailability.objects.create(
             teacher=self.teacher,
@@ -293,7 +315,9 @@ class AvailabilityWindowsServiceTest(TestCase):
             end_time=time(12, 0),
         )
 
-        start_times = get_available_start_times(self.teacher, tomorrow, duration_minutes=60)
+        start_times = get_available_start_times(
+            self.teacher, tomorrow, duration_minutes=60
+        )
 
         expected = [
             datetime.combine(tomorrow, time(10, 0), tzinfo=self.tz),
@@ -306,7 +330,7 @@ class AvailabilityWindowsServiceTest(TestCase):
 class LessonTypeAndPriceServiceTest(TestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
-            username='teacher_trial', password='password123', role=User.Role.TEACHER
+            username="teacher_trial", password="password123", role=User.Role.TEACHER
         )
         self.teacher = self.teacher_user.teacher_profile
         self.teacher.lesson_price = 30
@@ -317,12 +341,14 @@ class LessonTypeAndPriceServiceTest(TestCase):
         self.teacher.save()
 
         self.student = User.objects.create_user(
-            username='student_trial', password='password123', role=User.Role.STUDENT
+            username="student_trial", password="password123", role=User.Role.STUDENT
         )
 
     def test_first_time_student_receives_trial(self):
         """A new student without previous bookings receives trial pricing and duration."""
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
         self.assertEqual(price, self.teacher.trial_price)
         self.assertEqual(duration, self.teacher.trial_duration_minutes)
@@ -340,7 +366,9 @@ class LessonTypeAndPriceServiceTest(TestCase):
             status=Booking.Status.PENDING,
         )
 
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, self.teacher.lesson_duration_minutes)
@@ -358,7 +386,9 @@ class LessonTypeAndPriceServiceTest(TestCase):
             status=Booking.Status.CONFIRMED,
         )
 
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, self.teacher.lesson_duration_minutes)
@@ -376,7 +406,9 @@ class LessonTypeAndPriceServiceTest(TestCase):
             status=Booking.Status.COMPLETED,
         )
 
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, self.teacher.lesson_duration_minutes)
@@ -394,7 +426,9 @@ class LessonTypeAndPriceServiceTest(TestCase):
             status=Booking.Status.CANCELLED,
         )
 
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
         self.assertEqual(price, self.teacher.trial_price)
         self.assertEqual(duration, self.teacher.trial_duration_minutes)
@@ -404,7 +438,9 @@ class LessonTypeAndPriceServiceTest(TestCase):
         self.teacher.offers_trial = False
         self.teacher.save()
 
-        lesson_type, price, duration = get_lesson_type_and_price(self.teacher, self.student)
+        lesson_type, price, duration = get_lesson_type_and_price(
+            self.teacher, self.student
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, self.teacher.lesson_duration_minutes)
@@ -413,23 +449,29 @@ class LessonTypeAndPriceServiceTest(TestCase):
 class MultiDurationBookingServicesTest(TestCase):
     def setUp(self):
         from decimal import Decimal
+
         from django.core.exceptions import ValidationError
+
         self.ValidationError = ValidationError
 
         self.teacher_user = User.objects.create_user(
-            username='teacher_multiduration', password='password123', role=User.Role.TEACHER
+            username="teacher_multiduration",
+            password="password123",
+            role=User.Role.TEACHER,
         )
         self.teacher = self.teacher_user.teacher_profile
-        self.teacher.lesson_price = Decimal('40.00')
-        self.teacher.lesson_price_25 = Decimal('22.00')
+        self.teacher.lesson_price = Decimal("40.00")
+        self.teacher.lesson_price_25 = Decimal("22.00")
         self.teacher.offers_trial = True
-        self.teacher.trial_price = Decimal('10.00')
+        self.teacher.trial_price = Decimal("10.00")
         self.teacher.trial_duration_minutes = 25
         self.teacher.lesson_duration_minutes = 50
         self.teacher.save()
 
         self.student = User.objects.create_user(
-            username='student_multiduration', password='password123', role=User.Role.STUDENT
+            username="student_multiduration",
+            password="password123",
+            role=User.Role.STUDENT,
         )
 
     def test_is_trial_eligible_first_time_student(self):
@@ -471,28 +513,28 @@ class MultiDurationBookingServicesTest(TestCase):
         self.assertEqual(len(options), 3)
 
         trial_opt = options[0]
-        self.assertEqual(trial_opt['key'], 'trial')
-        self.assertEqual(trial_opt['title'], 'Trial Lesson')
-        self.assertEqual(trial_opt['duration_minutes'], 25)
-        self.assertEqual(trial_opt['duration_display'], '25 min')
-        self.assertEqual(trial_opt['price_display'], '$10.00')
-        self.assertTrue(trial_opt['is_selected'])
+        self.assertEqual(trial_opt["key"], "trial")
+        self.assertEqual(trial_opt["title"], "Trial Lesson")
+        self.assertEqual(trial_opt["duration_minutes"], 25)
+        self.assertEqual(trial_opt["duration_display"], "25 min")
+        self.assertEqual(trial_opt["price_display"], "$10.00")
+        self.assertTrue(trial_opt["is_selected"])
 
         reg_25_opt = options[1]
-        self.assertEqual(reg_25_opt['key'], 'regular_25')
-        self.assertEqual(reg_25_opt['title'], 'Regular Lesson (25m)')
-        self.assertEqual(reg_25_opt['duration_minutes'], 25)
-        self.assertEqual(reg_25_opt['duration_display'], '25 min')
-        self.assertEqual(reg_25_opt['price_display'], '$22.00')
-        self.assertFalse(reg_25_opt['is_selected'])
+        self.assertEqual(reg_25_opt["key"], "regular_25")
+        self.assertEqual(reg_25_opt["title"], "Regular Lesson (25m)")
+        self.assertEqual(reg_25_opt["duration_minutes"], 25)
+        self.assertEqual(reg_25_opt["duration_display"], "25 min")
+        self.assertEqual(reg_25_opt["price_display"], "$22.00")
+        self.assertFalse(reg_25_opt["is_selected"])
 
         reg_50_opt = options[2]
-        self.assertEqual(reg_50_opt['key'], 'regular_50')
-        self.assertEqual(reg_50_opt['title'], 'Regular Lesson (50m)')
-        self.assertEqual(reg_50_opt['duration_minutes'], 50)
-        self.assertEqual(reg_50_opt['duration_display'], '50 min')
-        self.assertEqual(reg_50_opt['price_display'], '$40.00')
-        self.assertFalse(reg_50_opt['is_selected'])
+        self.assertEqual(reg_50_opt["key"], "regular_50")
+        self.assertEqual(reg_50_opt["title"], "Regular Lesson (50m)")
+        self.assertEqual(reg_50_opt["duration_minutes"], 50)
+        self.assertEqual(reg_50_opt["duration_display"], "50 min")
+        self.assertEqual(reg_50_opt["price_display"], "$40.00")
+        self.assertFalse(reg_50_opt["is_selected"])
 
     def test_get_eligible_lesson_options_returning_student_hides_trial(self):
         now = timezone.now()
@@ -508,19 +550,21 @@ class MultiDurationBookingServicesTest(TestCase):
 
         options = get_eligible_lesson_options(self.teacher, self.student)
         self.assertEqual(len(options), 2)
-        keys = [opt['key'] for opt in options]
-        self.assertNotIn('trial', keys)
-        self.assertEqual(keys, ['regular_25', 'regular_50'])
+        keys = [opt["key"] for opt in options]
+        self.assertNotIn("trial", keys)
+        self.assertEqual(keys, ["regular_25", "regular_50"])
 
         # 50m regular is pre-selected for returning student
-        reg_50_opt = next(opt for opt in options if opt['key'] == 'regular_50')
-        self.assertTrue(reg_50_opt['is_selected'])
+        reg_50_opt = next(opt for opt in options if opt["key"] == "regular_50")
+        self.assertTrue(reg_50_opt["is_selected"])
 
-        reg_25_opt = next(opt for opt in options if opt['key'] == 'regular_25')
-        self.assertFalse(reg_25_opt['is_selected'])
+        reg_25_opt = next(opt for opt in options if opt["key"] == "regular_25")
+        self.assertFalse(reg_25_opt["is_selected"])
 
     def test_resolve_lesson_option_trial_for_eligible_student(self):
-        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'trial')
+        lesson_type, price, duration = resolve_lesson_option(
+            self.teacher, self.student, "trial"
+        )
         self.assertEqual(lesson_type, Booking.LessonType.TRIAL)
         self.assertEqual(price, self.teacher.trial_price)
         self.assertEqual(duration, 25)
@@ -537,28 +581,30 @@ class MultiDurationBookingServicesTest(TestCase):
             status=Booking.Status.COMPLETED,
         )
         with self.assertRaises(self.ValidationError):
-            resolve_lesson_option(self.teacher, self.student, 'trial')
+            resolve_lesson_option(self.teacher, self.student, "trial")
 
     def test_resolve_lesson_option_regular_25(self):
-        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'regular_25')
+        lesson_type, price, duration = resolve_lesson_option(
+            self.teacher, self.student, "regular_25"
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price_25)
         self.assertEqual(duration, 25)
 
     def test_resolve_lesson_option_regular_50(self):
-        lesson_type, price, duration = resolve_lesson_option(self.teacher, self.student, 'regular_50')
+        lesson_type, price, duration = resolve_lesson_option(
+            self.teacher, self.student, "regular_50"
+        )
         self.assertEqual(lesson_type, Booking.LessonType.REGULAR)
         self.assertEqual(price, self.teacher.lesson_price)
         self.assertEqual(duration, 50)
 
     def test_resolve_lesson_option_invalid_key_raises(self):
         with self.assertRaises(self.ValidationError):
-            resolve_lesson_option(self.teacher, self.student, 'invalid_key')
+            resolve_lesson_option(self.teacher, self.student, "invalid_key")
 
     def test_resolve_lesson_option_missing_price_raises(self):
         self.teacher.lesson_price_25 = None
         self.teacher.save()
         with self.assertRaises(self.ValidationError):
-            resolve_lesson_option(self.teacher, self.student, 'regular_25')
-
-        
+            resolve_lesson_option(self.teacher, self.student, "regular_25")

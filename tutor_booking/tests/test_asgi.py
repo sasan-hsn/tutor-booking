@@ -1,7 +1,7 @@
-from django.conf import settings
-from django.test import SimpleTestCase
 from channels.routing import ProtocolTypeRouter
 from channels.testing import WebsocketCommunicator
+from django.conf import settings
+from django.test import SimpleTestCase
 
 
 class ASGISettingsTests(SimpleTestCase):
@@ -26,6 +26,7 @@ class ASGISettingsTests(SimpleTestCase):
 class ASGIRoutingAndHealthCheckTests(SimpleTestCase):
     def test_asgi_application_is_protocol_type_router(self):
         from tutor_booking.asgi import application
+
         self.assertIsInstance(application, ProtocolTypeRouter)
 
     async def test_websocket_health_check_ping_pong_text(self):

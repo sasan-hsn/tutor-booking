@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
+
 from django.test import TestCase
+
 from accounts.models import User
 from booking.models import Booking
 
@@ -9,11 +11,11 @@ from booking.models import Booking
 class BookingJoinWindowModelTests(TestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
-            username='testteacher', password='testpassword123', role=User.Role.TEACHER
+            username="testteacher", password="testpassword123", role=User.Role.TEACHER
         )
         self.teacher = self.teacher_user.teacher_profile
         self.student_user = User.objects.create_user(
-            username='teststudent', password='testpassword123', role=User.Role.STUDENT
+            username="teststudent", password="testpassword123", role=User.Role.STUDENT
         )
         tz = ZoneInfo(self.teacher_user.timezone)
         self.start_at = datetime(2026, 10, 10, 14, 0, tzinfo=tz)
@@ -43,63 +45,85 @@ class BookingJoinWindowModelTests(TestCase):
     def test_pre_start_boundary_conditions(self):
         """is_joinable is True from start_at - 10m onward; is_live is False before start_at."""
         # 11 minutes before start: outside window
-        with patch('django.utils.timezone.now', return_value=self.start_at - timedelta(minutes=11)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.start_at - timedelta(minutes=11),
+        ):
             self.assertFalse(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
         # 10 minutes before start: exactly at window start
-        with patch('django.utils.timezone.now', return_value=self.start_at - timedelta(minutes=10)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.start_at - timedelta(minutes=10),
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
         # 5 minutes before start: inside pre-start window
-        with patch('django.utils.timezone.now', return_value=self.start_at - timedelta(minutes=5)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.start_at - timedelta(minutes=5),
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
     def test_during_lesson_conditions(self):
         """During the scheduled lesson interval, is_joinable is True and is_live is True."""
         # At start_at
-        with patch('django.utils.timezone.now', return_value=self.start_at):
+        with patch("django.utils.timezone.now", return_value=self.start_at):
             self.assertTrue(self.booking.is_joinable)
             self.assertTrue(self.booking.is_live)
 
         # Mid-lesson (25 minutes in)
-        with patch('django.utils.timezone.now', return_value=self.start_at + timedelta(minutes=25)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.start_at + timedelta(minutes=25),
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertTrue(self.booking.is_live)
 
         # 1 second before end_at
-        with patch('django.utils.timezone.now', return_value=self.end_at - timedelta(seconds=1)):
+        with patch(
+            "django.utils.timezone.now", return_value=self.end_at - timedelta(seconds=1)
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertTrue(self.booking.is_live)
 
     def test_post_end_boundary_conditions(self):
         """is_joinable remains True until end_at + 10m; is_live becomes False at end_at."""
         # Exactly at end_at: joinable, but no longer live (is_live: start_at <= now < end_at)
-        with patch('django.utils.timezone.now', return_value=self.end_at):
+        with patch("django.utils.timezone.now", return_value=self.end_at):
             self.assertTrue(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
         # 5 minutes after end_at: in post-end grace period
-        with patch('django.utils.timezone.now', return_value=self.end_at + timedelta(minutes=5)):
+        with patch(
+            "django.utils.timezone.now", return_value=self.end_at + timedelta(minutes=5)
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
         # 10 minutes after end_at: exactly at window close
-        with patch('django.utils.timezone.now', return_value=self.end_at + timedelta(minutes=10)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.end_at + timedelta(minutes=10),
+        ):
             self.assertTrue(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
         # 11 minutes after end_at: window has closed
-        with patch('django.utils.timezone.now', return_value=self.end_at + timedelta(minutes=11)):
+        with patch(
+            "django.utils.timezone.now",
+            return_value=self.end_at + timedelta(minutes=11),
+        ):
             self.assertFalse(self.booking.is_joinable)
             self.assertFalse(self.booking.is_live)
 
     def test_status_gating_for_joinable(self):
         """is_joinable evaluates to True ONLY when status is CONFIRMED, even during active time."""
         now_mid_lesson = self.start_at + timedelta(minutes=15)
-        with patch('django.utils.timezone.now', return_value=now_mid_lesson):
+        with patch("django.utils.timezone.now", return_value=now_mid_lesson):
             # CONFIRMED -> True
             self.booking.status = Booking.Status.CONFIRMED
             self.booking.save()
