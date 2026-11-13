@@ -1,0 +1,67 @@
+{% extends "landing_base.html" %}
+
+{% block title %}
+{% if is_already_verified %}Email Already Verified{% else %}Verify Email Address{% endif %} – {{ site_name }}
+{% endblock %}
+
+{% block page_content %}
+<div class="container max-w-5xl px-4 py-5">
+    <div class="glass-card p-4 mx-auto text-center" style="max-width: 520px;">
+        {% if is_already_verified %}
+        <div class="mb-3">
+            <span class="badge bg-success px-3 py-2 text-uppercase fs-6">Already Verified</span>
+        </div>
+
+        <h1 class="mb-3 fs-3">Email Already Verified</h1>
+
+        <p class="text-muted mb-4">
+            Your email address (<strong>{{ target_user.email }}</strong>) has already been verified.
+        </p>
+
+        {% if user.is_authenticated and user.pk == target_user.pk %}
+        <a href="{% if target_user.role == 'teacher' %}{% url 'booking:teacher_dashboard' %}{% else %}{% url 'booking:student_dashboard' %}{% endif %}" class="btn-accent w-100 mb-3 d-inline-block text-decoration-none">
+            Go to Dashboard
+        </a>
+        {% else %}
+        <form method="post" action="{% url 'accounts:verify_email' token=token %}">
+            {% csrf_token %}
+            {% if next_url %}
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% endif %}
+            <button type="submit" class="btn-accent w-100 mb-3">
+                Continue to Dashboard
+            </button>
+        </form>
+        <a href="{% url 'accounts:login' %}{% if next_url %}?next={{ next_url }}{% endif %}" class="btn btn-outline-secondary w-100">
+            Log In
+        </a>
+        {% endif %}
+
+        {% else %}
+        <div class="mb-3">
+            <span class="badge bg-primary px-3 py-2 text-uppercase fs-6">Email Verification</span>
+        </div>
+
+        <h1 class="mb-3 fs-3">Verify Your Email Address</h1>
+
+        <p class="text-muted mb-4">
+            Please confirm that you want to verify <strong>{{ target_user.email }}</strong> for your account on {{ site_name }}.
+        </p>
+
+        <form method="post" action="{% url 'accounts:verify_email' token=token %}">
+            {% csrf_token %}
+            {% if next_url %}
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% endif %}
+            <button type="submit" class="btn-accent w-100 py-2 mb-3 fw-semibold">
+                Confirm &amp; Verify Email
+            </button>
+        </form>
+
+        <a href="/" class="btn btn-outline-secondary w-100">
+            Cancel
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

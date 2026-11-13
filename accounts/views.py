@@ -2,8 +2,9 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls.exceptions import NoReverseMatch
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -32,20 +33,12 @@ from .tokens import (
     email_change_token_generator,
     email_verification_token_generator,
 )
+from .utils import get_safe_redirect_url
 
 
 def student_signup(request):
     next_url = request.POST.get("next") or request.GET.get("next")
-    safe_next = (
-        next_url
-        if (
-            next_url
-            and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}
-            )
-        )
-        else None
-    )
+    safe_next = get_safe_redirect_url(request, next_url)
 
     if request.method == "POST":
         form = StudentSignUpForm(request.POST)
@@ -56,12 +49,15 @@ def student_signup(request):
                 lambda: safe_send_verification_email(user.pk, next_url=safe_next)
             )
             if safe_next:
-                return redirect(safe_next)
+                try:
+                    return redirect(safe_next)
+                except NoReverseMatch:
+                    pass
             return redirect("booking:student_dashboard")
     else:
         form = StudentSignUpForm()
     return render(
-        request, "accounts/student_signup.html", {"form": form, "next": next_url or ""}
+        request, "accounts/student_signup.html", {"form": form, "next": safe_next or ""}
     )
 
 
@@ -98,10 +94,12 @@ def user_login(request):
             reset_login_rate_limit(client_ip, raw_username)
             login(request, user)
 
-            if next_url and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}
-            ):
-                return redirect(next_url)
+            safe_next = get_safe_redirect_url(request, next_url)
+            if safe_next:
+                try:
+                    return redirect(safe_next)
+                except NoReverseMatch:
+                    pass
 
             if user.role == User.Role.TEACHER:
                 return redirect("booking:teacher_dashboard")
@@ -119,10 +117,12 @@ def user_login(request):
 def user_logout(request):
     next_url = request.POST.get("next") or request.GET.get("next")
     logout(request)
-    if next_url and url_has_allowed_host_and_scheme(
-        next_url, allowed_hosts={request.get_host()}
-    ):
-        return redirect(next_url)
+    safe_next = get_safe_redirect_url(request, next_url)
+    if safe_next:
+        try:
+            return redirect(safe_next)
+        except NoReverseMatch:
+            pass
     return redirect("/")
 
 
@@ -384,16 +384,7 @@ def resend_email_change_email(request):
 
 def teacher_signup(request):
     next_url = request.POST.get("next") or request.GET.get("next")
-    safe_next = (
-        next_url
-        if (
-            next_url
-            and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}
-            )
-        )
-        else None
-    )
+    safe_next = get_safe_redirect_url(request, next_url)
 
     if request.method == "POST":
         form = TeacherSignUpForm(request.POST)
@@ -404,34 +395,32 @@ def teacher_signup(request):
                 lambda: safe_send_verification_email(user.pk, next_url=safe_next)
             )
             if safe_next:
-                return redirect(safe_next)
+                try:
+                    return redirect(safe_next)
+                except NoReverseMatch:
+                    pass
             return redirect("booking:teacher_dashboard")
     else:
         form = TeacherSignUpForm()
     return render(
-        request, "accounts/teacher_signup.html", {"form": form, "next": next_url or ""}
+        request, "accounts/teacher_signup.html", {"form": form, "next": safe_next or ""}
     )
 
 
 def verify_email(request, token):
     """
     Handle email verification link clicks:
-    - If valid and logged out: auto-login, mark verified, redirect to next or dashboard.
-    - If valid and logged in as target user: mark verified, redirect to next or dashboard.
+    - GET: Protected against automated link scanners/prefetchers:
+      Renders confirmation screen (or already-verified screen) without mutating state or logging in.
+    - POST: Executes verification and auto-login (if logged out), then redirects to safe_next or dashboard.
     - If valid and logged in as different user: display conflict interception screen without mutating session.
-    - If expired or invalid: display clear error screen with resend option.
+    - If expired or invalid: display clear error screen with resend option (HTTP 400).
     """
+    if request.method not in ("GET", "POST"):
+        return HttpResponseNotAllowed(["GET", "POST"])
+
     next_url = request.POST.get("next") or request.GET.get("next")
-    safe_next = (
-        next_url
-        if (
-            next_url
-            and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}
-            )
-        )
-        else None
-    )
+    safe_next = get_safe_redirect_url(request, next_url)
 
     user, status = email_verification_token_generator.check_token(token)
 
@@ -471,23 +460,39 @@ def verify_email(request, token):
             status=200,
         )
 
-    # If logged out, auto-login user
-    if not request.user.is_authenticated:
-        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    if request.method == "POST":
+        # If logged out, auto-login user
+        if not request.user.is_authenticated:
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
-    if not user.is_email_verified:
-        user.is_email_verified = True
-        user.save(update_fields=["is_email_verified"])
-        messages.success(request, "Your email has been successfully verified.")
-    else:
-        messages.info(request, "Your email is already verified.")
+        if not user.is_email_verified:
+            user.is_email_verified = True
+            user.save(update_fields=["is_email_verified"])
+            messages.success(request, "Your email has been successfully verified.")
+        else:
+            messages.info(request, "Your email is already verified.")
 
-    if safe_next:
-        return redirect(safe_next)
+        if safe_next:
+            try:
+                return redirect(safe_next)
+            except NoReverseMatch:
+                pass
 
-    if user.role == User.Role.TEACHER:
-        return redirect("booking:teacher_dashboard")
-    return redirect("booking:student_dashboard")
+        if user.role == User.Role.TEACHER:
+            return redirect("booking:teacher_dashboard")
+        return redirect("booking:student_dashboard")
+
+    # GET request: render confirmation screen without mutating state
+    return render(
+        request,
+        "accounts/verify_email_confirm.html",
+        {
+            "target_user": user,
+            "token": token,
+            "next_url": safe_next,
+            "is_already_verified": user.is_email_verified,
+        },
+    )
 
 
 @require_POST
@@ -500,16 +505,7 @@ def resend_verification_email(request):
     client_ip = get_client_ip(request)
     email = request.POST.get("email", "").strip().lower()
     next_url = request.POST.get("next") or request.GET.get("next")
-    safe_next = (
-        next_url
-        if (
-            next_url
-            and url_has_allowed_host_and_scheme(
-                next_url, allowed_hosts={request.get_host()}
-            )
-        )
-        else None
-    )
+    safe_next = get_safe_redirect_url(request, next_url)
 
     is_json = (
         request.headers.get("x-requested-with") == "XMLHttpRequest"
