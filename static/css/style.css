@@ -976,6 +976,16 @@ h1, h2, h3, h4, h5, h6,
     width: fit-content;
 }
 
+.lesson-card .btn-message-counterpart {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+}
+
 /* Badges */
 .badge-count {
     position: absolute;

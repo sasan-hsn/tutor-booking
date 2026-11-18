@@ -1,19 +1,42 @@
 {% load avatar_tags %}
 
 <div class="lesson-detail">
-    <div class="lesson-detail-header">
-        {% if user.teacher_profile %}
-        {% user_avatar booking.student_display_user 56 %}
-        {% else %}
-        {% user_avatar booking.teacher_display_user 56 %}
-        {% endif %}
-        <div>
+    <div class="lesson-detail-header d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
             {% if user.teacher_profile %}
-            <div class="lesson-detail-student">{{ booking.student_display_name }}</div>
+            {% user_avatar booking.student_display_user 56 %}
             {% else %}
-            <div class="lesson-detail-student">{{ booking.teacher_display_name }}</div>
+            {% user_avatar booking.teacher_display_user 56 %}
             {% endif %}
+            <div>
+                {% if user.teacher_profile %}
+                <div class="lesson-detail-student">{{ booking.student_display_name }}</div>
+                {% else %}
+                <div class="lesson-detail-student">{{ booking.teacher_display_name }}</div>
+                {% endif %}
+            </div>
         </div>
+        {% if user.teacher_profile %}
+            {% if booking.student %}
+            <a href="{% url 'chat:start_conversation' booking.student.username %}"
+                class="btn btn-sm btn-outline-primary btn-message-counterpart d-inline-flex align-items-center gap-1 text-decoration-none"
+                title="Message"
+                aria-label="Message">
+                <i class="bi bi-chat-dots"></i>
+                <span>Message</span>
+            </a>
+            {% endif %}
+        {% else %}
+            {% if booking.teacher and booking.teacher.user %}
+            <a href="{% url 'chat:start_conversation' booking.teacher.user.username %}"
+                class="btn btn-sm btn-outline-primary btn-message-counterpart d-inline-flex align-items-center gap-1 text-decoration-none"
+                title="Message"
+                aria-label="Message">
+                <i class="bi bi-chat-dots"></i>
+                <span>Message</span>
+            </a>
+            {% endif %}
+        {% endif %}
     </div>
 
     <div class="lesson-detail-rows">

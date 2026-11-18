@@ -122,6 +122,24 @@ class MockElement {
         this.eventListeners[event].push(handler);
     }
 
+    closest(selector) {
+        const selectors = selector.split(',').map(s => s.trim());
+        let current = this;
+        while (current) {
+            for (const sel of selectors) {
+                if (sel.startsWith('.')) {
+                    if (current.classList && current.classList.contains(sel.slice(1))) return current;
+                } else if (sel.startsWith('#')) {
+                    if (current.id === sel.slice(1)) return current;
+                } else if (sel.toUpperCase() === current.tagName) {
+                    return current;
+                }
+            }
+            current = current.parentElement;
+        }
+        return null;
+    }
+
     dispatchEvent(event) {
         if (this.onclick) this.onclick(event);
         if (this.eventListeners[event.type]) {
@@ -133,6 +151,22 @@ class MockElement {
 class MockDocument extends MockElement {
     constructor() {
         super('#document');
+    }
+
+    getElementById(id) {
+        let found = null;
+        function walk(node) {
+            if (node.id === id) {
+                found = node;
+                return;
+            }
+            for (const child of node.children || []) {
+                walk(child);
+                if (found) return;
+            }
+        }
+        walk(this);
+        return found;
     }
 
     createElement(tag) {
@@ -176,6 +210,7 @@ global.clearInterval = (id) => {};
 
 // Import main.js
 const {
+    initLessonDetailModalManager,
     initLessonJoinWindowWatcher,
     updateLessonJoinWindows,
     scrollToTargetLessonCard,
@@ -394,4 +429,126 @@ describe('Target Lesson Card Scrolling', () => {
         assert.strictEqual(scrollToTargetLessonCard(), false);
     });
 });
+
+describe('Lesson Detail Modal Message Shortcut Event Delegation', () => {
+    let originalDocument;
+    let originalWindow;
+    let originalBootstrap;
+    let originalFetch;
+
+    beforeEach(() => {
+        originalDocument = global.document;
+        originalWindow = global.window;
+        originalBootstrap = global.bootstrap;
+        originalFetch = global.fetch;
+    });
+
+    afterEach(() => {
+        global.document = originalDocument;
+        global.window = originalWindow;
+        global.bootstrap = originalBootstrap;
+        global.fetch = originalFetch;
+    });
+
+    test('clicking .btn-message-counterpart inside .lesson-card does not open modal', () => {
+        const doc = new MockDocument();
+        const modalEl = doc.createElement('div');
+        modalEl.id = 'lessonDetailModal';
+        modalEl.dataset.url = '/booking/teacher/lesson/0/';
+        doc.appendChild(modalEl);
+
+        const modalBody = doc.createElement('div');
+        modalBody.id = 'lessonDetailModalBody';
+        doc.appendChild(modalBody);
+
+        let modalShown = false;
+        global.bootstrap = {
+            Modal: {
+                getOrCreateInstance: () => ({
+                    show: () => { modalShown = true; },
+                    hide: () => {}
+                })
+            }
+        };
+        global.fetch = () => Promise.resolve({ text: () => Promise.resolve('') });
+        global.document = doc;
+        global.window = {};
+
+        initLessonDetailModalManager();
+
+        const card = doc.createElement('div');
+        card.className = 'lesson-card';
+        card.dataset.bookingId = '42';
+        doc.appendChild(card);
+
+        const msgBtn = doc.createElement('a');
+        msgBtn.className = 'btn btn-sm btn-outline-primary btn-message-counterpart';
+        card.appendChild(msgBtn);
+
+        const icon = doc.createElement('i');
+        icon.className = 'bi bi-chat-dots';
+        msgBtn.appendChild(icon);
+
+        // Click message button (or icon inside it)
+        doc.dispatchEvent({
+            type: 'click',
+            target: icon
+        });
+
+        assert.strictEqual(modalShown, false, 'Modal should not open when clicking message button inside lesson card');
+
+        // Normal card click should open modal
+        doc.dispatchEvent({
+            type: 'click',
+            target: card
+        });
+        assert.strictEqual(modalShown, true, 'Modal should open when clicking card body');
+    });
+
+    test('dynamic / paginated card click on .btn-message-counterpart does not open modal via delegation', () => {
+        const doc = new MockDocument();
+        const modalEl = doc.createElement('div');
+        modalEl.id = 'lessonDetailModal';
+        modalEl.dataset.url = '/booking/teacher/lesson/0/';
+        doc.appendChild(modalEl);
+
+        const modalBody = doc.createElement('div');
+        modalBody.id = 'lessonDetailModalBody';
+        doc.appendChild(modalBody);
+
+        let modalShown = false;
+        global.bootstrap = {
+            Modal: {
+                getOrCreateInstance: () => ({
+                    show: () => { modalShown = true; },
+                    hide: () => {}
+                })
+            }
+        };
+        global.fetch = () => Promise.resolve({ text: () => Promise.resolve('') });
+        global.document = doc;
+        global.window = {};
+
+        initLessonDetailModalManager();
+
+        // Dynamically add a card after initialization (simulating AJAX pagination)
+        const dynamicCard = doc.createElement('div');
+        dynamicCard.className = 'lesson-card';
+        dynamicCard.dataset.bookingId = '99';
+        doc.appendChild(dynamicCard);
+
+        const dynamicMsgBtn = doc.createElement('a');
+        dynamicMsgBtn.className = 'btn btn-sm btn-outline-primary btn-message-counterpart';
+        dynamicCard.appendChild(dynamicMsgBtn);
+
+        // Click dynamic message button
+        doc.dispatchEvent({
+            type: 'click',
+            target: dynamicMsgBtn
+        });
+
+        assert.strictEqual(modalShown, false, 'Modal should not open when clicking dynamic message button');
+    });
+});
+
 

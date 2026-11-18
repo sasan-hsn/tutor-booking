@@ -342,6 +342,7 @@
                     rows="1"
                     maxlength="2000"
                     required
+                    autofocus
                 ></textarea>
                 <button type="submit" id="chatSendBtn" class="btn btn-primary rounded-circle d-flex align-items-center justify-content-center p-0" style="width: 42px; height: 42px;" aria-label="Send message">
                     <i class="bi bi-send-fill fs-5"></i>
@@ -384,6 +385,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
     scrollToBottom();
+    if (input) {
+        input.focus();
+    }
 
     // Drawer Collapse/Expand Toggle
     const toggleDrawerBtn = document.getElementById('toggleDrawerBtn');
