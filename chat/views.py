@@ -95,35 +95,54 @@ def inbox_view(request):
 
 @login_required
 @require_GET
-def start_conversation(request, teacher_username):
+def start_conversation(request, username):
     """
-    Entrypoint for students to start or resume a private conversation with a teacher.
-    Validates email verification and teacher role, then idempotently creates or resolves
-    the Conversation and redirects to /messages/<conversation_id>/.
+    Bidirectional entrypoint for students and teachers to start or resume a private conversation.
+    - If caller is Student: Target must be an active, verified teacher. Caller must have a verified email.
+    - If caller is Teacher: Target must be an active student.
+    - Prevents self-messaging, role violations, and requests to non-existent/inactive users.
+    Idempotently creates or resolves the Conversation and redirects to /messages/<conversation_id>/.
     """
-    if request.user.role != "student":
-        return HttpResponseForbidden(
-            "Only students can initiate a conversation with a teacher."
-        )
-
-    if not request.user.is_email_verified:
-        return render(
-            request,
-            "chat/unverified_prompt.html",
-            {"teacher_username": teacher_username},
-            status=403,
-        )
-
-    teacher = get_object_or_404(
+    target_user = get_object_or_404(
         User,
-        username__iexact=teacher_username,
-        role="teacher",
+        username__iexact=username,
         is_active=True,
     )
 
+    if request.user.id == target_user.id:
+        return HttpResponseForbidden(
+            "You cannot initiate a conversation with yourself."
+        )
+
+    if request.user.role == User.Role.STUDENT:
+        if target_user.role != User.Role.TEACHER:
+            return HttpResponseForbidden(
+                "Students can only initiate conversations with teachers."
+            )
+        if not target_user.is_email_verified:
+            return HttpResponseForbidden("Target teacher is not verified.")
+        if not request.user.is_email_verified:
+            return render(
+                request,
+                "chat/unverified_prompt.html",
+                {"teacher_username": target_user.username},
+                status=403,
+            )
+        student = request.user
+        teacher = target_user
+    elif request.user.role == User.Role.TEACHER:
+        if target_user.role != User.Role.STUDENT:
+            return HttpResponseForbidden(
+                "Teachers can only initiate conversations with students."
+            )
+        student = target_user
+        teacher = request.user
+    else:
+        return HttpResponseForbidden("Unauthorized to initiate conversations.")
+
     try:
         conversation, _ = get_or_create_conversation(
-            student=request.user,
+            student=student,
             teacher=teacher,
         )
     except ValidationError as exc:

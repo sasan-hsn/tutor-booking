@@ -61,61 +61,23 @@ class ChatViewsIntegrationTests(TestCase):
     def tearDown(self):
         cache.clear()
 
-    # --- Test /messages/with/<teacher_username>/ ---
+    # --- Test /messages/with/<username>/ ---
 
     def test_start_conversation_redirects_unauthenticated(self):
         url = reverse(
             "chat:start_conversation",
-            kwargs={"teacher_username": self.teacher.username},
+            kwargs={"username": self.teacher.username},
         )
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
         self.assertIn("/accounts/login/", response.url)
 
-    def test_start_conversation_blocked_for_unverified_student(self):
-        self.client.force_login(self.unverified_student)
-        url = reverse(
-            "chat:start_conversation",
-            kwargs={"teacher_username": self.teacher.username},
-        )
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 403)
-        self.assertContains(response, "Please verify your email", status_code=403)
-
-    def test_start_conversation_validates_teacher_role(self):
-        self.client.force_login(self.student)
-        # Attempting with another student should 404 or 400
-        url = reverse(
-            "chat:start_conversation",
-            kwargs={"teacher_username": self.other_student.username},
-        )
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 404)
-
-        # Non-existent user should 404
-        url_nonexistent = reverse(
-            "chat:start_conversation", kwargs={"teacher_username": "nobody"}
-        )
-        response = self.client.get(url_nonexistent)
-        self.assertEqual(response.status_code, 404)
-
-    def test_start_conversation_as_teacher_blocked(self):
-        self.client.force_login(self.teacher)
-        url = reverse(
-            "chat:start_conversation",
-            kwargs={"teacher_username": self.other_teacher.username},
-        )
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 403)
-
-    def test_start_conversation_creates_and_redirects_idempotently(self):
+    def test_start_conversation_student_to_teacher_creates_and_redirects(self):
         self.client.force_login(self.student)
         url = reverse(
             "chat:start_conversation",
-            kwargs={"teacher_username": self.teacher.username},
+            kwargs={"username": self.teacher.username},
         )
-
-        # First visit: creates conversation and redirects
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
         conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
@@ -124,16 +86,174 @@ class ChatViewsIntegrationTests(TestCase):
         )
         self.assertRedirects(response, expected_url)
 
-        # Second visit: idempotently redirects to same conversation
-        response2 = self.client.get(url)
-        self.assertEqual(response2.status_code, 302)
-        self.assertRedirects(response2, expected_url)
+    def test_start_conversation_teacher_to_student_creates_and_redirects(self):
+        self.client.force_login(self.teacher)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.student.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        conv = Conversation.objects.get(student=self.student, teacher=self.teacher)
+        expected_url = reverse(
+            "chat:conversation_detail", kwargs={"conversation_id": conv.id}
+        )
+        self.assertRedirects(response, expected_url)
+
+    def test_start_conversation_bidirectional_idempotency(self):
+        # 1. Student initiates conversation with Teacher
+        self.client.force_login(self.student)
+        student_init_url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.teacher.username},
+        )
+        resp_student = self.client.get(student_init_url)
+        self.assertEqual(resp_student.status_code, 302)
+        conv_student = Conversation.objects.get(
+            student=self.student, teacher=self.teacher
+        )
+        expected_url = reverse(
+            "chat:conversation_detail", kwargs={"conversation_id": conv_student.id}
+        )
+        self.assertRedirects(resp_student, expected_url)
+
+        # 2. Teacher initiates conversation with that same Student
+        self.client.force_login(self.teacher)
+        teacher_init_url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.student.username},
+        )
+        resp_teacher = self.client.get(teacher_init_url)
+        self.assertEqual(resp_teacher.status_code, 302)
+        self.assertRedirects(resp_teacher, expected_url)
+
+        # Verify exact same conversation and no duplicate created
         self.assertEqual(
             Conversation.objects.filter(
                 student=self.student, teacher=self.teacher
             ).count(),
             1,
         )
+        self.assertEqual(Conversation.objects.count(), 1)
+
+    def test_start_conversation_blocked_for_unverified_student(self):
+        self.client.force_login(self.unverified_student)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.teacher.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Please verify your email", status_code=403)
+
+    def test_start_conversation_unverified_student_targeting_non_teacher_forbidden(
+        self,
+    ):
+        """Role check takes precedence over email verification check for non-teachers."""
+        self.client.force_login(self.unverified_student)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.other_student.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertNotContains(response, "Please verify your email", status_code=403)
+
+    def test_start_conversation_unverified_target_teacher_forbidden(self):
+        unverified_teacher = User.objects.create_user(
+            username="unverified_teacher",
+            email="unverified_teacher@example.com",
+            password="testpassword123",
+            role=User.Role.TEACHER,
+            is_email_verified=False,
+        )
+        self.client.force_login(self.student)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": unverified_teacher.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_start_conversation_student_to_student_forbidden(self):
+        self.client.force_login(self.student)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.other_student.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_start_conversation_teacher_to_teacher_forbidden(self):
+        self.client.force_login(self.teacher)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.other_teacher.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_start_conversation_self_messaging_forbidden(self):
+        # Student cannot message self
+        self.client.force_login(self.student)
+        student_self_url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.student.username},
+        )
+        resp1 = self.client.get(student_self_url)
+        self.assertEqual(resp1.status_code, 403)
+
+        # Teacher cannot message self
+        self.client.force_login(self.teacher)
+        teacher_self_url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": self.teacher.username},
+        )
+        resp2 = self.client.get(teacher_self_url)
+        self.assertEqual(resp2.status_code, 403)
+
+    def test_start_conversation_nonexistent_user_returns_404(self):
+        self.client.force_login(self.student)
+        url_nonexistent = reverse(
+            "chat:start_conversation",
+            kwargs={"username": "nobody_exists"},
+        )
+        response = self.client.get(url_nonexistent)
+        self.assertEqual(response.status_code, 404)
+
+    def test_start_conversation_inactive_teacher_returns_404(self):
+        inactive_teacher = User.objects.create_user(
+            username="inactive_teacher",
+            email="inactive_teacher@example.com",
+            password="testpassword123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
+            is_active=False,
+        )
+        self.client.force_login(self.student)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": inactive_teacher.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_start_conversation_inactive_student_returns_404(self):
+        inactive_student = User.objects.create_user(
+            username="inactive_student",
+            email="inactive_student@example.com",
+            password="testpassword123",
+            role=User.Role.STUDENT,
+            is_email_verified=True,
+            is_active=False,
+        )
+        self.client.force_login(self.teacher)
+        url = reverse(
+            "chat:start_conversation",
+            kwargs={"username": inactive_student.username},
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
 
     # --- Test /messages/<conversation_id>/ ---
 
