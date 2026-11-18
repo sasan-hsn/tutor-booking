@@ -58,8 +58,8 @@ class LessonMessageShortcutsTests(RoleTestCase):
             price=Decimal("25.00"),
         )
 
-    def test_upcoming_lesson_card_renders_message_shortcut_for_teacher(self):
-        """Teacher viewing upcoming lesson cards sees message shortcut targeting the student."""
+    def test_upcoming_lesson_card_does_not_render_message_shortcut_for_teacher(self):
+        """Teacher viewing upcoming lesson cards sees clean card without message shortcut button."""
         response = self.teacher_client.get(
             reverse("booking:teacher_dashboard"),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -70,13 +70,11 @@ class LessonMessageShortcutsTests(RoleTestCase):
             "chat:start_conversation",
             kwargs={"username": self.student_user.username},
         )
-        self.assertContains(response, expected_url)
-        self.assertContains(response, "btn-message-counterpart")
-        self.assertContains(response, "bi-chat-dots")
-        self.assertContains(response, "Message")
+        self.assertNotContains(response, expected_url)
+        self.assertNotContains(response, "btn-message-counterpart")
 
-    def test_upcoming_lesson_card_renders_message_shortcut_for_student(self):
-        """Student viewing upcoming lesson cards sees message shortcut targeting the teacher."""
+    def test_upcoming_lesson_card_does_not_render_message_shortcut_for_student(self):
+        """Student viewing upcoming lesson cards sees clean card without message shortcut button."""
         response = self.student_client.get(
             reverse("booking:student_dashboard"),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -87,13 +85,11 @@ class LessonMessageShortcutsTests(RoleTestCase):
             "chat:start_conversation",
             kwargs={"username": self.teacher_user.username},
         )
-        self.assertContains(response, expected_url)
-        self.assertContains(response, "btn-message-counterpart")
-        self.assertContains(response, "bi-chat-dots")
-        self.assertContains(response, "Message")
+        self.assertNotContains(response, expected_url)
+        self.assertNotContains(response, "btn-message-counterpart")
 
-    def test_past_lesson_card_renders_message_shortcut_for_teacher(self):
-        """Teacher viewing past lesson cards sees message shortcut targeting the student."""
+    def test_past_lesson_card_does_not_render_message_shortcut_for_teacher(self):
+        """Teacher viewing past lesson cards sees clean card without message shortcut button."""
         response = self.teacher_client.get(
             reverse("booking:teacher_dashboard"),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -104,13 +100,11 @@ class LessonMessageShortcutsTests(RoleTestCase):
             "chat:start_conversation",
             kwargs={"username": self.student_user.username},
         )
-        self.assertContains(response, expected_url)
-        self.assertContains(response, "btn-message-counterpart")
-        self.assertContains(response, "bi-chat-dots")
-        self.assertContains(response, "Message")
+        self.assertNotContains(response, expected_url)
+        self.assertNotContains(response, "btn-message-counterpart")
 
-    def test_past_lesson_card_renders_message_shortcut_for_student(self):
-        """Student viewing past lesson cards sees message shortcut targeting the teacher."""
+    def test_past_lesson_card_does_not_render_message_shortcut_for_student(self):
+        """Student viewing past lesson cards sees clean card without message shortcut button."""
         response = self.student_client.get(
             reverse("booking:student_dashboard"),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -121,10 +115,8 @@ class LessonMessageShortcutsTests(RoleTestCase):
             "chat:start_conversation",
             kwargs={"username": self.teacher_user.username},
         )
-        self.assertContains(response, expected_url)
-        self.assertContains(response, "btn-message-counterpart")
-        self.assertContains(response, "bi-chat-dots")
-        self.assertContains(response, "Message")
+        self.assertNotContains(response, expected_url)
+        self.assertNotContains(response, "btn-message-counterpart")
 
     def test_teacher_lesson_detail_modal_renders_message_shortcut_across_states(self):
         """Teacher viewing lesson detail modal sees message button for confirmed, completed, and cancelled bookings."""

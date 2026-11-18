@@ -37,15 +37,6 @@
             {% endfor %}
         </span>
         {% endif %}
-        {% if booking.student %}
-        <a href="{% url 'chat:start_conversation' booking.student.username %}"
-            class="btn btn-sm btn-outline-primary btn-message-counterpart d-inline-flex align-items-center gap-1 text-decoration-none"
-            title="Message"
-            aria-label="Message">
-            <i class="bi bi-chat-dots"></i>
-            <span>Message</span>
-        </a>
-        {% endif %}
         {% else %}
         <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
         {% if booking.is_awaiting_resolution %}
@@ -59,15 +50,6 @@
         </span>
         {% else %}
         <span class="badge-leave-review">Leave Review</span>
-        {% endif %}
-        {% if booking.teacher and booking.teacher.user %}
-        <a href="{% url 'chat:start_conversation' booking.teacher.user.username %}"
-            class="btn btn-sm btn-outline-primary btn-message-counterpart d-inline-flex align-items-center gap-1 text-decoration-none"
-            title="Message"
-            aria-label="Message">
-            <i class="bi bi-chat-dots"></i>
-            <span>Message</span>
-        </a>
         {% endif %}
         {% endif %}
     </div>
