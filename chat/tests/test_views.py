@@ -295,6 +295,16 @@ class ChatViewsIntegrationTests(TestCase):
         conv.refresh_from_db()
         self.assertEqual(conv.teacher_last_read_message_id, msg2.id)
 
+    def test_conversation_detail_renders_autofocused_composer(self):
+        conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
+        url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv.id})
+        self.client.force_login(self.student)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="chatInput"')
+        self.assertContains(response, "autofocus")
+        self.assertContains(response, "input.focus();")
+
     def test_conversation_detail_renders_linkified_text(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
         send_message(
