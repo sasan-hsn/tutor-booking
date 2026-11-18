@@ -13,6 +13,7 @@
                 <th>Lesson Status</th>
                 <th>Previous Lesson</th>
                 <th>Next Lesson</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -32,6 +33,12 @@
                 </td>
                 <td>{{ student.previous_booking.teacher_local_start|date:"M d, Y"|default:"—" }}</td>
                 <td>{{ student.next_booking.teacher_local_start|date:"M d, Y"|default:"—" }}</td>
+                <td>
+                    <a href="{% url 'chat:start_conversation' student.username %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Message Student" aria-label="Message Student">
+                        <i class="bi bi-chat-dots"></i>
+                        <span>Message Student</span>
+                    </a>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

@@ -7,7 +7,7 @@ app_name = "chat"
 urlpatterns = [
     path("", views.inbox_view, name="inbox"),
     path(
-        "with/<str:teacher_username>/",
+        "with/<str:username>/",
         views.start_conversation,
         name="start_conversation",
     ),
