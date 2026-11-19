@@ -12,17 +12,17 @@ Deliver a cohesive, tenant-scoped navigation and inbox experience tailored to th
 2. **Role-Aware Inbox Experience**:
    - For students (who only ever interact with their single workspace teacher), routing directly into the full-width conversation thread, eliminating redundant list selection.
    - For teachers (who interact with many students), providing a responsive two-pane split-view on desktop (conversation list on the left, active timeline or selection placeholder on the right) with clean single-column drill-down on mobile.
-3. **Prospective Student Dashboard Lifecycle**: Surface a targeted onboarding inquiry card on the student dashboard for learners with zero lifetime bookings, adapting into an active conversation preview once a thread exists, and retiring once their first lesson is booked.
+3. **Prospective Student Inquiry Entry Points**: Support starting/opening conversations with the teacher directly from the Messages flow for learners without active threads, coupled with an inviting empty state inside the conversation timeline to guide their first question, keeping `student_dashboard.html` clean and uncluttered.
 4. **Contextual Booking Shortcuts**: Place a direct message action trigger inside the lesson detail modal for both student and teacher roles, deep-linking directly to their thread, while keeping upcoming and past lesson cards clean and uncluttered.
 5. **Teacher Roster Action Shortcut**: Provide a direct message action trigger in the teacher's student management table for every enrolled student.
 6. **Live Multi-Thread Coordination**: Keep the teacher's inbox list synchronized in real time via the notification stream, dynamically reordering conversations, updating message snippets, and refreshing unread badges without full page reloads.
 
 ## User Stories
 
-1. As a prospective student who just registered in a teacher's workspace, I want to see a clear message prompt on my dashboard before booking any lesson, so that I can ask the teacher about their curriculum, schedule, or language level.
-2. As a prospective student with zero lifetime bookings who has not yet messaged the teacher, I want an onboarding card on my dashboard that invites me to message my teacher, so that I feel welcomed and know where to get answers.
-3. As a prospective student who has already exchanged messages with the teacher but has not yet booked, I want the dashboard card to display an active conversation preview with the latest message snippet, so that I can easily resume our discussion.
-4. As an enrolled student who has booked at least one lesson, I want the introductory inquiry card hidden from my dashboard, so that my dashboard focuses cleanly on upcoming lessons and booking management.
+1. As a prospective student who just registered in a teacher's workspace, I want a clean and uncluttered student dashboard focused on upcoming and past lessons, with messaging accessible via dedicated message flows.
+2. As a prospective student with zero conversations started, I want an inviting prompt on `/messages/` that invites me to message my teacher, so that I feel welcomed and know where to get answers before booking.
+3. As a prospective student opening an empty conversation timeline, I want to see clear guidance encouraging me to send my first question before booking.
+4. As an enrolled student who has booked lessons, I want the dashboard to remain clean and focused on lesson management without intrusive inquiry banners.
 5. As an authenticated student navigating to the messages area via the sidebar or topbar, I want to be taken directly into my conversation with my teacher, so that I do not have to click through a redundant one-item conversation list.
 6. As an authenticated student with zero messages sent, I want to see an inviting empty state in my direct conversation view, so that I understand I can type a message to start our discussion.
 7. As an enrolled student viewing upcoming or past lessons on my dashboard, I want dashboard cards to remain clean and uncluttered, with direct communication accessible via the lesson detail modal.
@@ -61,13 +61,10 @@ Deliver a cohesive, tenant-scoped navigation and inbox experience tailored to th
     - The conversation detail URL renders only the full-width timeline, presenting a back navigation link in the top bar leading back to the conversation list.
   - Conversation selection in the desktop list uses standard server-rendered anchor links to guarantee robust history, bookmarking, and link sharing without single-page application router complexity.
 
-- **Student Dashboard Prospective Inquiry Component**:
-  - The student dashboard view logic will evaluate lifetime booking count (`lifetime_bookings = completed_bookings + upcoming_bookings + pending_bookings`).
-  - If `lifetime_bookings == 0`:
-    - Check if a conversation between student and teacher already exists and contains at least one message.
-    - If no thread exists: Render an introductory inquiry card with headline, encouraging copy, and a primary action button linking to the initiation endpoint for the workspace teacher.
-    - If an active thread exists: Render an inquiry progress card displaying the counterpart name, relative timestamp of last activity, last message snippet, and an action button to open the message thread.
-  - If `lifetime_bookings > 0`: Suppress the inquiry card entirely.
+- **Prospective Student Messages Flow & Empty State**:
+  - In `inbox_view` (`/messages/`): When a student has no existing conversations, the view resolves the tenant teacher and renders an inviting empty state prompting the student with *"Have questions before booking?"* and providing an action CTA linking to `/messages/with/<teacher_username>/`.
+  - When a student navigates to an empty conversation timeline (`/messages/<conversation_id>/`), the timeline renders an inviting empty state encouraging them to ask their first question before booking.
+  - Keeps `student_dashboard.html` clean and uncluttered without multi-state inquiry cards.
 
 - **Lesson Detail Modal Action Integration**:
   - Following UI/UX refinement to keep dashboard cards clean and uncluttered, the booking message shortcut lives exclusively inside the lesson detail modal.
@@ -90,7 +87,7 @@ Deliver a cohesive, tenant-scoped navigation and inbox experience tailored to th
 - **Modules to Test**:
   - **Initiation Endpoint**: Test student-to-teacher initiation, teacher-to-student initiation, student-to-student prohibition (403), unverified email gating (403), self-messaging prevention, and non-existent counterpart handling (404).
   - **Role-Aware Inbox Routing**: Test that students accessing `/messages/` receive the direct single-pane view, and teachers accessing `/messages/` receive the split-view inbox with selection placeholder.
-  - **Dashboard Prospective Card**: Test that a newly created student with 0 bookings sees the introductory prompt; that sending a message transforms the card into an active thread preview; and that creating a confirmed booking hides the card completely.
+  - **Prospective Student Inquiry Flow**: Test that a student without an existing conversation visiting `/messages/` sees the prompt and action link to start a conversation with the teacher; that `GET /messages/with/<teacher_username>/` idempotently resolves/creates the conversation and redirects to the conversation timeline; and that `GET /messages/<conversation_id>/` renders the inviting empty state guidance for prospective students.
   - **Lesson Detail Modal Links & Clean Cards**: Test that rendered upcoming/past lesson cards do not render message buttons (preserving clean cards), and verify that the lesson detail modal contains the message action button with valid reverse URLs across roles and lesson states.
   - **Teacher Student Management**: Test that the roster table renders the message shortcut link for enrolled students.
   - **Real-Time Notification Payload**: Test that submitting a message broadcasts the enhanced metadata dictionary over the recipient's notification group.

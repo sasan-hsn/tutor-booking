@@ -259,8 +259,17 @@
         <div class="chat-timeline" id="chatTimeline">
             {% if not messages %}
             <div class="chat-empty-state" id="chatEmptyState">
-                <i class="bi bi-chat-dots fs-1 d-block mb-2"></i>
-                <p class="mb-0">No messages yet. Say hello to start the conversation!</p>
+                <i class="bi bi-chat-dots fs-1 d-block mb-2 text-secondary"></i>
+                {% if is_prospective_student %}
+                <h5 class="fw-semibold text-secondary mb-1">Have questions before booking?</h5>
+                <p class="text-muted mb-0">Send your first message below to ask about lessons, schedule, or anything else!</p>
+                {% elif is_student %}
+                <h5 class="fw-semibold text-secondary mb-1">Start the conversation</h5>
+                <p class="text-muted mb-0">Send a message below to get in touch with {{ counterpart.get_full_name|default:counterpart.username }}.</p>
+                {% else %}
+                <h5 class="fw-semibold text-secondary mb-1">No messages yet</h5>
+                <p class="text-muted mb-0">Say hello to start the conversation!</p>
+                {% endif %}
             </div>
             {% else %}
                 {% for message in messages %}
