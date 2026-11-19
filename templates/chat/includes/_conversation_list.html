@@ -1,0 +1,43 @@
+{% load humanize avatar_tags %}
+{% if not conversations %}
+<div class="inbox-empty-state text-center py-5 px-3 text-secondary">
+    <i class="bi bi-chat-square-dots fs-1 d-block mb-3 text-muted"></i>
+    <h6 class="fw-semibold text-secondary">No conversations yet</h6>
+    <p class="small text-muted mb-0">When your students send messages or bookings occur, your conversations will appear here.</p>
+</div>
+{% else %}
+<ul class="inbox-list list-unstyled m-0 p-0" id="inboxList">
+    {% for item in conversations %}
+    <li class="inbox-list-item">
+        <a href="{% url 'chat:conversation_detail' conversation_id=item.conversation.id %}"
+           class="inbox-item d-flex align-items-center gap-3 p-3 text-decoration-none {% if active_conversation and active_conversation.id == item.conversation.id %}active{% endif %} {% if item.unread_count > 0 %}has-unread{% endif %}"
+           data-conversation-id="{{ item.conversation.id }}">
+            <div class="inbox-avatar-container flex-shrink-0">
+                {% user_avatar item.counterpart 48 %}
+            </div>
+            <div class="inbox-content flex-grow-1 min-w-0">
+                <div class="inbox-title-row d-flex justify-content-between align-items-baseline mb-1">
+                    <h6 class="inbox-counterpart-name mb-0 text-truncate fw-semibold">
+                        {{ item.counterpart.get_full_name|default:item.counterpart.username }}
+                        <span class="badge bg-light text-secondary border ms-1 fw-normal text-capitalize small">{{ item.counterpart.role }}</span>
+                    </h6>
+                    <span class="inbox-time small text-muted text-nowrap ms-2" title="{{ item.local_last_message_at|date:'M d, Y H:i' }}">
+                        {{ item.conversation.last_message_at|naturaltime }}
+                    </span>
+                </div>
+                <div class="inbox-preview-row d-flex justify-content-between align-items-center gap-2">
+                    <p class="inbox-snippet mb-0 small text-muted text-truncate">
+                        {{ item.conversation.last_message_snippet|default:"No message text" }}
+                    </p>
+                    {% if item.unread_count > 0 %}
+                    <span class="badge rounded-pill bg-primary ms-auto" aria-label="{{ item.unread_count }} unread messages">
+                        {{ item.unread_count }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

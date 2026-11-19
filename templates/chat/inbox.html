@@ -6,17 +6,53 @@
 {% block extra_css %}
 {{ block.super }}
 <style>
-.inbox-card {
+.chat-split-layout {
+    display: flex;
+    height: calc(100vh - 120px);
+    max-height: 850px;
     background: #ffffff;
     border-radius: 12px;
     border: 1px solid rgba(0, 0, 0, 0.08);
     overflow: hidden;
 }
 
+.chat-split-sidebar {
+    width: 360px;
+    min-width: 300px;
+    max-width: 420px;
+    flex-shrink: 0;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+@media (max-width: 767.98px) {
+    .chat-split-sidebar {
+        width: 100%;
+        max-width: 100%;
+        border-right: none;
+    }
+}
+
 .inbox-header {
     padding: 1.25rem 1.5rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     background: #fafbfc;
+}
+
+.chat-split-sidebar-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+}
+
+.chat-split-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
 }
 
 .inbox-list {
@@ -26,18 +62,9 @@
 }
 
 .inbox-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-    text-decoration: none;
     color: inherit;
     transition: background-color 0.15s ease-in-out;
-}
-
-.inbox-item:last-child {
-    border-bottom: none;
 }
 
 .inbox-item:hover, .inbox-item:focus {
@@ -45,49 +72,9 @@
     color: inherit;
 }
 
-.inbox-avatar-container {
-    flex-shrink: 0;
-}
-
-.inbox-content {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.inbox-title-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 0.25rem;
-}
-
-.inbox-counterpart-name {
-    font-weight: 600;
-    font-size: 1rem;
-    color: #1e293b;
-    margin: 0;
-}
-
-.inbox-time {
-    font-size: 0.8rem;
-    color: #64748b;
-    white-space: nowrap;
-}
-
-.inbox-preview-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.inbox-snippet {
-    margin: 0;
-    font-size: 0.875rem;
-    color: #64748b;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.inbox-item.active {
+    background-color: #f1f5f9;
+    border-inline-start: 3px solid var(--primary-blue, #1e3a8a);
 }
 
 .inbox-item.has-unread .inbox-counterpart-name {
@@ -100,79 +87,36 @@
     color: #1e293b;
 }
 
-.inbox-empty-state {
-    padding: 4rem 1.5rem;
+.chat-placeholder-pane {
+    padding: 4rem 2rem;
     text-align: center;
-    color: #94a3b8;
+    color: #64748b;
+    height: 100%;
 }
 </style>
 {% endblock %}
 
 {% block page_content %}
-<div class="container-fluid px-0 px-md-3 py-2">
-    <div class="inbox-card shadow-sm">
-        <div class="inbox-header d-flex align-items-center justify-content-between">
-            <h4 class="mb-0 fw-bold">Conversations</h4>
-            {% if user.role == 'student' and teacher and conversations %}
-            <a href="{% url 'chat:start_conversation' username=teacher.user.username %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1">
-                <i class="bi bi-chat-dots"></i> Message Teacher
-            </a>
-            {% endif %}
-        </div>
+<div class="chat-split-container container-fluid px-0 px-md-3 py-2">
+    <div class="chat-split-layout shadow-sm">
+        <!-- Left Pane: Scrollable Conversation List -->
+        <aside class="chat-split-sidebar" aria-label="Conversations List">
+            <div class="inbox-header d-flex align-items-center justify-content-between">
+                <h5 class="mb-0 fw-bold">Conversations</h5>
+            </div>
+            <div class="chat-split-sidebar-body">
+                {% include "chat/includes/_conversation_list.html" %}
+            </div>
+        </aside>
 
-        {% if not conversations %}
-        <div class="inbox-empty-state">
-            <i class="bi bi-chat-square-dots fs-1 d-block mb-3 text-secondary"></i>
-            {% if user.role == 'student' and teacher %}
-                {% if is_prospective_student %}
-                <h5 class="fw-semibold text-secondary">Have questions before booking?</h5>
-                <p class="mb-3 text-muted">Reach out to {{ teacher.user.get_full_name|default:teacher.user.username }} to ask questions about lessons, schedule, or your learning goals.</p>
-                {% else %}
-                <h5 class="fw-semibold text-secondary">No conversations yet</h5>
-                <p class="mb-3 text-muted">Start a conversation with {{ teacher.user.get_full_name|default:teacher.user.username }} to discuss your lessons.</p>
-                {% endif %}
-                <a href="{% url 'chat:start_conversation' username=teacher.user.username %}" class="btn btn-primary d-inline-flex align-items-center gap-2" id="startConversationBtn">
-                    <i class="bi bi-chat-dots"></i> Message {{ teacher.user.first_name|default:teacher.user.username }}
-                </a>
-            {% else %}
-            <h5 class="fw-semibold text-secondary">No conversations yet</h5>
-            <p class="mb-0">When you message or receive messages from {% if user.role == 'student' %}a teacher{% else %}your students{% endif %}, your conversations will appear here.</p>
-            {% endif %}
-        </div>
-        {% else %}
-        <ul class="inbox-list" id="inboxList">
-            {% for item in conversations %}
-            <li>
-                <a href="{% url 'chat:conversation_detail' conversation_id=item.conversation.id %}" class="inbox-item {% if item.unread_count > 0 %}has-unread{% endif %}" data-conversation-id="{{ item.conversation.id }}">
-                    <div class="inbox-avatar-container">
-                        {% user_avatar item.counterpart 48 %}
-                    </div>
-                    <div class="inbox-content">
-                        <div class="inbox-title-row">
-                            <h6 class="inbox-counterpart-name">
-                                {{ item.counterpart.get_full_name|default:item.counterpart.username }}
-                                <span class="badge bg-light text-secondary border ms-1 fw-normal text-capitalize small">{{ item.counterpart.role }}</span>
-                            </h6>
-                            <span class="inbox-time" title="{{ item.local_last_message_at|date:'M d, Y H:i' }}">
-                                {{ item.conversation.last_message_at|naturaltime }}
-                            </span>
-                        </div>
-                        <div class="inbox-preview-row">
-                            <p class="inbox-snippet">
-                                {{ item.conversation.last_message_snippet|default:"No message text" }}
-                            </p>
-                            {% if item.unread_count > 0 %}
-                            <span class="badge rounded-pill bg-primary ms-auto" aria-label="{{ item.unread_count }} unread messages">
-                                {{ item.unread_count }}
-                            </span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </a>
-            </li>
-            {% endfor %}
-        </ul>
-        {% endif %}
+        <!-- Right Pane: Desktop Selection Placeholder (hidden on mobile) -->
+        <main class="chat-split-main d-none d-md-flex align-items-center justify-content-center" aria-label="Active Conversation">
+            <div class="chat-placeholder-pane d-flex flex-column align-items-center justify-content-center">
+                <i class="bi bi-chat-square-text fs-1 text-secondary mb-3"></i>
+                <h5 class="fw-semibold text-secondary">Select a conversation to start messaging</h5>
+                <p class="text-muted small mb-0">Choose a student from the list to view your conversation history and send messages.</p>
+            </div>
+        </main>
     </div>
 </div>
 {% endblock %}

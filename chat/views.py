@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -22,11 +21,7 @@ from .services import (
     get_or_create_conversation,
     send_message,
 )
-from .utils import (
-    check_chat_rate_limit,
-    linkify_message_text,
-    record_chat_message,
-)
+from .utils import check_chat_rate_limit, linkify_message_text, record_chat_message
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -46,24 +41,21 @@ def serialize_message(message: Message) -> dict:
     }
 
 
-@login_required
-@require_GET
-def inbox_view(request):
+def _get_teacher_inbox_items(teacher_user):
     """
-    Dedicated Conversation Inbox displaying all active conversations for the current user,
-    ordered by last_message_at DESC. Uninitiated conversations (last_message_at is null)
-    are omitted.
+    Helper to fetch and format active conversations for a teacher's split-view inbox list,
+    ordered by last_message_at DESC. Uninitiated conversations are omitted.
     """
     conversations = (
         Conversation.objects.filter(
-            Q(student=request.user) | Q(teacher=request.user),
+            teacher=teacher_user,
             last_message_at__isnull=False,
         )
         .select_related("student", "teacher")
         .order_by("-last_message_at")
     )
 
-    user_tz_name = getattr(request.user, "timezone", "UTC") or "UTC"
+    user_tz_name = getattr(teacher_user, "timezone", "UTC") or "UTC"
     try:
         user_tz = ZoneInfo(user_tz_name)
     except Exception:
@@ -71,8 +63,8 @@ def inbox_view(request):
 
     inbox_items = []
     for conv in conversations:
-        counterpart = conv.get_counterpart(request.user)
-        unread_count = conv.get_unread_count(request.user)
+        counterpart = conv.get_counterpart(teacher_user)
+        unread_count = conv.get_unread_count(teacher_user)
         local_last_message_at = None
         if conv.last_message_at:
             local_last_message_at = timezone.localtime(
@@ -87,16 +79,53 @@ def inbox_view(request):
                 "local_last_message_at": local_last_message_at,
             }
         )
+    return inbox_items
 
-    teacher = None
-    is_prospective_student = False
-    if request.user.role == User.Role.STUDENT:
-        teacher = (
-            TeacherProfile.objects.filter(user__is_active=True)
-            .select_related("user")
-            .first()
+
+def _render_conversation_detail(request, conversation):
+    """
+    Shared renderer for conversation timeline.
+    - If student: renders full-width single-pane timeline.
+    - If teacher: renders 2-pane split-view with active conversation highlighted in left list.
+    Advances the viewer's read watermark for this thread.
+    """
+    counterpart = conversation.get_counterpart(request.user)
+
+    messages = list(conversation.messages.select_related("sender").order_by("-id")[:30])
+    messages.reverse()
+
+    if messages:
+        latest_message = messages[-1]
+        advance_watermark(conversation, request.user, latest_message.id)
+    else:
+        clear_digest_debounce_flag(request.user.id, conversation.id)
+
+    is_student = request.user.role == User.Role.STUDENT
+    counterpart_watermark = conversation.get_last_read_message_id(counterpart)
+
+    oldest_initial_id = messages[0].id if messages else 0
+    has_more_history = (
+        conversation.messages.filter(id__lt=oldest_initial_id).exists()
+        if oldest_initial_id
+        else False
+    )
+
+    now = timezone.now()
+    upcoming_booking = (
+        Booking.objects.filter(
+            student=conversation.student,
+            teacher__user=conversation.teacher,
+            status__in=[Booking.Status.CONFIRMED, Booking.Status.PENDING],
+            end_at__gte=now,
         )
-        is_prospective_student = not Booking.objects.filter(
+        .select_related("teacher", "teacher__user", "student")
+        .order_by("start_at")
+        .first()
+    )
+
+    is_prospective_student = (
+        is_student
+        and not Booking.objects.filter(
             student=request.user,
             status__in=[
                 Booking.Status.CONFIRMED,
@@ -104,11 +133,76 @@ def inbox_view(request):
                 Booking.Status.COMPLETED,
             ],
         ).exists()
+    )
+
+    conversations = []
+    if not is_student:
+        conversations = _get_teacher_inbox_items(request.user)
 
     context = {
-        "conversations": inbox_items,
-        "teacher": teacher,
+        "conversation": conversation,
+        "counterpart": counterpart,
+        "counterpart_watermark": counterpart_watermark,
+        "messages": messages,
+        "is_student": is_student,
         "is_prospective_student": is_prospective_student,
+        "is_email_verified": request.user.is_email_verified,
+        "has_more_history": has_more_history,
+        "upcoming_booking": upcoming_booking,
+        "conversations": conversations,
+        "active_conversation": conversation,
+    }
+    return render(request, "chat/conversation_detail.html", context)
+
+
+@login_required
+@require_GET
+def inbox_view(request):
+    """
+    Role-aware Conversation Inbox dispatcher:
+    - For Students: Directly resolves the conversation with the workspace teacher
+      (idempotently creating it if needed, gated by email verification) and renders
+      the full-width single-pane conversation view.
+    - For Teachers: Renders the 2-pane split-view inbox with the left conversation list
+      and the right placeholder prompt ("Select a conversation to start messaging").
+      Does NOT advance read watermarks for any conversation.
+    """
+    if request.user.role == User.Role.STUDENT:
+        teacher_profile = (
+            TeacherProfile.objects.filter(user__is_active=True)
+            .select_related("user")
+            .first()
+        )
+        if not teacher_profile:
+            return render(request, "chat/inbox.html", {"conversations": []})
+
+        teacher_user = teacher_profile.user
+        conversation = Conversation.objects.filter(
+            student=request.user,
+            teacher=teacher_user,
+        ).first()
+
+        if not conversation:
+            if not request.user.is_email_verified:
+                return render(
+                    request,
+                    "chat/unverified_prompt.html",
+                    {"teacher_username": teacher_user.username},
+                    status=403,
+                )
+            conversation, _ = get_or_create_conversation(
+                student=request.user,
+                teacher=teacher_user,
+            )
+
+        return _render_conversation_detail(request, conversation)
+
+    # Teacher view:
+    inbox_items = _get_teacher_inbox_items(request.user)
+    context = {
+        "conversations": inbox_items,
+        "is_teacher": True,
+        "active_conversation": None,
     }
     return render(request, "chat/inbox.html", context)
 
@@ -178,7 +272,9 @@ def conversation_detail(request, conversation_id):
     """
     Displays the conversation timeline between student and teacher.
     Restricted to conversation participants.
-    Advances the viewer's read watermark.
+    Advances the viewer's read watermark for this thread.
+    - If student: renders full-width single-pane timeline.
+    - If teacher: renders 2-pane split-view with active thread in right pane and highlighted in left list.
     """
     conversation = get_object_or_404(
         Conversation.objects.select_related("student", "teacher"),
@@ -188,64 +284,7 @@ def conversation_detail(request, conversation_id):
     if request.user not in (conversation.student, conversation.teacher):
         raise Http404("Conversation not found.")
 
-    counterpart = conversation.get_counterpart(request.user)
-
-    messages = list(conversation.messages.select_related("sender").order_by("-id")[:30])
-    messages.reverse()
-
-    if messages:
-        latest_message = messages[-1]
-        advance_watermark(conversation, request.user, latest_message.id)
-    else:
-        clear_digest_debounce_flag(request.user.id, conversation.id)
-
-    is_student = request.user.role == "student"
-    counterpart_watermark = conversation.get_last_read_message_id(counterpart)
-
-    oldest_initial_id = messages[0].id if messages else 0
-    has_more_history = (
-        conversation.messages.filter(id__lt=oldest_initial_id).exists()
-        if oldest_initial_id
-        else False
-    )
-
-    now = timezone.now()
-    upcoming_booking = (
-        Booking.objects.filter(
-            student=conversation.student,
-            teacher__user=conversation.teacher,
-            status__in=[Booking.Status.CONFIRMED, Booking.Status.PENDING],
-            end_at__gte=now,
-        )
-        .select_related("teacher", "teacher__user", "student")
-        .order_by("start_at")
-        .first()
-    )
-
-    is_prospective_student = (
-        is_student
-        and not Booking.objects.filter(
-            student=request.user,
-            status__in=[
-                Booking.Status.CONFIRMED,
-                Booking.Status.PENDING,
-                Booking.Status.COMPLETED,
-            ],
-        ).exists()
-    )
-
-    context = {
-        "conversation": conversation,
-        "counterpart": counterpart,
-        "counterpart_watermark": counterpart_watermark,
-        "messages": messages,
-        "is_student": is_student,
-        "is_prospective_student": is_prospective_student,
-        "is_email_verified": request.user.is_email_verified,
-        "has_more_history": has_more_history,
-        "upcoming_booking": upcoming_booking,
-    }
-    return render(request, "chat/conversation_detail.html", context)
+    return _render_conversation_detail(request, conversation)
 
 
 @login_required

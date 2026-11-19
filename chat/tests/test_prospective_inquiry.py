@@ -39,31 +39,26 @@ class ProspectiveStudentInquiryTests(TestCase):
     def tearDown(self):
         cache.clear()
 
-    # --- Seam 1: Messages Entry / Start Conversation Seam ---
+    # --- Seam 1: Messages Entry / Direct Single-Pane Seam ---
 
-    def test_student_without_conversation_sees_start_conversation_prompt(self):
+    def test_student_without_conversation_renders_empty_timeline_with_inquiry_guidance(
+        self,
+    ):
         """
         A prospective student without an existing conversation visiting /messages/
-        sees an inviting prompt and action button linking to /messages/with/<teacher_username>/.
+        is directly routed to their single-pane conversation view with #274 inviting guidance.
         """
         self.client.force_login(self.student)
         response = self.client.get(reverse("chat:inbox"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "chat/inbox.html")
+        self.assertTemplateUsed(response, "chat/conversation_detail.html")
+        self.assertTrue(response.context.get("is_prospective_student"))
 
-        # Context contains the workspace teacher
-        self.assertEqual(response.context.get("teacher"), self.teacher_profile)
-
-        # Renders the prompt inviting conversation before booking
+        # Renders the prompt inviting conversation before booking inside the timeline
+        self.assertContains(response, 'id="chatEmptyState"')
         self.assertContains(response, "Have questions before booking?")
-
-        # Renders action button linking to conversation initiation endpoint
-        expected_url = reverse(
-            "chat:start_conversation",
-            kwargs={"username": self.teacher_user.username},
-        )
-        self.assertContains(response, f'href="{expected_url}"')
+        self.assertContains(response, "Send your first message below")
 
     # --- Seam 2: Initiation Redirect Seam ---
 
@@ -171,11 +166,12 @@ class ProspectiveStudentInquiryTests(TestCase):
         self.assertContains(response, 'id="chatEmptyState"')
         self.assertContains(response, "Say hello to start the conversation!")
 
-    def test_student_inbox_with_active_conversation_renders_list_and_header_shortcut(
+    def test_student_inbox_with_active_conversation_renders_direct_timeline(
         self,
     ):
         """
-        When a conversation has messages, the inbox lists the thread and provides the header shortcut.
+        When a conversation has messages, the student visiting /messages/ directly
+        receives the single-pane conversation timeline with the message.
         """
         conversation, _ = get_or_create_conversation(
             student=self.student,
@@ -191,8 +187,8 @@ class ProspectiveStudentInquiryTests(TestCase):
         response = self.client.get(reverse("chat:inbox"))
 
         self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "chat/conversation_detail.html")
         self.assertContains(response, "Hi Jane, what is your schedule?")
-        self.assertContains(response, "Message Teacher")
 
     def test_enrolled_student_sees_enrolled_empty_state_copy(self):
         """
