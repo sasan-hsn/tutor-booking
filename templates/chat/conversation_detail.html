@@ -311,7 +311,9 @@
                     </div>
                     <div>
                         <h6 class="mb-0 fw-bold">{{ counterpart.get_full_name|default:counterpart.username }}</h6>
+                        {% if is_student %}
                         <small class="text-muted text-capitalize">{{ counterpart.role }}</small>
+                        {% endif %}
                     </div>
                 </div>
             </div>

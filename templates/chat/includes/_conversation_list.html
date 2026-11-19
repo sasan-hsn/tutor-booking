@@ -19,7 +19,6 @@
                 <div class="inbox-title-row d-flex justify-content-between align-items-baseline mb-1" style="min-width: 0;">
                     <h6 class="inbox-counterpart-name mb-0 text-truncate fw-semibold flex-grow-1" style="min-width: 0;">
                         {{ item.counterpart.get_full_name|default:item.counterpart.username }}
-                        <span class="badge bg-light text-secondary border ms-1 fw-normal text-capitalize small flex-shrink-0">{{ item.counterpart.role }}</span>
                     </h6>
                     <span class="inbox-time small text-muted text-nowrap ms-2 flex-shrink-0" title="{{ item.local_last_message_at|date:'M d, Y H:i' }}">
                         {{ item.conversation.last_message_at|naturaltime }}
