@@ -13,6 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from accounts.rate_limiting import get_client_ip
 from booking.models import Booking
+from portfolio.models import TeacherProfile
 
 from .models import Conversation, Message
 from .services import (
@@ -87,8 +88,27 @@ def inbox_view(request):
             }
         )
 
+    teacher = None
+    is_prospective_student = False
+    if request.user.role == User.Role.STUDENT:
+        teacher = (
+            TeacherProfile.objects.filter(user__is_active=True)
+            .select_related("user")
+            .first()
+        )
+        is_prospective_student = not Booking.objects.filter(
+            student=request.user,
+            status__in=[
+                Booking.Status.CONFIRMED,
+                Booking.Status.PENDING,
+                Booking.Status.COMPLETED,
+            ],
+        ).exists()
+
     context = {
         "conversations": inbox_items,
+        "teacher": teacher,
+        "is_prospective_student": is_prospective_student,
     }
     return render(request, "chat/inbox.html", context)
 
@@ -202,12 +222,25 @@ def conversation_detail(request, conversation_id):
         .first()
     )
 
+    is_prospective_student = (
+        is_student
+        and not Booking.objects.filter(
+            student=request.user,
+            status__in=[
+                Booking.Status.CONFIRMED,
+                Booking.Status.PENDING,
+                Booking.Status.COMPLETED,
+            ],
+        ).exists()
+    )
+
     context = {
         "conversation": conversation,
         "counterpart": counterpart,
         "counterpart_watermark": counterpart_watermark,
         "messages": messages,
         "is_student": is_student,
+        "is_prospective_student": is_prospective_student,
         "is_email_verified": request.user.is_email_verified,
         "has_more_history": has_more_history,
         "upcoming_booking": upcoming_booking,

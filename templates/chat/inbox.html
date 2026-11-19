@@ -113,13 +113,31 @@
     <div class="inbox-card shadow-sm">
         <div class="inbox-header d-flex align-items-center justify-content-between">
             <h4 class="mb-0 fw-bold">Conversations</h4>
+            {% if user.role == 'student' and teacher and conversations %}
+            <a href="{% url 'chat:start_conversation' username=teacher.user.username %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1">
+                <i class="bi bi-chat-dots"></i> Message Teacher
+            </a>
+            {% endif %}
         </div>
 
         {% if not conversations %}
         <div class="inbox-empty-state">
-            <i class="bi bi-chat-square-dots fs-1 d-block mb-3"></i>
+            <i class="bi bi-chat-square-dots fs-1 d-block mb-3 text-secondary"></i>
+            {% if user.role == 'student' and teacher %}
+                {% if is_prospective_student %}
+                <h5 class="fw-semibold text-secondary">Have questions before booking?</h5>
+                <p class="mb-3 text-muted">Reach out to {{ teacher.user.get_full_name|default:teacher.user.username }} to ask questions about lessons, schedule, or your learning goals.</p>
+                {% else %}
+                <h5 class="fw-semibold text-secondary">No conversations yet</h5>
+                <p class="mb-3 text-muted">Start a conversation with {{ teacher.user.get_full_name|default:teacher.user.username }} to discuss your lessons.</p>
+                {% endif %}
+                <a href="{% url 'chat:start_conversation' username=teacher.user.username %}" class="btn btn-primary d-inline-flex align-items-center gap-2" id="startConversationBtn">
+                    <i class="bi bi-chat-dots"></i> Message {{ teacher.user.first_name|default:teacher.user.username }}
+                </a>
+            {% else %}
             <h5 class="fw-semibold text-secondary">No conversations yet</h5>
             <p class="mb-0">When you message or receive messages from {% if user.role == 'student' %}a teacher{% else %}your students{% endif %}, your conversations will appear here.</p>
+            {% endif %}
         </div>
         {% else %}
         <ul class="inbox-list" id="inboxList">

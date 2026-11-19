@@ -17,10 +17,9 @@ Following the core implementation of the `chat` engine (ADR 0008), the messaging
    - **For Students**: Because each student belongs to an isolated teacher workspace and only ever communicates with that single teacher, `/messages/` bypasses the redundant 1-item conversation list and renders the full-width single-pane chat view directly.
 2. **Public Landing Page Boundary**:
    - The public landing page remains dedicated to teacher presentation and booking/signup CTAs; no chat widgets or landing page message triggers exist.
-3. **Student Dashboard Entry Point Lifecycle**:
-   - For students with zero lifetime bookings (`lifetime_bookings == 0`), the dashboard displays a prominent introductory card (*"Have questions before booking? Message Teacher"*) linking to `/messages/with/<teacher_username>/`.
-   - If an introductory inquiry is already underway, the card adapts to display an active inquiry preview (*"Continue conversation with Teacher"*).
-   - Once the student books their first lesson (`lifetime_bookings > 0`), the card is retired in favor of standard booking management.
+3. **Student Dashboard & Prospective Inquiry Entry Points**:
+   - *Initial Concept*: Proposed a multi-state inquiry card on `student_dashboard.html` across onboarding, active, and retired lifecycle states.
+   - *Decision & Simplification*: To keep `student_dashboard.html` clean and uncluttered (matching the modal-only booking shortcut decision in section 4), prospective inquiry cards are omitted from the dashboard. Instead, prospective students without an existing conversation initiate inquiries directly from the dedicated Messages flow (`/messages/`) via a clear action prompt (*"Have questions before booking? Message Teacher"*) linking to `/messages/with/<teacher_username>/`, and an inviting empty state inside the conversation timeline provides guidance to send their first question before booking.
 4. **Booking-Anchored Entry Points**:
    - To keep dashboard upcoming and past lesson cards clean and uncluttered, booking-level message shortcuts live exclusively inside the Lesson Detail modal. The modal features a secondary "Message" action button (`bi-chat-dots`) linking via `{% url 'chat:start_conversation' counterpart.username %}`, landing at the bottom of the timeline with the composer focused.
 5. **Bidirectional Initiation & Teacher Roster**:
