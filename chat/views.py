@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db.models import F, Q
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -41,18 +42,23 @@ def serialize_message(message: Message) -> dict:
     }
 
 
-def _get_teacher_inbox_items(teacher_user):
+def _get_teacher_inbox_items(teacher_user, active_conversation=None):
     """
     Helper to fetch and format active conversations for a teacher's split-view inbox list,
-    ordered by last_message_at DESC. Uninitiated conversations are omitted.
+    ordered by last_message_at DESC. If an active conversation is open (even if uninitiated),
+    it is included in the list so it can be highlighted.
     """
-    conversations = (
-        Conversation.objects.filter(
-            teacher=teacher_user,
-            last_message_at__isnull=False,
+    if active_conversation:
+        query = Q(teacher=teacher_user) & (
+            Q(last_message_at__isnull=False) | Q(id=active_conversation.id)
         )
+    else:
+        query = Q(teacher=teacher_user, last_message_at__isnull=False)
+
+    conversations = (
+        Conversation.objects.filter(query)
         .select_related("student", "teacher")
-        .order_by("-last_message_at")
+        .order_by(F("last_message_at").desc(nulls_first=True), "-updated_at")
     )
 
     user_tz_name = getattr(teacher_user, "timezone", "UTC") or "UTC"
@@ -87,7 +93,7 @@ def _render_conversation_detail(request, conversation):
     Shared renderer for conversation timeline.
     - If student: renders full-width single-pane timeline.
     - If teacher: renders 2-pane split-view with active conversation highlighted in left list.
-    Advances the viewer's read watermark for this thread.
+    Advances the viewer's read watermark for this conversation.
     """
     counterpart = conversation.get_counterpart(request.user)
 
@@ -137,7 +143,9 @@ def _render_conversation_detail(request, conversation):
 
     conversations = []
     if not is_student:
-        conversations = _get_teacher_inbox_items(request.user)
+        conversations = _get_teacher_inbox_items(
+            request.user, active_conversation=conversation
+        )
 
     context = {
         "conversation": conversation,
@@ -174,7 +182,7 @@ def inbox_view(request):
             .first()
         )
         if not teacher_profile:
-            return render(request, "chat/inbox.html", {"conversations": []})
+            raise Http404("Teacher profile not found.")
 
         teacher_user = teacher_profile.user
         conversation = Conversation.objects.filter(

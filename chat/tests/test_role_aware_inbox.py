@@ -337,6 +337,36 @@ class RoleAwareInboxTeacherTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No conversations yet")
 
+    def test_teacher_accessing_uninitiated_conversation_includes_and_highlights_it_in_sidebar(
+        self,
+    ):
+        """
+        When a teacher accesses /messages/<conversation_id>/ for an uninitiated conversation
+        (0 messages, last_message_at=None), it is included in the sidebar list and highlighted.
+        """
+        student_c = User.objects.create_user(
+            username="student_charlie",
+            email="charlie@example.com",
+            password="testpassword123",
+            role=User.Role.STUDENT,
+            is_email_verified=True,
+        )
+        conv_c = Conversation.objects.create(
+            student=student_c,
+            teacher=self.teacher_user,
+        )
+        self.assertIsNone(conv_c.last_message_at)
+
+        self.client.force_login(self.teacher_user)
+        url = reverse("chat:conversation_detail", kwargs={"conversation_id": conv_c.id})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'data-conversation-id="{conv_c.id}"')
+        self.assertContains(response, "active")
+        conv_ids = [c["conversation"].id for c in response.context["conversations"]]
+        self.assertIn(conv_c.id, conv_ids)
+
 
 class RoleAwareInboxStudentDetailTests(TestCase):
     """

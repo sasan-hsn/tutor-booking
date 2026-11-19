@@ -256,7 +256,7 @@
 <div class="chat-split-container container-fluid px-0 px-md-3 py-2">
     {% if not is_student %}
     <div class="chat-split-layout shadow-sm">
-        <!-- Left Pane: Conversation List (hidden on mobile when thread is active) -->
+        <!-- Left Pane: Conversation List (hidden on mobile when conversation is active) -->
         <aside class="chat-split-sidebar d-none d-md-flex" aria-label="Conversations List">
             <div class="inbox-header d-flex align-items-center justify-content-between">
                 <h5 class="mb-0 fw-bold">Conversations</h5>
@@ -266,7 +266,7 @@
             </div>
         </aside>
 
-        <!-- Right Pane: Active Thread Detail -->
+        <!-- Right Pane: Active Conversation Detail -->
         <main class="chat-split-main w-100" aria-label="Active Conversation">
     {% endif %}
 
