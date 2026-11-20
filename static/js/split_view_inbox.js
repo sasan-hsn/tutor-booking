@@ -61,6 +61,11 @@
             const timeEl = existingLink.querySelector('.inbox-time');
             if (timeEl) {
                 timeEl.textContent = 'just now';
+                if (data.timestamp) {
+                    try {
+                        timeEl.setAttribute('title', new Date(data.timestamp).toLocaleString());
+                    } catch (e) {}
+                }
             }
 
             if (isActive) {
@@ -78,9 +83,10 @@
             } else {
                 existingLink.classList.add('has-unread');
                 let badge = existingLink.querySelector('.inbox-preview-row .badge');
+                const nextVal = typeof data.conversation_unread_count !== 'undefined'
+                    ? data.conversation_unread_count
+                    : ((parseInt(badge ? badge.textContent : 0, 10) || 0) + 1);
                 if (badge) {
-                    const current = parseInt(badge.textContent, 10) || 0;
-                    const nextVal = current + 1;
                     badge.textContent = String(nextVal);
                     badge.setAttribute('aria-label', `${nextVal} unread messages`);
                 } else {
@@ -88,8 +94,8 @@
                     if (previewRow && typeof document !== 'undefined') {
                         badge = document.createElement('span');
                         badge.className = 'badge rounded-pill bg-primary ms-auto flex-shrink-0';
-                        badge.textContent = '1';
-                        badge.setAttribute('aria-label', '1 unread messages');
+                        badge.textContent = String(nextVal);
+                        badge.setAttribute('aria-label', `${nextVal} unread messages`);
                         previewRow.appendChild(badge);
                     }
                 }
@@ -151,7 +157,7 @@
             fallbackDiv.className = 'rounded-circle d-flex align-items-center justify-content-center text-white';
             fallbackDiv.style.width = '48px';
             fallbackDiv.style.height = '48px';
-            fallbackDiv.style.backgroundColor = data.sender_color || '#2563eb';
+            fallbackDiv.style.backgroundColor = data.sender_color || '#1e3a8a';
             fallbackDiv.style.fontWeight = '600';
             fallbackDiv.setAttribute('role', 'img');
             fallbackDiv.setAttribute('aria-label', `${data.sender_name || 'User'}'s avatar`);
@@ -180,6 +186,11 @@
         const timeSpan = document.createElement('span');
         timeSpan.className = 'inbox-time small text-muted text-nowrap ms-2 flex-shrink-0';
         timeSpan.textContent = 'just now';
+        if (data.timestamp) {
+            try {
+                timeSpan.setAttribute('title', new Date(data.timestamp).toLocaleString());
+            } catch (e) {}
+        }
         titleRow.appendChild(timeSpan);
         content.appendChild(titleRow);
 
@@ -197,8 +208,11 @@
         if (!isActive) {
             const badge = document.createElement('span');
             badge.className = 'badge rounded-pill bg-primary ms-auto flex-shrink-0';
-            badge.textContent = '1';
-            badge.setAttribute('aria-label', '1 unread messages');
+            const countVal = typeof data.conversation_unread_count !== 'undefined'
+                ? data.conversation_unread_count
+                : 1;
+            badge.textContent = String(countVal);
+            badge.setAttribute('aria-label', `${countVal} unread messages`);
             previewRow.appendChild(badge);
         }
         content.appendChild(previewRow);

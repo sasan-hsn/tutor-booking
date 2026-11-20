@@ -153,11 +153,12 @@ def broadcast_unread_chat_count(
     snippet: str | None = None,
     sender=None,
     timestamp: str | None = None,
+    conversation_unread_count: int | None = None,
 ) -> None:
     """
-    Broadcasts the current total unread chat count (and optional conversation metadata
-    on new message commits) to the user's private notification group (user_<user_id>)
-    so that topbar navigation badges and split-view inbox lists update immediately.
+    Broadcasts the recipient's Unread Message Count (and optional conversation metadata
+    on new message commits) to the user's notification channel (user_<user_id>)
+    so that topbar navigation badges and the Conversation Inbox update in real time.
     """
     channel_layer = get_channel_layer()
     if channel_layer is None:
@@ -187,6 +188,9 @@ def broadcast_unread_chat_count(
         except Exception:
             payload["conversation_url"] = f"/messages/{conversation_id}/"
 
+    if conversation_unread_count is not None:
+        payload["conversation_unread_count"] = conversation_unread_count
+
     if snippet is not None:
         payload["snippet"] = snippet
 
@@ -211,7 +215,7 @@ def broadcast_unread_chat_count(
 
             payload["sender_color"] = get_avatar_color(sender.id)
         except Exception:
-            payload["sender_color"] = "#2563eb"
+            payload["sender_color"] = "#1e3a8a"
 
     if timestamp is not None:
         payload["timestamp"] = timestamp
@@ -338,6 +342,7 @@ def send_message(
         conv_id = conversation.id
         recipient_id = recipient.id
         iso_timestamp = now.isoformat()
+        conv_unread_count = conversation.get_unread_count(recipient)
         transaction.on_commit(lambda: broadcast_chat_message(message))
         transaction.on_commit(
             lambda: broadcast_unread_chat_count(
@@ -346,6 +351,7 @@ def send_message(
                 snippet=resolved_snippet,
                 sender=sender,
                 timestamp=iso_timestamp,
+                conversation_unread_count=conv_unread_count,
             )
         )
         if message_type == Message.MessageType.TEXT:

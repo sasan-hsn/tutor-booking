@@ -244,7 +244,6 @@ class RoleAwareInboxTeacherTests(TestCase):
         # Split layout containers
         self.assertContains(response, "chat-split-layout")
         self.assertContains(response, "chat-split-sidebar")
-        self.assertContains(response, "split_view_inbox.js")
         self.assertContains(response, "chat-split-main")
         self.assertContains(response, "split_view_inbox.js")
 
