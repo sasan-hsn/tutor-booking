@@ -244,7 +244,9 @@ class RoleAwareInboxTeacherTests(TestCase):
         # Split layout containers
         self.assertContains(response, "chat-split-layout")
         self.assertContains(response, "chat-split-sidebar")
+        self.assertContains(response, "split_view_inbox.js")
         self.assertContains(response, "chat-split-main")
+        self.assertContains(response, "split_view_inbox.js")
 
         # Selection placeholder present in right pane
         self.assertContains(response, "chat-placeholder-pane")
@@ -292,6 +294,7 @@ class RoleAwareInboxTeacherTests(TestCase):
         # Split layout containers
         self.assertContains(response, "chat-split-layout")
         self.assertContains(response, "chat-split-sidebar")
+        self.assertContains(response, "split_view_inbox.js")
 
         # Active conversation Bob is highlighted in the left list
         self.assertContains(response, f'data-conversation-id="{self.conv_b.id}"')

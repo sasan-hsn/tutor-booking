@@ -44,6 +44,12 @@ class NotificationConsumerTests(TransactionTestCase):
             email="other_ws_user@example.com",
             password="password123",
         )
+        self.teacher_user = User.objects.create_user(
+            username="ws_teacher",
+            email="ws_teacher@example.com",
+            password="password123",
+            role=User.Role.TEACHER,
+        )
 
     async def test_unauthenticated_connection_rejected(self):
         communicator = WebsocketCommunicator(application, "/ws/notifications/")
@@ -163,6 +169,76 @@ class NotificationConsumerTests(TransactionTestCase):
 
         response = await communicator.receive_json_from()
         self.assertEqual(response, payload)
+
+        await communicator.disconnect()
+
+    async def test_receives_enhanced_unread_chat_metadata_broadcast(self):
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.teacher_user
+        )
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        channel_layer = get_channel_layer()
+        payload = {
+            "type": "unread_chat_count",
+            "count": 2,
+            "unread_count": 2,
+            "conversation_id": "12345678-1234-5678-1234-567812345678",
+            "conversation_url": "/messages/12345678-1234-5678-1234-567812345678/",
+            "snippet": "Can we reschedule to 3pm?",
+            "sender_name": "Alice Smith",
+            "sender_initial": "A",
+            "sender_avatar_url": "",
+            "sender_color": "#2563eb",
+            "timestamp": "2026-11-20T10:00:00Z",
+        }
+
+        await channel_layer.group_send(
+            Notification.get_group_name(self.teacher_user.id), payload
+        )
+
+        response = await communicator.receive_json_from()
+        self.assertEqual(response, payload)
+
+        await communicator.disconnect()
+
+    async def test_end_to_end_send_message_emission_to_notification_websocket(self):
+        communicator = await get_authenticated_communicator(
+            application, "/ws/notifications/", self.teacher_user
+        )
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        @database_sync_to_async
+        def create_and_send():
+            from chat.services import get_or_create_conversation, send_message
+
+            with transaction.atomic():
+                conv, _ = get_or_create_conversation(self.user, self.teacher_user)
+                send_message(
+                    conversation=conv,
+                    sender=self.user,
+                    text="Hello from student!",
+                )
+            return conv.id
+
+        conv_id = await create_and_send()
+
+        frame = await communicator.receive_json_from()
+        self.assertEqual(frame["type"], "unread_chat_count")
+        self.assertEqual(frame["count"], 1)
+        self.assertEqual(frame["unread_count"], 1)
+        self.assertEqual(frame["conversation_id"], str(conv_id))
+        self.assertEqual(frame["snippet"], "Hello from student!")
+        self.assertEqual(
+            frame["sender_name"],
+            self.user.get_full_name() or self.user.username,
+        )
+        self.assertIn("timestamp", frame)
+        self.assertIn("conversation_url", frame)
+        self.assertIn("sender_color", frame)
+        self.assertIn("sender_initial", frame)
 
         await communicator.disconnect()
 

@@ -147,11 +147,17 @@ def get_total_unread_chat_count(user) -> int:
     )
 
 
-def broadcast_unread_chat_count(user) -> None:
+def broadcast_unread_chat_count(
+    user,
+    conversation_id=None,
+    snippet: str | None = None,
+    sender=None,
+    timestamp: str | None = None,
+) -> None:
     """
-    Broadcasts the current total unread chat count to the user's private notification
-    group (user_<user_id>) so that topbar navigation badges across all open tabs
-    update immediately.
+    Broadcasts the current total unread chat count (and optional conversation metadata
+    on new message commits) to the user's private notification group (user_<user_id>)
+    so that topbar navigation badges and split-view inbox lists update immediately.
     """
     channel_layer = get_channel_layer()
     if channel_layer is None:
@@ -168,7 +174,48 @@ def broadcast_unread_chat_count(user) -> None:
     payload = {
         "type": "unread_chat_count",
         "count": unread_count,
+        "unread_count": unread_count,
     }
+
+    if conversation_id is not None:
+        payload["conversation_id"] = str(conversation_id)
+        try:
+            payload["conversation_url"] = reverse(
+                "chat:conversation_detail",
+                kwargs={"conversation_id": conversation_id},
+            )
+        except Exception:
+            payload["conversation_url"] = f"/messages/{conversation_id}/"
+
+    if snippet is not None:
+        payload["snippet"] = snippet
+
+    if sender is not None:
+        sender_name = sender.get_full_name() or getattr(sender, "username", "")
+        payload["sender_name"] = sender_name
+        payload["sender_initial"] = sender_name[0].upper() if sender_name else "?"
+
+        profile = getattr(sender, "teacher_profile", None) or getattr(
+            sender, "student_profile", None
+        )
+        avatar_url = ""
+        if profile and getattr(profile, "profile_picture", None):
+            try:
+                avatar_url = profile.profile_picture.url
+            except (ValueError, AttributeError):
+                avatar_url = ""
+        payload["sender_avatar_url"] = avatar_url
+
+        try:
+            from accounts.avatar_utils import get_avatar_color
+
+            payload["sender_color"] = get_avatar_color(sender.id)
+        except Exception:
+            payload["sender_color"] = "#2563eb"
+
+    if timestamp is not None:
+        payload["timestamp"] = timestamp
+
     try:
         async_to_sync(channel_layer.group_send)(group_name, payload)
     except Exception as exc:
@@ -290,8 +337,17 @@ def send_message(
         recipient = conversation.get_counterpart(sender)
         conv_id = conversation.id
         recipient_id = recipient.id
+        iso_timestamp = now.isoformat()
         transaction.on_commit(lambda: broadcast_chat_message(message))
-        transaction.on_commit(lambda: broadcast_unread_chat_count(recipient))
+        transaction.on_commit(
+            lambda: broadcast_unread_chat_count(
+                recipient,
+                conversation_id=conv_id,
+                snippet=resolved_snippet,
+                sender=sender,
+                timestamp=iso_timestamp,
+            )
+        )
         if message_type == Message.MessageType.TEXT:
             transaction.on_commit(
                 lambda: schedule_unread_message_digest(conv_id, recipient_id)
