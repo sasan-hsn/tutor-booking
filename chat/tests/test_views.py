@@ -431,28 +431,28 @@ class ChatViewsIntegrationTests(TestCase):
         self.assertIn("/accounts/login/", response.url)
 
     def test_inbox_lists_active_conversations_ordered_by_last_message_at_desc(self):
-        # Student has conversations with teacher and other_teacher
+        # Teacher has conversations with two students
         conv1 = Conversation.objects.create(student=self.student, teacher=self.teacher)
         send_message(conv1, sender=self.student, text="First conversation message")
 
         conv2 = Conversation.objects.create(
-            student=self.student, teacher=self.other_teacher
+            student=self.other_student, teacher=self.teacher
         )
         send_message(
-            conv2, sender=self.other_teacher, text="Second conversation message"
+            conv2, sender=self.other_student, text="Second conversation message"
         )
 
         # Third conversation that is uninitiated
-        third_teacher = User.objects.create_user(
-            username="third_teacher",
-            email="third_teacher@example.com",
+        third_student = User.objects.create_user(
+            username="third_student",
+            email="third_student@example.com",
             password="testpassword123",
-            role=User.Role.TEACHER,
+            role=User.Role.STUDENT,
             is_email_verified=True,
         )
-        Conversation.objects.create(student=self.student, teacher=third_teacher)
+        Conversation.objects.create(student=third_student, teacher=self.teacher)
 
-        self.client.force_login(self.student)
+        self.client.force_login(self.teacher)
         url = reverse("chat:inbox")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -468,7 +468,7 @@ class ChatViewsIntegrationTests(TestCase):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
         self.assertIsNone(conv.last_message_at)
 
-        self.client.force_login(self.student)
+        self.client.force_login(self.teacher)
         url = reverse("chat:inbox")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -476,27 +476,27 @@ class ChatViewsIntegrationTests(TestCase):
 
     def test_inbox_displays_counterpart_info_and_unread_count(self):
         conv = Conversation.objects.create(student=self.student, teacher=self.teacher)
-        msg1 = send_message(conv, sender=self.teacher, text="Message 1 from teacher")
-        send_message(conv, sender=self.teacher, text="Message 2 from teacher")
+        msg1 = send_message(conv, sender=self.student, text="Message 1 from student")
+        send_message(conv, sender=self.student, text="Message 2 from student")
 
-        # Student has not read any message
-        self.client.force_login(self.student)
+        # Teacher has not read any message
+        self.client.force_login(self.teacher)
         url = reverse("chat:inbox")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
         item = response.context["conversations"][0]
-        self.assertEqual(item["counterpart"], self.teacher)
+        self.assertEqual(item["counterpart"], self.student)
         self.assertEqual(item["unread_count"], 2)
         self.assertEqual(
-            item["conversation"].last_message_snippet, "Message 2 from teacher"
+            item["conversation"].last_message_snippet, "Message 2 from student"
         )
-        self.assertContains(response, self.teacher.username)
-        self.assertContains(response, "Message 2 from teacher")
+        self.assertContains(response, self.student.username)
+        self.assertContains(response, "Message 2 from student")
 
-        # Now student marks msg1 as read
+        # Now teacher marks msg1 as read
         Conversation.objects.filter(id=conv.id).update(
-            student_last_read_message_id=msg1.id
+            teacher_last_read_message_id=msg1.id
         )
         response = self.client.get(url)
         item = response.context["conversations"][0]
