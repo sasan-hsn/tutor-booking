@@ -483,6 +483,7 @@
 
 {% block extra_js %}
 {{ block.super }}
+<script src="{% static 'js/split_view_inbox.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const container = document.getElementById('chatContainer');
@@ -727,6 +728,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 message_id: message.id
             });
         }
+
+        // Keep split-view left pane in sync for active conversation
+        if (!isStudentViewer && window.SplitViewInbox && typeof window.SplitViewInbox.handleIncomingChatNotification === 'function') {
+            window.SplitViewInbox.handleIncomingChatNotification({
+                conversation_id: conversationId,
+                snippet: message.text || (message.metadata && message.metadata.event_type ? 'Booking update' : 'New message'),
+                sender_name: message.sender_username,
+                timestamp: message.created_at
+            }, {
+                activeConversationId: conversationId,
+                navbarSync: false
+            });
+        }
     }
 
     // --- Reverse History Pagination ---
@@ -879,6 +893,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     connectChatWebSocket();
+
+    if (!isStudentViewer && window.SplitViewInbox && typeof window.SplitViewInbox.initSplitViewInbox === 'function') {
+        window.SplitViewInbox.initSplitViewInbox({
+            activeConversationId: conversationId
+        });
+    }
 
     // --- Input and Form Handlers ---
     if (!form || !input) return;

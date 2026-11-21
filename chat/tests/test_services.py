@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from booking.models import Booking
@@ -172,6 +173,24 @@ class ChatServicesTests(TestCase):
                 p for p in payloads if p.get("type") == "unread_chat_count"
             )
             self.assertEqual(unread_payload["count"], 1)
+            self.assertEqual(unread_payload["unread_count"], 1)
+            self.assertEqual(unread_payload["conversation_id"], str(conv.id))
+            self.assertEqual(
+                unread_payload["conversation_url"],
+                reverse(
+                    "chat:conversation_detail",
+                    kwargs={"conversation_id": conv.id},
+                ),
+            )
+            self.assertEqual(unread_payload["snippet"], "Hello Teacher")
+            expected_sender_name = self.student.get_full_name() or self.student.username
+            self.assertEqual(unread_payload["sender_name"], expected_sender_name)
+            self.assertEqual(
+                unread_payload["sender_initial"], expected_sender_name[0].upper()
+            )
+            self.assertIn("timestamp", unread_payload)
+            self.assertIn("sender_color", unread_payload)
+            self.assertIn("sender_avatar_url", unread_payload)
 
     def test_advance_watermark_broadcasts_unread_chat_count_when_watermark_advances(
         self,

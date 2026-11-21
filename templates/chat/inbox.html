@@ -129,3 +129,17 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/split_view_inbox.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (window.SplitViewInbox && typeof window.SplitViewInbox.initSplitViewInbox === 'function') {
+        window.SplitViewInbox.initSplitViewInbox({
+            activeConversationId: null
+        });
+    }
+});
+</script>
+{% endblock %}
