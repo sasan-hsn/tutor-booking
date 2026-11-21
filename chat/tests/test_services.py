@@ -183,9 +183,7 @@ class ChatServicesTests(TestCase):
                 ),
             )
             self.assertEqual(unread_payload["snippet"], "Hello Teacher")
-            expected_sender_name = (
-                self.student.get_full_name() or self.student.username
-            )
+            expected_sender_name = self.student.get_full_name() or self.student.username
             self.assertEqual(unread_payload["sender_name"], expected_sender_name)
             self.assertEqual(
                 unread_payload["sender_initial"], expected_sender_name[0].upper()
