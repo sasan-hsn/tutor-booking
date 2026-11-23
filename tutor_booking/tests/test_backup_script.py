@@ -49,6 +49,10 @@ def _to_posix_path(p: Path) -> str:
                 return res.stdout.strip()
         except FileNotFoundError:
             pass
+        if len(path_str) >= 2 and path_str[1] == ":":
+            drive = path_str[0].lower()
+            rest = path_str[2:].replace("\\", "/")
+            return f"/{drive}{rest}"
     return p.as_posix()
 
 

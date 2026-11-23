@@ -50,5 +50,6 @@ jobs:
     - name: Run Django Tests
       env:
         DATABASE_URL: postgres://test_user:test_pass@localhost:5432/test_db
+        TEST_DATABASE_URL: postgres://test_user:test_pass@localhost:5432/test_db
       run: |
-        python manage.py test
+        python manage.py test --settings=tutor_booking.settings_test

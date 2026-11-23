@@ -18,7 +18,7 @@ This document is a full history/context handoff for an AI coding assistant picki
 ## Tech stack
 - **Backend:** Django (monolith, server-rendered templates — no separate frontend framework)
 - **Frontend:** Vanilla JS (Fetch API/DOM), Bootstrap-based styling, custom CSS design tokens (Inter + Outfit fonts, `--primary-blue`/`--accent-amber` CSS variables)
-- **Database:** PostgreSQL (via Docker; SQLite fallback via `dj_database_url` for portability/CS50 grading)
+- **Database:** PostgreSQL (via Docker or local PostgreSQL service; required in all environments, fail-fast configuration)
 - **Auth:** Django's built-in session-based auth (deliberately NOT JWT — see Architecture Decisions below)
 - **Deployment:** Docker Compose on a VPS, Nginx (host-level, not containerized) as reverse proxy, Gunicorn with Uvicorn worker as ASGI server, Let's Encrypt/Certbot for HTTPS
 

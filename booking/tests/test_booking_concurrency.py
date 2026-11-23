@@ -1,14 +1,13 @@
-import threading
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from django.db import connection
 from django.test import Client, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import User
 from booking.models import Booking, RegularAvailability
+from tutor_booking.tests.concurrency import run_concurrently
 
 
 class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
@@ -56,7 +55,6 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
 
     def test_concurrent_requests_to_endpoint_only_one_succeeds(self):
         """Two real HTTP POST requests hitting book_slot at the same time — only one should succeed."""
-        status_codes = []
 
         def make_request(username):
             client = Client()
@@ -68,16 +66,19 @@ class DoubleBookingEndpointConcurrencyTests(TransactionTestCase):
                     "lesson_option": "trial",
                 },
             )
-            status_codes.append(response.status_code)
-            connection.close()
+            return response.status_code
 
-        thread1 = threading.Thread(target=make_request, args=("student1",))
-        thread2 = threading.Thread(target=make_request, args=("student2",))
-
-        thread1.start()
-        thread2.start()
-        thread1.join()
-        thread2.join()
+        results = run_concurrently(
+            [
+                lambda: make_request("student1"),
+                lambda: make_request("student2"),
+            ]
+        )
+        status_codes = []
+        for res, exc in results:
+            if exc is not None:
+                raise exc
+            status_codes.append(res)
 
         self.assertIn(200, status_codes)
         self.assertIn(409, status_codes)
