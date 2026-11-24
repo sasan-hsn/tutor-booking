@@ -24,6 +24,28 @@ ALLOWED_CREDIT_ENTRY_TYPES = frozenset(
 )
 
 
+def _validate_positive_decimal(amount: Decimal) -> None:
+    if not isinstance(amount, Decimal) or amount <= Decimal("0.00"):
+        raise InvalidAmountError(
+            f"Amount must be a positive Decimal, got {amount!r} ({type(amount).__name__})"
+        )
+
+
+def _lock_wallet(tenant: "Tenant", wallet: Wallet) -> Wallet:
+    try:
+        return Wallet.objects.select_for_update().get(pk=wallet.pk, tenant=tenant)
+    except Wallet.DoesNotExist:
+        raise TenantMismatchError(
+            f"Wallet {wallet.pk} does not belong to tenant {tenant.pk} or does not exist."
+        )
+
+
+def _sync_wallet_instance(wallet: Wallet, locked_wallet: Wallet) -> None:
+    wallet.settled_balance = locked_wallet.settled_balance
+    wallet.reserved_balance = locked_wallet.reserved_balance
+    wallet.updated_at = locked_wallet.updated_at
+
+
 def get_or_create_wallet(
     tenant: "Tenant",
     user: "User",
@@ -63,10 +85,7 @@ def credit_wallet(
     Creates an immutable LedgerEntry audit record.
     Allowed even if wallet.is_frozen is True.
     """
-    if not isinstance(amount, Decimal) or amount <= Decimal("0.00"):
-        raise InvalidAmountError(
-            f"Amount must be a positive Decimal, got {amount!r} ({type(amount).__name__})"
-        )
+    _validate_positive_decimal(amount)
 
     if entry_type not in ALLOWED_CREDIT_ENTRY_TYPES:
         raise InvalidEntryTypeError(
@@ -75,14 +94,7 @@ def credit_wallet(
         )
 
     with transaction.atomic():
-        try:
-            locked_wallet = Wallet.objects.select_for_update().get(
-                pk=wallet.pk, tenant=tenant
-            )
-        except Wallet.DoesNotExist:
-            raise TenantMismatchError(
-                f"Wallet {wallet.pk} does not belong to tenant {tenant.pk} or does not exist."
-            )
+        locked_wallet = _lock_wallet(tenant, wallet)
 
         locked_wallet.settled_balance += amount
         locked_wallet.save(update_fields=["settled_balance", "updated_at"])
@@ -99,8 +111,7 @@ def credit_wallet(
             description=description,
         )
 
-        wallet.settled_balance = locked_wallet.settled_balance
-        wallet.updated_at = locked_wallet.updated_at
+        _sync_wallet_instance(wallet, locked_wallet)
         return entry
 
 
@@ -118,20 +129,10 @@ def reserve_funds(
     Increments reserved_balance and creates an immutable RESERVE LedgerEntry.
     Rejects if wallet is frozen or available_balance is insufficient.
     """
-    if not isinstance(amount, Decimal) or amount <= Decimal("0.00"):
-        raise InvalidAmountError(
-            f"Amount must be a positive Decimal, got {amount!r} ({type(amount).__name__})"
-        )
+    _validate_positive_decimal(amount)
 
     with transaction.atomic():
-        try:
-            locked_wallet = Wallet.objects.select_for_update().get(
-                pk=wallet.pk, tenant=tenant
-            )
-        except Wallet.DoesNotExist:
-            raise TenantMismatchError(
-                f"Wallet {wallet.pk} does not belong to tenant {tenant.pk} or does not exist."
-            )
+        locked_wallet = _lock_wallet(tenant, wallet)
 
         if locked_wallet.is_frozen:
             raise WalletFrozenError(
@@ -159,6 +160,5 @@ def reserve_funds(
             description=description,
         )
 
-        wallet.reserved_balance = locked_wallet.reserved_balance
-        wallet.updated_at = locked_wallet.updated_at
+        _sync_wallet_instance(wallet, locked_wallet)
         return entry

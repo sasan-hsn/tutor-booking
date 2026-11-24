@@ -134,6 +134,22 @@ class LedgerEntryModelTests(TestCase):
         with self.assertRaises(ProtectedError):
             self.wallet.delete()
 
+    def test_on_delete_protect_user(self):
+        """Deleting User with an active Wallet and LedgerEntry must be blocked by models.PROTECT."""
+        LedgerEntry.objects.create(
+            tenant=self.tenant,
+            wallet=self.wallet,
+            entry_type=LedgerEntry.EntryType.CREDIT,
+            amount=Decimal("50.00"),
+            settled_after=Decimal("150.00"),
+            reserved_after=Decimal("0.00"),
+            idempotency_key="protect_user_key",
+            reference_id="ref_prot_user",
+            description="Protect user test",
+        )
+        with self.assertRaises(ProtectedError):
+            self.student.delete()
+
 
 class LedgerEntryImmutabilityTriggerTests(TestCase):
     def setUp(self):
