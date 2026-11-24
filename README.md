@@ -148,11 +148,10 @@ is not fairly described as either a social network or a storefront.
    DATABASE_URL=postgresql://postgres:postgrespassword@127.0.0.1:6543/tutor_booking_db
    ```
 
-   The `DATABASE_URL` line is optional. If it's omitted, the app falls
-   back automatically to a local `db.sqlite3` file — no code changes
-   required, which is the easiest path for grading.
+   The `DATABASE_URL` line points to your PostgreSQL instance. A real
+   PostgreSQL database is required in both local and CI environments.
 
-2. If using Postgres, start the database with Docker:
+2. Start the database and services with Docker:
 
    ```
    docker-compose up -d
