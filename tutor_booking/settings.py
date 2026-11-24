@@ -294,6 +294,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "wallet.tasks.reconcile_wallet_balances_task",
         "schedule": 86400.0,
     },
+    "expire-payout-tokens-hourly": {
+        "task": "payments.tasks.expire_payout_tokens_task",
+        "schedule": 3600.0,
+    },
+    "expire-orders-hourly": {
+        "task": "payments.tasks.expire_orders_task",
+        "schedule": 3600.0,
+    },
+    "payout-reminders-every-6-hours": {
+        "task": "payments.tasks.payout_reminder_task",
+        "schedule": 21600.0,
+    },
 }
 
 TEACHER_DAILY_DIGEST_HOUR = int(os.getenv("TEACHER_DAILY_DIGEST_HOUR", "20"))
@@ -335,4 +347,6 @@ MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 MIN_TOPUP_AMOUNT = Decimal(os.getenv("MIN_TOPUP_AMOUNT", "20.00"))
 ORDER_EXPIRY_HOURS = int(os.getenv("ORDER_EXPIRY_HOURS", "24"))
 ORDER_GRACE_HOURS = int(os.getenv("ORDER_GRACE_HOURS", "24"))
+PAYOUT_CONFIRMATION_HOURS = int(os.getenv("PAYOUT_CONFIRMATION_HOURS", "24"))
+PAYOUT_REMINDER_HOURS = int(os.getenv("PAYOUT_REMINDER_HOURS", "48"))
 TERMS_CURRENT_VERSION = os.getenv("TERMS_CURRENT_VERSION", "2026.1")

@@ -1,16 +1,28 @@
+import hashlib
+import hmac
 import logging
+import secrets
 import uuid
 from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.mail import send_mail
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from payments.models import Order, Payment, PaymentAddress
-from wallet.models import Wallet
+from payments.exceptions import (
+    PayoutConflictError,
+    PayoutInsufficientBalanceError,
+)
+from payments.models import Order, Payment, PaymentAddress, Payout
+from wallet.exceptions import (
+    TenantMismatchError,
+    WalletFrozenError,
+)
+from wallet.models import LedgerEntry, Wallet
 from wallet.services import credit_wallet, get_or_create_wallet
 
 if TYPE_CHECKING:
@@ -267,3 +279,512 @@ def process_manual_topup(
         )
 
         return completed_payment
+
+
+def create_payout_request(
+    *,
+    tenant: "Tenant",
+    student: "User",
+    amount_gross: Decimal,
+    destination: str,
+    provider: str = "crypto_usdt",
+) -> Payout:
+    """
+    Creates a new Payout request for a student with status PENDING_CONFIRMATION.
+    Validates amount > 0 and available_balance >= amount_gross.
+    Generates a 32-byte cryptographic token, stores its SHA-256 hash in confirmation_token_hash,
+    sets confirmation_expires_at, and dispatches a basic transactional confirmation email.
+    Places NO hold on the student's wallet balance at this stage.
+    """
+    if not isinstance(amount_gross, Decimal) or amount_gross <= Decimal("0.00"):
+        raise ValidationError("Payout amount must be a positive Decimal.")
+
+    if not destination or not destination.strip():
+        raise ValidationError("Destination address cannot be empty.")
+
+    clean_destination = destination.strip()
+
+    wallet = get_or_create_wallet(
+        tenant=tenant,
+        user=student,
+        currency=tenant.default_currency,
+    )
+
+    if wallet.available_balance < amount_gross:
+        raise PayoutInsufficientBalanceError(
+            f"Insufficient available balance ({wallet.available_balance}) for requested payout of {amount_gross}."
+        )
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    confirmation_hours = getattr(settings, "PAYOUT_CONFIRMATION_HOURS", 24)
+    now = timezone.now()
+    expires_at = now + timedelta(hours=confirmation_hours)
+
+    payout = Payout.objects.create(
+        tenant=tenant,
+        student=student,
+        provider=provider,
+        destination=clean_destination,
+        amount_gross=amount_gross,
+        fee_deducted=Decimal("0.00"),
+        amount_net=amount_gross,
+        confirmation_token_hash=token_hash,
+        confirmation_expires_at=expires_at,
+        status=Payout.Status.PENDING_CONFIRMATION,
+    )
+
+    # Attach raw token to in-memory instance for caller convenience
+    payout.raw_token = raw_token
+
+    # Dispatch basic confirmation email
+    subject = "Confirm Your Payout Request"
+    message = (
+        f"Hello {student.first_name or student.username},\n\n"
+        f"You requested a payout of {amount_gross} {tenant.default_currency} to {clean_destination}.\n\n"
+        f"Please verify and confirm your payout request using the following confirmation token:\n"
+        f"{raw_token}\n\n"
+        f"This confirmation token will expire in {confirmation_hours} hours."
+    )
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=from_email,
+        recipient_list=[student.email],
+        fail_silently=False,
+    )
+
+    logger.info(
+        "Payout request created: payout_id=%s tenant_id=%s student_id=%s amount=%s expires_at=%s",
+        payout.id,
+        tenant.id,
+        student.id,
+        amount_gross,
+        expires_at,
+    )
+
+    return payout
+
+
+def verify_and_reserve_payout(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    raw_token: str,
+) -> LedgerEntry:
+    """
+    Verifies a student's payout confirmation token and places a PAYOUT_HOLD on their wallet balance.
+    Asserts status == PENDING_CONFIRMATION, validates SHA-256 token hash using hmac.compare_digest,
+    and checks confirmation_expires_at.
+    Acquires row-level locks under transaction.atomic() adhering to the consistent lock hierarchy:
+    Wallet -> Payout.
+    Re-checks that wallet is not frozen and available_balance >= payout.amount_gross.
+    If available balance has dropped, commits CANCELLED status to the DB before raising
+    PayoutInsufficientBalanceError.
+    On success, transitions payout to REQUESTED, sets confirmation_used_at, and appends a PAYOUT_HOLD
+    ledger entry.
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    if payout.status != Payout.Status.PENDING_CONFIRMATION:
+        raise ValidationError(
+            f"Payout {payout.pk} is in status '{payout.status}'; expected PENDING_CONFIRMATION."
+        )
+
+    if not payout.confirmation_token_hash:
+        raise ValidationError("Payout has no confirmation token hash.")
+
+    if not raw_token:
+        raise ValidationError("Confirmation token cannot be empty.")
+
+    computed_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(computed_hash, payout.confirmation_token_hash):
+        raise ValidationError("Invalid payout confirmation token.")
+
+    now = timezone.now()
+    if payout.confirmation_expires_at and now > payout.confirmation_expires_at:
+        raise ValidationError("Payout confirmation token has expired.")
+
+    insufficient_balance = False
+    entry = None
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status != Payout.Status.PENDING_CONFIRMATION:
+            raise ValidationError(
+                f"Payout {locked_payout.pk} is in status '{locked_payout.status}'; expected PENDING_CONFIRMATION."
+            )
+
+        if locked_wallet.is_frozen:
+            raise WalletFrozenError(
+                f"Wallet {locked_wallet.pk} is frozen; cannot reserve payout funds."
+            )
+
+        if locked_wallet.available_balance < locked_payout.amount_gross:
+            # Guardrail 1: Commit CANCELLED to the DB before raising the error
+            locked_payout.status = Payout.Status.CANCELLED
+            locked_payout.save(update_fields=["status"])
+            insufficient_balance = True
+        else:
+            locked_wallet.reserved_balance += locked_payout.amount_gross
+            locked_wallet.save(update_fields=["reserved_balance", "updated_at"])
+
+            now = timezone.now()
+            locked_payout.status = Payout.Status.REQUESTED
+            locked_payout.confirmation_used_at = now
+            locked_payout.save(update_fields=["status", "confirmation_used_at"])
+
+            idempotency_key = f"tenant:{tenant.id}:payout:{locked_payout.id}:hold"
+            entry = LedgerEntry.objects.create(
+                tenant=tenant,
+                wallet=locked_wallet,
+                entry_type=LedgerEntry.EntryType.PAYOUT_HOLD,
+                amount=locked_payout.amount_gross,
+                settled_after=locked_wallet.settled_balance,
+                reserved_after=locked_wallet.reserved_balance,
+                idempotency_key=idempotency_key,
+                reference_id=f"payout_{locked_payout.id}",
+                description=f"Payout hold: payout #{locked_payout.id}",
+            )
+
+    # Sync memory instance
+    payout.status = locked_payout.status
+    payout.confirmation_used_at = locked_payout.confirmation_used_at
+    wallet.reserved_balance = locked_wallet.reserved_balance
+
+    if insufficient_balance:
+        raise PayoutInsufficientBalanceError(
+            f"Available balance ({locked_wallet.available_balance}) dropped below requested payout amount "
+            f"({locked_payout.amount_gross}). Payout marked CANCELLED."
+        )
+
+    logger.info(
+        "Payout verified and funds reserved: payout_id=%s tenant_id=%s student_id=%s amount=%s entry_id=%s",
+        payout.id,
+        tenant.id,
+        payout.student_id,
+        payout.amount_gross,
+        entry.id,
+    )
+
+    return entry
+
+
+def _execute_payout_hold_release(
+    *,
+    tenant: "Tenant",
+    locked_wallet: Wallet,
+    locked_payout: Payout,
+    target_status: str,
+    description: str,
+) -> LedgerEntry:
+    """
+    Internal helper to decrement reserved_balance, update payout status, and append a PAYOUT_RELEASE entry.
+    Caller must have acquired row locks on locked_wallet and locked_payout inside transaction.atomic().
+    """
+    if locked_wallet.reserved_balance < locked_payout.amount_gross:
+        raise IntegrityError(
+            f"Corrupt state: reserved balance ({locked_wallet.reserved_balance}) is less than payout hold ({locked_payout.amount_gross})."
+        )
+
+    locked_wallet.reserved_balance -= locked_payout.amount_gross
+    locked_wallet.save(update_fields=["reserved_balance", "updated_at"])
+
+    locked_payout.status = target_status
+    locked_payout.save(update_fields=["status"])
+
+    idempotency_key = f"tenant:{tenant.id}:payout:{locked_payout.id}:release"
+    return LedgerEntry.objects.create(
+        tenant=tenant,
+        wallet=locked_wallet,
+        entry_type=LedgerEntry.EntryType.PAYOUT_RELEASE,
+        amount=locked_payout.amount_gross,
+        settled_after=locked_wallet.settled_balance,
+        reserved_after=locked_wallet.reserved_balance,
+        idempotency_key=idempotency_key,
+        reference_id=f"payout_{locked_payout.id}",
+        description=description,
+    )
+
+
+def cancel_payout_request(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    user: "User",
+) -> LedgerEntry:
+    """
+    Cancels an active payout request and releases the held balance back to the student's available funds.
+    Strictly permitted ONLY when payout.status == REQUESTED.
+    Raises PayoutConflictError (HTTP 409) if status is PROCESSING, COMPLETED, CANCELLED, PENDING_CONFIRMATION, etc.
+    Adheres to the consistent lock ordering: Wallet -> Payout under transaction.atomic().
+    Emits an immutable PAYOUT_RELEASE ledger entry.
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    if (
+        payout.student_id != user.id
+        and not getattr(user, "is_staff", False)
+        and not getattr(user, "is_superuser", False)
+    ):
+        raise PermissionDenied(
+            "Only the requesting student or staff can cancel this payout."
+        )
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status != Payout.Status.REQUESTED:
+            raise PayoutConflictError(
+                f"Cannot cancel payout in '{locked_payout.status}' status. "
+                "Payout cancellation is strictly allowed only when status is 'REQUESTED'."
+            )
+
+        entry = _execute_payout_hold_release(
+            tenant=tenant,
+            locked_wallet=locked_wallet,
+            locked_payout=locked_payout,
+            target_status=Payout.Status.CANCELLED,
+            description=f"Payout release via cancellation: payout #{locked_payout.id}",
+        )
+
+    # Sync memory instance
+    payout.status = locked_payout.status
+    wallet.reserved_balance = locked_wallet.reserved_balance
+
+    logger.info(
+        "Payout cancelled and hold released: payout_id=%s tenant_id=%s student_id=%s amount=%s entry_id=%s",
+        payout.id,
+        tenant.id,
+        payout.student_id,
+        payout.amount_gross,
+        entry.id,
+    )
+
+    return entry
+
+
+def mark_payout_processing(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    admin_user: Optional["User"] = None,
+) -> Payout:
+    """
+    Transitions a payout from REQUESTED to PROCESSING status.
+    Acquires row-level locks under transaction.atomic() with consistent hierarchy: Wallet -> Payout.
+    Once in PROCESSING, student cancellation is strictly prohibited (raises 409 Conflict).
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status != Payout.Status.REQUESTED:
+            raise PayoutConflictError(
+                f"Cannot mark payout as processing: status is '{locked_payout.status}', expected 'REQUESTED'."
+            )
+
+        now = timezone.now()
+        locked_payout.status = Payout.Status.PROCESSING
+        locked_payout.processed_at = now
+        locked_payout.save(update_fields=["status", "processed_at"])
+
+    # Sync memory instance
+    payout.status = locked_payout.status
+    payout.processed_at = locked_payout.processed_at
+
+    logger.info(
+        "Payout marked processing: payout_id=%s tenant_id=%s admin_user_id=%s",
+        payout.id,
+        tenant.id,
+        getattr(admin_user, "id", None),
+    )
+
+    return locked_payout
+
+
+def settle_payout(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    external_ref: str,
+    admin_user: Optional["User"] = None,
+) -> LedgerEntry:
+    """
+    Finalizes a payout by transitioning status from PROCESSING to COMPLETED, recording the external_ref,
+    and decrementing both settled_balance and reserved_balance on the student's wallet via a PAYOUT_SETTLE entry.
+    Acquires row-level locks under transaction.atomic() adhering to Wallet -> Payout lock hierarchy.
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    if not external_ref or not external_ref.strip():
+        raise ValidationError("External reference cannot be empty.")
+
+    clean_ref = external_ref.strip()
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status != Payout.Status.PROCESSING:
+            raise PayoutConflictError(
+                f"Cannot settle payout: status is '{locked_payout.status}', expected 'PROCESSING'."
+            )
+
+        if locked_wallet.settled_balance < locked_payout.amount_gross:
+            raise PayoutInsufficientBalanceError(
+                f"Settled balance ({locked_wallet.settled_balance}) is less than payout amount ({locked_payout.amount_gross})."
+            )
+        if locked_wallet.reserved_balance < locked_payout.amount_gross:
+            raise IntegrityError(
+                f"Reserved balance ({locked_wallet.reserved_balance}) is less than payout hold ({locked_payout.amount_gross})."
+            )
+
+        locked_wallet.settled_balance -= locked_payout.amount_gross
+        locked_wallet.reserved_balance -= locked_payout.amount_gross
+        locked_wallet.save(
+            update_fields=["settled_balance", "reserved_balance", "updated_at"]
+        )
+
+        locked_payout.status = Payout.Status.COMPLETED
+        locked_payout.external_ref = clean_ref
+        locked_payout.save(update_fields=["status", "external_ref"])
+
+        idempotency_key = f"tenant:{tenant.id}:payout:{locked_payout.id}:settle"
+        entry = LedgerEntry.objects.create(
+            tenant=tenant,
+            wallet=locked_wallet,
+            entry_type=LedgerEntry.EntryType.PAYOUT_SETTLE,
+            amount=locked_payout.amount_gross,
+            settled_after=locked_wallet.settled_balance,
+            reserved_after=locked_wallet.reserved_balance,
+            idempotency_key=idempotency_key,
+            reference_id=clean_ref,
+            description=f"Payout settled: {clean_ref} for payout #{locked_payout.id}",
+        )
+
+    # Sync memory instance
+    payout.status = locked_payout.status
+    payout.external_ref = locked_payout.external_ref
+    wallet.settled_balance = locked_wallet.settled_balance
+    wallet.reserved_balance = locked_wallet.reserved_balance
+
+    logger.info(
+        "Payout settled: payout_id=%s tenant_id=%s amount=%s external_ref=%s entry_id=%s",
+        payout.id,
+        tenant.id,
+        payout.amount_gross,
+        clean_ref,
+        entry.id,
+    )
+
+    return entry
+
+
+def release_payout(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    reason: str = "",
+    admin_user: Optional["User"] = None,
+) -> LedgerEntry:
+    """
+    Rejects a payout from REQUESTED or PROCESSING status, transitioning it to REJECTED and releasing
+    the held balance back to the student's available funds via a PAYOUT_RELEASE ledger entry.
+    Acquires row-level locks under transaction.atomic() adhering to Wallet -> Payout lock hierarchy.
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status not in (
+            Payout.Status.REQUESTED,
+            Payout.Status.PROCESSING,
+        ):
+            raise PayoutConflictError(
+                f"Cannot release payout in '{locked_payout.status}' status. "
+                "Only payouts in 'REQUESTED' or 'PROCESSING' status can be rejected/released."
+            )
+
+        entry_description = (
+            f"Payout rejected ({reason.strip()}): payout #{locked_payout.id}"
+            if reason.strip()
+            else f"Payout rejected: payout #{locked_payout.id}"
+        )
+        entry = _execute_payout_hold_release(
+            tenant=tenant,
+            locked_wallet=locked_wallet,
+            locked_payout=locked_payout,
+            target_status=Payout.Status.REJECTED,
+            description=entry_description,
+        )
+
+    # Sync memory instance
+    payout.status = locked_payout.status
+    wallet.reserved_balance = locked_wallet.reserved_balance
+
+    logger.info(
+        "Payout released/rejected: payout_id=%s tenant_id=%s student_id=%s amount=%s reason=%s entry_id=%s",
+        payout.id,
+        tenant.id,
+        payout.student_id,
+        payout.amount_gross,
+        reason,
+        entry.id,
+    )
+
+    return entry
