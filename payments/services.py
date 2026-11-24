@@ -1,8 +1,8 @@
+import logging
+import uuid
 from datetime import timedelta
 from decimal import Decimal
-import logging
 from typing import TYPE_CHECKING, Optional
-import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -159,9 +159,7 @@ def mark_payment_successful(
         locked_payment.completed_at = now
         if raw_metadata:
             locked_payment.raw_metadata.update(raw_metadata)
-        locked_payment.save(
-            update_fields=["status", "completed_at", "raw_metadata"]
-        )
+        locked_payment.save(update_fields=["status", "completed_at", "raw_metadata"])
 
         if locked_order and locked_order.status != Order.Status.COMPLETED:
             locked_order.status = Order.Status.COMPLETED
@@ -269,5 +267,3 @@ def process_manual_topup(
         )
 
         return completed_payment
-
-

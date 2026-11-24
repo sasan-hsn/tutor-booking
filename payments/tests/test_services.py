@@ -1,9 +1,8 @@
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timedelta
 from decimal import Decimal
-import threading
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connections
 from django.test import TestCase, TransactionTestCase
@@ -280,7 +279,6 @@ class MarkPaymentSuccessfulTests(TestCase):
         self.assertIn("tenant mismatch", str(ctx.exception))
 
 
-
 class ProcessManualTopupTests(TestCase):
     def setUp(self):
         self.teacher_user = User.objects.create_user(
@@ -331,7 +329,9 @@ class ProcessManualTopupTests(TestCase):
         self.assertEqual(payment.net_amount, Decimal("50.00"))
         self.assertEqual(payment.status, Payment.Status.COMPLETED)
         self.assertIsNotNone(payment.completed_at)
-        self.assertEqual(payment.raw_metadata.get("notes"), "Offline bank transfer verified")
+        self.assertEqual(
+            payment.raw_metadata.get("notes"), "Offline bank transfer verified"
+        )
         self.assertEqual(payment.raw_metadata.get("admin_user_id"), self.admin_user.id)
 
         wallet = Wallet.objects.get(
@@ -396,7 +396,6 @@ class ProcessManualTopupTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.PENDING)
         self.assertIsNone(order.completed_at)
-
 
     def test_process_manual_topup_below_min_amount_raises_validation_error(self):
         self.tenant.min_topup_amount = Decimal("20.00")
@@ -522,7 +521,9 @@ class ManualTopupConcurrencyTests(TransactionTestCase):
         # Exactly 1 thread must succeed
         self.assertEqual(len(results), 1, f"Expected 1 success, got {len(results)}")
         # Exactly 4 threads must fail
-        self.assertEqual(len(exceptions), 4, f"Expected 4 failures, got {len(exceptions)}")
+        self.assertEqual(
+            len(exceptions), 4, f"Expected 4 failures, got {len(exceptions)}"
+        )
 
         # All 4 failures must be IntegrityError
         for thread_idx, exc in exceptions:
@@ -559,6 +560,3 @@ class ManualTopupConcurrencyTests(TransactionTestCase):
             ).count(),
             1,
         )
-
-
-
