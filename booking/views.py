@@ -18,6 +18,11 @@ from accounts.decorators import student_required, teacher_required
 from accounts.models import StudentProfile
 from chat.services import record_booking_event
 from portfolio.models import TeacherProfile
+from wallet.exceptions import (
+    CurrencyMismatchError,
+    InsufficientBalanceError,
+    WalletFrozenError,
+)
 
 from .forms import ReviewForm
 from .models import Booking, RegularAvailability, Review, WeeklyOverride
@@ -30,8 +35,9 @@ from .notifications import (
     notify_cancellation_requested,
 )
 from .services import (
+    SlotUnavailableError,
+    create_booking_with_hold,
     expire_stale_bookings,
-    get_available_start_times,
     get_calendar_grid,
     get_calendar_navigation,
     get_eligible_lesson_options,
@@ -331,43 +337,12 @@ def book_slot(request):
 
     try:
         with transaction.atomic():
-            teacher = (
-                TeacherProfile.objects.select_for_update()
-                .select_related("user")
-                .get(pk=teacher.pk)
-            )
-
-            try:
-                lesson_type, price, duration_minutes = resolve_lesson_option(
-                    teacher, request.user, lesson_option
-                )
-            except ValidationError as e:
-                return JsonResponse(
-                    {"error": e.message if hasattr(e, "message") else str(e)},
-                    status=400,
-                )
-
-            teacher_tz = ZoneInfo(teacher.user.timezone)
-            teacher_local_date = timezone.localtime(start_at_val, teacher_tz).date()
-            available_starts = get_available_start_times(
-                teacher, teacher_local_date, duration_minutes
-            )
-
-            if start_at_val not in available_starts:
-                return JsonResponse(
-                    {"error": "This time is no longer available."}, status=409
-                )
-
-            end_at_val = start_at_val + timedelta(minutes=duration_minutes)
-
-            booking = Booking.objects.create(
-                student=request.user,
+            booking = create_booking_with_hold(
                 teacher=teacher,
+                student=request.user,
                 start_at=start_at_val,
-                end_at=end_at_val,
-                lesson_type=lesson_type,
-                price=price,
-                duration_minutes=duration_minutes,
+                lesson_option=lesson_option,
+                resolve_fn=resolve_lesson_option,
             )
 
             booking_id = booking.id
@@ -379,10 +354,19 @@ def book_slot(request):
                 lambda: safe_record_booking_event(booking, "booking_requested")
             )
 
+    except SlotUnavailableError as e:
+        return JsonResponse({"error": str(e)}, status=409)
+    except InsufficientBalanceError as e:
+        return JsonResponse({"error": str(e)}, status=402)
+    except WalletFrozenError as e:
+        return JsonResponse({"error": str(e)}, status=403)
+    except CurrencyMismatchError as e:
+        return JsonResponse({"error": str(e)}, status=400)
     except IntegrityError:
         return JsonResponse({"error": "This time is no longer available."}, status=409)
     except ValidationError as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        error_msg = e.message if hasattr(e, "message") else str(e)
+        return JsonResponse({"error": error_msg}, status=400)
     except Exception:
         logger.exception("Unexpected error in book_slot")
         return JsonResponse(

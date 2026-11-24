@@ -1,16 +1,29 @@
 import calendar
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from accounts.models import Tenant
+from portfolio.models import TeacherProfile
+from wallet.exceptions import CurrencyMismatchError
+from wallet.models import Wallet
+from wallet.services import get_or_create_wallet, reserve_funds
+
 from .models import Booking, RegularAvailability, WeeklyOverride
 from .notifications import notify_booking_expired
 
 INSTANT_TUTORING_BUFFER = timedelta(hours=1)
+
+
+class SlotUnavailableError(Exception):
+    """Raised when a requested booking slot is no longer available."""
+
+    pass
 
 
 def expire_stale_bookings(teacher=None, student=None, now=None):
@@ -456,3 +469,100 @@ def get_week_data(teacher, student_tz, week_days, duration_minutes: int):
         week_data.append({"day": day, "slots": day_slots})
 
     return week_data
+
+
+def create_booking_with_hold(
+    *,
+    teacher,
+    student,
+    start_at: datetime,
+    lesson_option: str,
+    resolve_fn=None,
+) -> Booking:
+    """
+    Atomically locks TeacherProfile, validates slot availability, creates a Booking,
+    and enforces prepaid balance holds when tenant payments are enabled.
+    """
+    resolver = resolve_fn or resolve_lesson_option
+
+    with transaction.atomic():
+        locked_teacher = (
+            TeacherProfile.objects.select_for_update()
+            .select_related("user")
+            .get(pk=teacher.pk)
+        )
+
+        lesson_type, price, duration_minutes = resolver(
+            locked_teacher, student, lesson_option
+        )
+
+        teacher_tz = ZoneInfo(locked_teacher.user.timezone)
+        teacher_local_date = timezone.localtime(start_at, teacher_tz).date()
+        available_starts = get_available_start_times(
+            locked_teacher, teacher_local_date, duration_minutes
+        )
+
+        if start_at not in available_starts:
+            raise SlotUnavailableError("This time is no longer available.")
+
+        tenant = Tenant.objects.filter(teacher_profile=locked_teacher).first()
+        is_zero_price = price is None or price == Decimal("0.00")
+        end_at = start_at + timedelta(minutes=duration_minutes)
+
+        initial_payment_status = (
+            Booking.PaymentStatus.NOT_REQUIRED
+            if is_zero_price
+            else Booking.PaymentStatus.UNPAID
+        )
+
+        booking = Booking.objects.create(
+            student=student,
+            teacher=locked_teacher,
+            start_at=start_at,
+            end_at=end_at,
+            lesson_type=lesson_type,
+            price=price,
+            duration_minutes=duration_minutes,
+            payment_status=initial_payment_status,
+            held_amount=Decimal("0.00"),
+        )
+
+        if is_zero_price or tenant is None or not tenant.payments_enabled:
+            return booking
+
+        wallet = Wallet.objects.filter(
+            tenant=tenant, user=student, currency=tenant.default_currency
+        ).first()
+        if wallet is None:
+            mismatched_wallet = Wallet.objects.filter(
+                tenant=tenant, user=student
+            ).first()
+            if mismatched_wallet is not None:
+                raise CurrencyMismatchError(
+                    f"Wallet currency {mismatched_wallet.currency} does not match "
+                    f"tenant default currency {tenant.default_currency}."
+                )
+            wallet = get_or_create_wallet(
+                user=student, tenant=tenant, currency=tenant.default_currency
+            )
+
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        if locked_wallet.currency != tenant.default_currency:
+            raise CurrencyMismatchError(
+                f"Wallet currency {locked_wallet.currency} does not match "
+                f"tenant default currency {tenant.default_currency}."
+            )
+
+        reserve_funds(
+            tenant=tenant,
+            wallet=locked_wallet,
+            amount=price,
+            idempotency_key=f"tenant:{tenant.id}:booking:{booking.id}:reserve",
+            reference_id=f"booking_{booking.id}",
+            description=f"Booking hold: booking #{booking.id}",
+        )
+
+        booking.payment_status = Booking.PaymentStatus.RESERVED
+        booking.held_amount = price
+        booking.save(update_fields=["payment_status", "held_amount", "updated_at"])
+        return booking

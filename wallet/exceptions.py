@@ -32,3 +32,9 @@ class TenantMismatchError(WalletError):
     """Raised when an operation attempts to mutate a wallet belonging to a different tenant."""
 
     pass
+
+
+class CurrencyMismatchError(WalletError):
+    """Raised when a wallet's currency does not match the tenant's default currency."""
+
+    pass

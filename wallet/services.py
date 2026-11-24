@@ -278,15 +278,16 @@ def get_or_create_wallet(
 ) -> Wallet:
     """
     Idempotently retrieves or creates a Wallet for the given tenant, user, and currency.
-    Safely handles concurrent creations via get_or_create and database constraint fallback.
+    Safely handles concurrent creations via an inner savepoint and database constraint fallback.
     """
     try:
-        wallet, _ = Wallet.objects.get_or_create(
-            tenant=tenant,
-            user=user,
-            currency=currency,
-        )
-        return wallet
+        with transaction.atomic():
+            wallet, _ = Wallet.objects.get_or_create(
+                tenant=tenant,
+                user=user,
+                currency=currency,
+            )
+            return wallet
     except IntegrityError:
         return Wallet.objects.get(
             tenant=tenant,
