@@ -59,3 +59,71 @@ class Wallet(models.Model):
             f"Wallet({self.user.username}, {self.currency}, "
             f"settled={self.settled_balance}, reserved={self.reserved_balance})"
         )
+
+
+class LedgerEntry(models.Model):
+    class EntryType(models.TextChoices):
+        CREDIT = "CREDIT", "Credit"
+        RESERVE = "RESERVE", "Reserve"
+        RELEASE = "RELEASE", "Release"
+        CONSUME = "CONSUME", "Consume"
+        WAIVER = "WAIVER", "Waiver"
+        PAYOUT_HOLD = "PAYOUT_HOLD", "Payout Hold"
+        PAYOUT_SETTLE = "PAYOUT_SETTLE", "Payout Settle"
+        PAYOUT_RELEASE = "PAYOUT_RELEASE", "Payout Release"
+        ADJUSTMENT_CREDIT = "ADJUSTMENT_CREDIT", "Adjustment Credit"
+        ADJUSTMENT_DEBIT = "ADJUSTMENT_DEBIT", "Adjustment Debit"
+
+    tenant = models.ForeignKey(
+        "accounts.Tenant",
+        on_delete=models.PROTECT,
+        related_name="ledger_entries",
+    )
+    wallet = models.ForeignKey(
+        Wallet,
+        on_delete=models.PROTECT,
+        related_name="entries",
+    )
+    entry_type = models.CharField(
+        max_length=24,
+        choices=EntryType.choices,
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+    settled_after = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+    reserved_after = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+    idempotency_key = models.CharField(
+        max_length=128,
+        unique=True,
+        db_index=True,
+    )
+    reference_id = models.CharField(
+        max_length=128,
+        db_index=True,
+    )
+    description = models.CharField(
+        max_length=255,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=Decimal("0.00")),
+                name="ledger_entry_amount_positive",
+            ),
+        ]
+
+    def __str__(self):
+        return f"LedgerEntry({self.id}, {self.entry_type}, {self.amount})"

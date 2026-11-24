@@ -43,8 +43,14 @@ Status: fresh recovery/deployment bugs are already fixed (media/static 403 issue
   - Integration point: Hook into existing Celery periodic reminder tasks using `create_and_send_notification`.
   - Ensure idempotency so duplicate notifications are never emitted for the same lesson.
 - [x] Student↔teacher messaging — real-time chat via Django Channels/WebSockets built on top of the ASGI foundation established in ADR 0007 (see ADR 0008) (#252, #253, #254, #255, #256, #257, #258)
+- [x] feat(chat): role-aware messaging navigation, tenant entry points, and split-view inbox (see ADR 0009) (#271, #272, #273, #274, #275, #276)
+  - [x] Bidirectional initiation route (`/messages/with/<username>/`) with role and tenant boundary validation (#272)
+  - [x] Booking-anchored message shortcuts on upcoming/past lesson cards and lesson details modal (#273)
+  - [x] Prospective student inquiry messages flow and timeline empty state (#274)
+  - [x] Role-aware inbox: direct single-pane view for students; responsive 2-pane split-view for teachers (#275)
+  - [x] Real-time notification metadata broadcast for live teacher split-view list synchronization (#276)
 - [ ] Legal pages (Terms of Service / Privacy Policy) — required before payments go live
-- [ ] Payments/financial section (last, after everything above)
+- [ ] Payments & prepaid financial core (PR 1 through PR 5) (see [docs/specs/prepaid-financial-core-and-wallet.md](docs/specs/prepaid-financial-core-and-wallet.md), master design in [docs/payments-design.md](docs/payments-design.md), and rollout plan in [docs/payments-rollout-plan.md](docs/payments-rollout-plan.md))
 
 ## 🔮 Architecture & Integrations — future / low priority
 - [ ] Direct Google Meet API integration — automatically generate and attach unique Google Meet room links per booking (replaces static teacher meeting link)
