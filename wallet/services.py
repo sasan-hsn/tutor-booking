@@ -1,7 +1,10 @@
+import logging
+import uuid
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.db import IntegrityError, transaction
+from django.db.models import Case, DecimalField, F, Sum, Value, When
 
 from wallet.exceptions import (
     InsufficientBalanceError,
@@ -15,6 +18,8 @@ from wallet.models import LedgerEntry, Wallet
 if TYPE_CHECKING:
     from accounts.models import Tenant, User
 
+logger = logging.getLogger(__name__)
+
 ALLOWED_CREDIT_ENTRY_TYPES = frozenset(
     {
         LedgerEntry.EntryType.CREDIT,
@@ -22,6 +27,226 @@ ALLOWED_CREDIT_ENTRY_TYPES = frozenset(
         LedgerEntry.EntryType.ADJUSTMENT_CREDIT,
     }
 )
+
+SETTLED_INCREMENT_ENTRY_TYPES = frozenset(
+    {
+        LedgerEntry.EntryType.CREDIT,
+        LedgerEntry.EntryType.WAIVER,
+        LedgerEntry.EntryType.ADJUSTMENT_CREDIT,
+    }
+)
+
+SETTLED_DECREMENT_ENTRY_TYPES = frozenset(
+    {
+        LedgerEntry.EntryType.CONSUME,
+        LedgerEntry.EntryType.PAYOUT_SETTLE,
+        LedgerEntry.EntryType.ADJUSTMENT_DEBIT,
+    }
+)
+
+RESERVED_INCREMENT_ENTRY_TYPES = frozenset(
+    {
+        LedgerEntry.EntryType.RESERVE,
+        LedgerEntry.EntryType.PAYOUT_HOLD,
+    }
+)
+
+RESERVED_DECREMENT_ENTRY_TYPES = frozenset(
+    {
+        LedgerEntry.EntryType.RELEASE,
+        LedgerEntry.EntryType.CONSUME,
+        LedgerEntry.EntryType.PAYOUT_SETTLE,
+        LedgerEntry.EntryType.PAYOUT_RELEASE,
+    }
+)
+
+
+class ExpectedBalances(NamedTuple):
+    expected_settled: Decimal
+    expected_reserved: Decimal
+
+
+def compute_expected_balances(wallet: Wallet) -> ExpectedBalances:
+    """
+    Computes expected settled and reserved balances directly from the wallet's immutable LedgerEntries.
+    Uses database-level conditional aggregation for speed and precision.
+    """
+    aggregates = wallet.entries.aggregate(
+        settled_inc=Sum(
+            Case(
+                When(entry_type__in=SETTLED_INCREMENT_ENTRY_TYPES, then=F("amount")),
+                default=Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        ),
+        settled_dec=Sum(
+            Case(
+                When(entry_type__in=SETTLED_DECREMENT_ENTRY_TYPES, then=F("amount")),
+                default=Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        ),
+        reserved_inc=Sum(
+            Case(
+                When(entry_type__in=RESERVED_INCREMENT_ENTRY_TYPES, then=F("amount")),
+                default=Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        ),
+        reserved_dec=Sum(
+            Case(
+                When(entry_type__in=RESERVED_DECREMENT_ENTRY_TYPES, then=F("amount")),
+                default=Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        ),
+    )
+
+    settled = (aggregates["settled_inc"] or Decimal("0.00")) - (
+        aggregates["settled_dec"] or Decimal("0.00")
+    )
+    reserved = (aggregates["reserved_inc"] or Decimal("0.00")) - (
+        aggregates["reserved_dec"] or Decimal("0.00")
+    )
+
+    return ExpectedBalances(
+        expected_settled=settled.quantize(Decimal("0.01")),
+        expected_reserved=reserved.quantize(Decimal("0.01")),
+    )
+
+
+def audit_wallet(*, wallet: Wallet) -> dict:
+    """
+    Audits a single wallet's cached balance against its immutable ledger entries.
+    Returns a structured dictionary detailing balances and discrepancies.
+    """
+    breakdown = compute_expected_balances(wallet)
+    settled_diff = (wallet.settled_balance - breakdown.expected_settled).quantize(
+        Decimal("0.01")
+    )
+    reserved_diff = (wallet.reserved_balance - breakdown.expected_reserved).quantize(
+        Decimal("0.01")
+    )
+    has_discrepancy = (settled_diff != Decimal("0.00")) or (
+        reserved_diff != Decimal("0.00")
+    )
+
+    return {
+        "wallet_id": wallet.id,
+        "user_id": wallet.user_id,
+        "tenant_id": wallet.tenant_id,
+        "currency": wallet.currency,
+        "is_frozen": wallet.is_frozen,
+        "cached_settled": wallet.settled_balance,
+        "expected_settled": breakdown.expected_settled,
+        "cached_reserved": wallet.reserved_balance,
+        "expected_reserved": breakdown.expected_reserved,
+        "settled_discrepancy": settled_diff,
+        "reserved_discrepancy": reserved_diff,
+        "has_discrepancy": has_discrepancy,
+    }
+
+
+def reconcile_wallet_balances(*, tenant: "Tenant | None" = None) -> list[dict]:
+    """
+    Scans active wallets and computes discrepancies between cached snapshots and ledger entries.
+    Emits a CRITICAL log entry for any detected mismatch.
+    Returns a list of audit discrepancy records.
+    """
+    wallets = Wallet.objects.filter(user__is_active=True).select_related(
+        "user", "tenant"
+    )
+    if tenant is not None:
+        wallets = wallets.filter(tenant=tenant)
+
+    discrepancies: list[dict] = []
+    for wallet in wallets:
+        audit_res = audit_wallet(wallet=wallet)
+        if audit_res["has_discrepancy"]:
+            logger.critical(
+                "Wallet balance discrepancy detected: wallet_id=%s tenant_id=%s user_id=%s "
+                "cached_settled=%s expected_settled=%s cached_reserved=%s expected_reserved=%s",
+                wallet.id,
+                wallet.tenant_id,
+                wallet.user_id,
+                audit_res["cached_settled"],
+                audit_res["expected_settled"],
+                audit_res["cached_reserved"],
+                audit_res["expected_reserved"],
+            )
+            discrepancies.append(audit_res)
+
+    return discrepancies
+
+
+def freeze_wallet(*, wallet_id: int, is_frozen: bool) -> Wallet:
+    """
+    Updates the is_frozen state of a wallet atomically under select_for_update lock.
+    Emits a structured audit log and returns the updated Wallet instance.
+    """
+    with transaction.atomic():
+        wallet = Wallet.objects.select_for_update().get(pk=wallet_id)
+        wallet.is_frozen = is_frozen
+        wallet.save(update_fields=["is_frozen", "updated_at"])
+
+        logger.info(
+            "Wallet frozen state updated: wallet_id=%s is_frozen=%s",
+            wallet.id,
+            is_frozen,
+        )
+        return wallet
+
+
+def repair_wallet_cache(
+    *,
+    wallet_id: int,
+    admin_user: "User | None" = None,
+    commit: bool = False,
+) -> dict:
+    """
+    Audits and optionally repairs a wallet's cached balance from its immutable ledger entries.
+    When commit=True, updates the wallet snapshot under select_for_update row lock and emits an audit log.
+    """
+    with transaction.atomic():
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet_id)
+        audit_res = audit_wallet(wallet=locked_wallet)
+
+        old_settled = locked_wallet.settled_balance
+        old_reserved = locked_wallet.reserved_balance
+        expected_settled = audit_res["expected_settled"]
+        expected_reserved = audit_res["expected_reserved"]
+        has_discrepancy = audit_res["has_discrepancy"]
+
+        if commit and has_discrepancy:
+            locked_wallet.settled_balance = expected_settled
+            locked_wallet.reserved_balance = expected_reserved
+            locked_wallet.save(
+                update_fields=["settled_balance", "reserved_balance", "updated_at"]
+            )
+
+            logger.info(
+                "Wallet balance cache repaired: wallet_id=%s admin_id=%s "
+                "settled_before=%s settled_after=%s reserved_before=%s reserved_after=%s",
+                locked_wallet.id,
+                admin_user.id if admin_user else None,
+                old_settled,
+                expected_settled,
+                old_reserved,
+                expected_reserved,
+            )
+
+        return {
+            "wallet_id": wallet_id,
+            "admin_id": admin_user.id if admin_user else None,
+            "committed": commit,
+            "has_discrepancy": has_discrepancy,
+            "settled_before": old_settled,
+            "settled_after": (expected_settled if commit else old_settled),
+            "reserved_before": old_reserved,
+            "reserved_after": (expected_reserved if commit else old_reserved),
+            "expected_settled": expected_settled,
+            "expected_reserved": expected_reserved,
+        }
 
 
 def _validate_positive_decimal(amount: Decimal) -> None:
@@ -161,4 +386,83 @@ def reserve_funds(
         )
 
         _sync_wallet_instance(wallet, locked_wallet)
+        return entry
+
+
+def adjust_wallet(
+    *,
+    tenant: "Tenant",
+    wallet: Wallet,
+    amount: Decimal,
+    direction: str,
+    reason: str,
+    admin_user: "User",
+) -> LedgerEntry:
+    """
+    Executes an administrative balance adjustment (credit or debit) under select_for_update lock.
+    Enforces strict direction, amount, reason, and tenant validations.
+    Emits a structured security audit log and creates an immutable LedgerEntry.
+    """
+    if direction not in ("credit", "debit"):
+        raise ValueError(
+            f"Invalid direction {direction!r}. Must be 'credit' or 'debit'."
+        )
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("Reason must be a non-empty string.")
+
+    _validate_positive_decimal(amount)
+
+    if wallet.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Wallet {wallet.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    with transaction.atomic():
+        locked_wallet = _lock_wallet(tenant, wallet)
+
+        if direction == "credit":
+            locked_wallet.settled_balance += amount
+            entry_type = LedgerEntry.EntryType.ADJUSTMENT_CREDIT
+        else:  # direction == "debit"
+            if locked_wallet.available_balance < amount:
+                raise InsufficientBalanceError(
+                    f"Insufficient available balance: required {amount}, "
+                    f"available {locked_wallet.available_balance}."
+                )
+            locked_wallet.settled_balance -= amount
+            entry_type = LedgerEntry.EntryType.ADJUSTMENT_DEBIT
+
+        locked_wallet.save(update_fields=["settled_balance", "updated_at"])
+
+        idempotency_key = (
+            f"tenant_{tenant.id}:adjust_{locked_wallet.id}:{uuid.uuid4().hex}"
+        )
+        reference_id = f"admin_{admin_user.id}"
+        description = f"Administrative adjustment ({direction}): {reason.strip()}"
+
+        entry = LedgerEntry.objects.create(
+            tenant=tenant,
+            wallet=locked_wallet,
+            entry_type=entry_type,
+            amount=amount,
+            settled_after=locked_wallet.settled_balance,
+            reserved_after=locked_wallet.reserved_balance,
+            idempotency_key=idempotency_key,
+            reference_id=reference_id,
+            description=description,
+        )
+
+        _sync_wallet_instance(wallet, locked_wallet)
+
+        logger.info(
+            "Administrative wallet adjustment: wallet_id=%s admin_id=%s direction=%s amount=%s reason=%r entry_id=%s",
+            locked_wallet.id,
+            admin_user.id,
+            direction,
+            amount,
+            reason.strip(),
+            entry.id,
+        )
+
         return entry

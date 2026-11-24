@@ -290,6 +290,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "booking.tasks.send_daily_schedule_digests",
         "schedule": 3600.0,
     },
+    "reconcile-wallet-balances-daily": {
+        "task": "wallet.tasks.reconcile_wallet_balances_task",
+        "schedule": 86400.0,
+    },
 }
 
 TEACHER_DAILY_DIGEST_HOUR = int(os.getenv("TEACHER_DAILY_DIGEST_HOUR", "20"))
