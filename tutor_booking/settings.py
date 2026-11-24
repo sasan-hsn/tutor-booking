@@ -1,5 +1,6 @@
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import dj_database_url
@@ -67,6 +68,7 @@ INSTALLED_APPS = [
     "notifications",
     "chat",
     "wallet",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -324,3 +326,7 @@ STORAGES = {
 # Media files (user-uploaded content)
 MEDIA_URL = "media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+
+# Financial & Payments Configuration
+MIN_TOPUP_AMOUNT = Decimal(os.getenv("MIN_TOPUP_AMOUNT", "20.00"))
+TERMS_CURRENT_VERSION = os.getenv("TERMS_CURRENT_VERSION", "2026.1")

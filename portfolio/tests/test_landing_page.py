@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.urls import reverse
 
+from accounts.models import Tenant
 from accounts.tests.base import RoleTestCase
 from portfolio.models import TeacherProfile
 
@@ -49,6 +50,7 @@ class LandingPagePricingTests(RoleTestCase):
         self.assertNotContains(response, "First trial session free")
 
     def test_landing_page_empty_state_when_no_teacher_profile(self):
+        Tenant.objects.all().delete()
         TeacherProfile.objects.all().delete()
         response = self.client.get(reverse("portfolio:landing_page"))
         self.assertEqual(response.status_code, 200)
