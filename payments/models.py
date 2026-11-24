@@ -105,7 +105,7 @@ class Order(models.Model):
 
     def clean(self):
         super().clean()
-        if self.amount is not None and self.tenant_id:
+        if self.pk is None and self.amount is not None and self.tenant_id:
             if self.amount < self.tenant.min_topup_amount:
                 raise ValidationError(
                     {

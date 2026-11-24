@@ -22,9 +22,6 @@ def create_profile(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=TeacherProfile)
 def create_tenant_for_teacher(sender, instance, created, **kwargs):
-    if not created:
-        return
-
     from .models import Tenant
 
     tenant_name = (
