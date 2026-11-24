@@ -5,7 +5,9 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -154,7 +156,17 @@ class WeeklyOverride(models.Model):
         )
 
 
+class BookingQuerySet(models.QuerySet):
+    def delete(self):
+        with transaction.atomic():
+            if self.filter(payment_status=Booking.PaymentStatus.RESERVED).exists():
+                raise ValidationError(Booking.ACTIVE_HOLD_DELETE_ERROR)
+            return super().delete()
+
+
 class Booking(models.Model):
+    ACTIVE_HOLD_DELETE_ERROR = "Cannot delete booking with active funds hold"
+
     class LessonType(models.TextChoices):
         TRIAL = "trial", "Trial Lesson"
         REGULAR = "regular", "Regular Lesson"
@@ -166,6 +178,14 @@ class Booking(models.Model):
         CANCELLED = "cancelled", "Cancelled"
         DISPUTING = "disputing", "Disputing"
         EXPIRED = "expired", "Expired"
+
+    class PaymentStatus(models.TextChoices):
+        LEGACY_EXTERNAL = "LEGACY_EXTERNAL", "Legacy External"
+        NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
+        UNPAID = "UNPAID", "Unpaid"
+        RESERVED = "RESERVED", "Reserved"
+        CONSUMED = "CONSUMED", "Consumed"
+        RELEASED = "RELEASED", "Released"
 
     JOIN_WINDOW_PRE_START_MINUTES = 10
     JOIN_WINDOW_POST_END_MINUTES = 10
@@ -197,10 +217,32 @@ class Booking(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal("0.00"))],
     )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.UNPAID,
+    )
+    held_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    settlement_reason = models.CharField(max_length=32, blank=True, null=True)
+    dispute_opened_at = models.DateTimeField(null=True, blank=True)
+    dispute_resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_disputes",
+    )
+    dispute_resolution = models.CharField(max_length=32, blank=True, null=True)
     reminder_24h_sent = models.BooleanField(default=False, db_index=True)
     reminder_1h_sent = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = BookingQuerySet.as_manager()
 
     class Meta:
         ordering = ["-created_at"]
@@ -255,6 +297,16 @@ class Booking(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.payment_status == self.PaymentStatus.RESERVED or (
+            self.pk is not None
+            and Booking.objects.filter(
+                pk=self.pk, payment_status=self.PaymentStatus.RESERVED
+            ).exists()
+        ):
+            raise ValidationError(self.ACTIVE_HOLD_DELETE_ERROR)
+        return super().delete(*args, **kwargs)
 
     @property
     def student_display_name(self):
@@ -336,6 +388,12 @@ class Booking(models.Model):
             f"Booking #{self.id} | {self.student} |"
             f" {self.get_lesson_type_display()} | {self.get_status_display()}"
         )
+
+
+@receiver(pre_delete, sender=Booking)
+def prevent_reserved_booking_cascade_delete(sender, instance, **kwargs):
+    if instance.payment_status == Booking.PaymentStatus.RESERVED:
+        raise ValidationError(Booking.ACTIVE_HOLD_DELETE_ERROR)
 
 
 class Review(models.Model):
