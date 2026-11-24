@@ -9,7 +9,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from accounts.models import StudentProfile, User
+from accounts.models import StudentProfile, Tenant, User
 from booking.models import Booking, RegularAvailability, Review, WeeklyOverride
 from portfolio.models import TeacherProfile
 
@@ -202,7 +202,8 @@ class VerifyDatabaseIntegrityTests(TestCase):
         self.assertIn("Unapplied migration: accounts.9999_fake_migration", output)
 
     def test_referential_integrity_missing_profile_for_teacher(self):
-        # Delete the TeacherProfile while keeping the user
+        # Delete Tenant then the TeacherProfile while keeping the user
+        Tenant.objects.filter(teacher_profile=self.teacher_profile).delete()
         TeacherProfile.objects.filter(id=self.teacher_profile.id).delete()
 
         out = io.StringIO()

@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import StudentProfile, User
+from tutor_booking.admin import ReadOnlyModelAdmin
+
+from .models import StudentProfile, Tenant, TermsAcceptance, User
 
 
 class UserAdmin(BaseUserAdmin):
@@ -11,3 +13,5 @@ class UserAdmin(BaseUserAdmin):
 
 admin.site.register(User, UserAdmin)
 admin.site.register(StudentProfile)
+admin.site.register(Tenant, ReadOnlyModelAdmin)
+admin.site.register(TermsAcceptance, ReadOnlyModelAdmin)

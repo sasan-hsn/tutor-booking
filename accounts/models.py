@@ -1,3 +1,4 @@
+from decimal import Decimal
 from zoneinfo import available_timezones
 
 from django.conf import settings
@@ -83,3 +84,55 @@ class StudentProfile(models.Model):
 
     def __str__(self):
         return f"Student Profile: {self.user.username}"
+
+
+def get_default_min_topup_amount():
+    return getattr(settings, "MIN_TOPUP_AMOUNT", Decimal("20.00"))
+
+
+class Tenant(models.Model):
+    teacher_profile = models.OneToOneField(
+        "portfolio.TeacherProfile",
+        on_delete=models.PROTECT,
+        related_name="tenant",
+    )
+    name = models.CharField(max_length=255)
+    payments_enabled = models.BooleanField(default=False)
+    default_currency = models.CharField(max_length=3, default="USD")
+    min_topup_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=get_default_min_topup_amount,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Tenant: {self.name} ({self.default_currency})"
+
+
+class TermsAcceptance(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.PROTECT,
+        related_name="terms_acceptances",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="terms_acceptances",
+    )
+    version = models.CharField(max_length=16)
+    ip_address = models.GenericIPAddressField()
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "tenant", "version"],
+                name="unique_user_tenant_terms_version",
+            ),
+        ]
+
+    def __str__(self):
+        return f"TermsAcceptance: {self.user} - v{self.version} ({self.tenant})"
