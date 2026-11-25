@@ -7,6 +7,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 
 from wallet.exceptions import (
+    CurrencyMismatchError,
     InsufficientBalanceError,
     InvalidAmountError,
     InvalidEntryTypeError,
@@ -17,6 +18,7 @@ from wallet.models import LedgerEntry, Wallet
 
 if TYPE_CHECKING:
     from accounts.models import Tenant, User
+    from booking.models import Booking
 
 logger = logging.getLogger(__name__)
 
@@ -466,4 +468,128 @@ def adjust_wallet(
             entry.id,
         )
 
+        return entry
+
+
+def settle_booking(
+    *,
+    tenant: "Tenant",
+    booking: "Booking",
+    action: str,
+    actor: "User | None" = None,
+    reason: str,
+) -> LedgerEntry | None:
+    """
+    Executes the terminal financial settlement of a booking hold under strict lock ordering:
+    TeacherProfile -> Booking -> Wallet.
+
+    Returns None idempotently if the booking's payment_status is not RESERVED after locking.
+    Permits settling existing holds even when the student's wallet is frozen.
+    """
+    from booking.models import Booking
+    from portfolio.models import TeacherProfile
+
+    if action not in ("consume", "release"):
+        raise ValueError(
+            f"Invalid settlement action {action!r}. Must be 'consume' or 'release'."
+        )
+
+    if reason not in Booking.SettlementReason.values:
+        raise ValueError(
+            f"Invalid settlement reason {reason!r}. Must be a valid Booking.SettlementReason."
+        )
+
+    with transaction.atomic():
+        locked_teacher = TeacherProfile.objects.select_for_update().get(
+            pk=booking.teacher_id
+        )
+        if tenant.teacher_profile_id != locked_teacher.pk:
+            raise TenantMismatchError(
+                f"Booking {booking.pk} does not belong to tenant {tenant.pk}."
+            )
+
+        locked_booking = Booking.objects.select_for_update().get(pk=booking.pk)
+        if locked_booking.payment_status != Booking.PaymentStatus.RESERVED:
+            booking.payment_status = locked_booking.payment_status
+            booking.settlement_reason = locked_booking.settlement_reason
+            return None
+
+        amount = locked_booking.held_amount
+        _validate_positive_decimal(amount)
+
+        locked_wallet = (
+            Wallet.objects.select_for_update()
+            .filter(
+                tenant=tenant,
+                user_id=locked_booking.student_id,
+                currency=tenant.default_currency,
+            )
+            .first()
+        )
+        if locked_wallet is None:
+            mismatched = Wallet.objects.filter(
+                tenant=tenant, user_id=locked_booking.student_id
+            ).first()
+            if mismatched is not None:
+                raise CurrencyMismatchError(
+                    f"Wallet currency {mismatched.currency} does not match "
+                    f"tenant default currency {tenant.default_currency}."
+                )
+            raise Wallet.DoesNotExist(
+                f"No wallet found for user {locked_booking.student_id} in tenant {tenant.pk}."
+            )
+
+        if action == "release":
+            if locked_wallet.reserved_balance < amount:
+                raise InsufficientBalanceError(
+                    f"Insufficient reserved balance to release {amount}: "
+                    f"reserved={locked_wallet.reserved_balance}."
+                )
+            locked_wallet.reserved_balance -= amount
+            locked_wallet.save(update_fields=["reserved_balance", "updated_at"])
+            entry_type = LedgerEntry.EntryType.RELEASE
+            new_payment_status = Booking.PaymentStatus.RELEASED
+        else:
+            if (
+                locked_wallet.reserved_balance < amount
+                or locked_wallet.settled_balance < amount
+            ):
+                raise InsufficientBalanceError(
+                    f"Insufficient balance to consume {amount}: "
+                    f"settled={locked_wallet.settled_balance}, "
+                    f"reserved={locked_wallet.reserved_balance}."
+                )
+            locked_wallet.settled_balance -= amount
+            locked_wallet.reserved_balance -= amount
+            locked_wallet.save(
+                update_fields=["settled_balance", "reserved_balance", "updated_at"]
+            )
+            entry_type = LedgerEntry.EntryType.CONSUME
+            new_payment_status = Booking.PaymentStatus.CONSUMED
+
+        locked_booking.payment_status = new_payment_status
+        locked_booking.settlement_reason = reason
+        locked_booking.save(
+            update_fields=["payment_status", "settlement_reason", "updated_at"]
+        )
+
+        actor_label = f"user:{actor.id}" if actor is not None else "system"
+        entry = LedgerEntry.objects.create(
+            tenant=tenant,
+            wallet=locked_wallet,
+            entry_type=entry_type,
+            amount=amount,
+            settled_after=locked_wallet.settled_balance,
+            reserved_after=locked_wallet.reserved_balance,
+            idempotency_key=f"tenant:{tenant.id}:booking:{locked_booking.id}:settle",
+            reference_id=f"booking_{locked_booking.id}",
+            description=(
+                f"Booking settlement ({action}: {reason}) by {actor_label} "
+                f"for booking #{locked_booking.id}"
+            ),
+        )
+
+        booking.payment_status = locked_booking.payment_status
+        booking.settlement_reason = locked_booking.settlement_reason
+        booking.updated_at = locked_booking.updated_at
         return entry

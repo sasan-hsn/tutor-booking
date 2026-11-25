@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 
 from accounts.avatar_utils import get_avatar_color
 from accounts.decorators import student_required, teacher_required
-from accounts.models import StudentProfile
+from accounts.models import StudentProfile, Tenant
 from chat.services import record_booking_event
 from portfolio.models import TeacherProfile
 from wallet.exceptions import (
@@ -23,6 +23,7 @@ from wallet.exceptions import (
     InsufficientBalanceError,
     WalletFrozenError,
 )
+from wallet.services import settle_booking
 
 from .forms import ReviewForm
 from .models import Booking, RegularAvailability, Review, WeeklyOverride
@@ -68,6 +69,27 @@ def safe_record_booking_event(booking, event_type: str):
             getattr(booking, "id", None),
         )
         return None
+
+
+def _settle_booking_for_teacher(
+    *,
+    teacher: TeacherProfile,
+    booking: Booking,
+    action: str,
+    actor,
+    reason: str,
+) -> None:
+    """Resolve the teacher's tenant and settle the booking hold inside the active atomic block."""
+    tenant = Tenant.objects.filter(teacher_profile=teacher).first()
+    if tenant is None:
+        return
+    settle_booking(
+        tenant=tenant,
+        booking=booking,
+        action=action,
+        actor=actor,
+        reason=reason,
+    )
 
 
 def _get_student_upcoming_queryset(student, now):
@@ -500,35 +522,41 @@ def teacher_lesson_requests(request):
 @teacher_required
 @require_POST
 def respond_to_booking(request, booking_id):
-    booking = get_object_or_404(
-        Booking,
-        id=booking_id,
-        teacher__user=request.user,
-    )
-
     action = request.POST.get("action")
-    if action not in ("accept", "decline"):
-        return JsonResponse({"error": "Invalid action."}, status=400)
-
     marked_notification_ids = []
     unread_notifications_count = 0
 
-    if booking.cancellation_requested:
-        pass
-    elif booking.status == Booking.Status.EXPIRED:
-        return JsonResponse({"error": "This lesson request has expired."}, status=400)
-    elif booking.status == Booking.Status.PENDING:
-        if booking.start_at <= timezone.now():
-            expire_stale_bookings(teacher=booking.teacher)
+    with transaction.atomic():
+        teacher = get_object_or_404(
+            TeacherProfile.objects.select_for_update(),
+            user=request.user,
+        )
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            id=booking_id,
+            teacher=teacher,
+        )
+
+        if action not in ("accept", "decline"):
+            return JsonResponse({"error": "Invalid action."}, status=400)
+
+        if booking.cancellation_requested:
+            pass
+        elif booking.status == Booking.Status.EXPIRED:
             return JsonResponse(
                 {"error": "This lesson request has expired."}, status=400
             )
-    else:
-        return JsonResponse(
-            {"error": "This booking is not awaiting a response."}, status=400
-        )
+        elif booking.status == Booking.Status.PENDING:
+            if booking.start_at <= timezone.now():
+                expire_stale_bookings(teacher=teacher)
+                return JsonResponse(
+                    {"error": "This lesson request has expired."}, status=400
+                )
+        else:
+            return JsonResponse(
+                {"error": "This booking is not awaiting a response."}, status=400
+            )
 
-    with transaction.atomic():
         if booking.cancellation_requested:
             was_confirmed = booking.status == Booking.Status.CONFIRMED
             if action == "accept":
@@ -536,6 +564,13 @@ def respond_to_booking(request, booking_id):
             booking.cancellation_requested = False
             booking.save()
             if action == "accept":
+                _settle_booking_for_teacher(
+                    teacher=teacher,
+                    booking=booking,
+                    action="release",
+                    actor=request.user,
+                    reason=Booking.SettlementReason.STUDENT_CANCELLED,
+                )
                 transaction.on_commit(
                     lambda: safe_record_booking_event(booking, "booking_cancelled")
                 )
@@ -562,6 +597,13 @@ def respond_to_booking(request, booking_id):
                     lambda: safe_record_booking_event(booking, "booking_confirmed")
                 )
             elif action == "decline":
+                _settle_booking_for_teacher(
+                    teacher=teacher,
+                    booking=booking,
+                    action="release",
+                    actor=request.user,
+                    reason=Booking.SettlementReason.TEACHER_DECLINED,
+                )
                 notify_booking_declined(booking)
                 transaction.on_commit(
                     lambda: safe_send_booking_declined_email(booking_id)
@@ -889,26 +931,36 @@ def lesson_detail(request, booking_id):
 @teacher_required
 @require_POST
 def cancel_lesson(request, booking_id):
-    teacher = get_object_or_404(TeacherProfile, user=request.user)
-    booking = get_object_or_404(
-        Booking,
-        pk=booking_id,
-        teacher=teacher,
-        status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
-    )
-
-    if booking.is_awaiting_resolution:
-        return JsonResponse(
-            {
-                "error": "This lesson has already passed and needs resolution, not cancellation."
-            },
-            status=400,
+    with transaction.atomic():
+        teacher = get_object_or_404(
+            TeacherProfile.objects.select_for_update(),
+            user=request.user,
+        )
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            pk=booking_id,
+            teacher=teacher,
+            status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
         )
 
-    with transaction.atomic():
+        if booking.is_awaiting_resolution:
+            return JsonResponse(
+                {
+                    "error": "This lesson has already passed and needs resolution, not cancellation."
+                },
+                status=400,
+            )
+
         was_confirmed = booking.status == Booking.Status.CONFIRMED
         booking.status = Booking.Status.CANCELLED
         booking.save()
+        _settle_booking_for_teacher(
+            teacher=teacher,
+            booking=booking,
+            action="release",
+            actor=request.user,
+            reason=Booking.SettlementReason.TEACHER_CANCELLED,
+        )
         booking_id = booking.id
         transaction.on_commit(
             lambda: safe_record_booking_event(booking, "booking_cancelled")
@@ -922,39 +974,83 @@ def cancel_lesson(request, booking_id):
 @teacher_required
 @require_POST
 def complete_lesson(request, booking_id):
-    teacher = get_object_or_404(TeacherProfile, user=request.user)
-    booking = get_object_or_404(
-        Booking,
-        pk=booking_id,
-        teacher=teacher,
-        status=Booking.Status.CONFIRMED,
-    )
+    with transaction.atomic():
+        teacher = get_object_or_404(
+            TeacherProfile.objects.select_for_update(),
+            user=request.user,
+        )
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            pk=booking_id,
+            teacher=teacher,
+            status=Booking.Status.CONFIRMED,
+        )
 
-    if not booking.is_awaiting_resolution:
-        return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
+        if not booking.is_awaiting_resolution:
+            return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
 
-    booking.status = Booking.Status.COMPLETED
-    booking.completion_note = request.POST.get("note", "").strip()
-    booking.save()
+        booking.status = Booking.Status.COMPLETED
+        booking.completion_note = request.POST.get("note", "").strip()
+        booking.save()
+        _settle_booking_for_teacher(
+            teacher=teacher,
+            booking=booking,
+            action="consume",
+            actor=request.user,
+            reason=Booking.SettlementReason.COMPLETED,
+        )
     return JsonResponse({"success": True})
 
 
 @teacher_required
 @require_POST
 def mark_lesson_not_held(request, booking_id):
-    teacher = get_object_or_404(TeacherProfile, user=request.user)
-    booking = get_object_or_404(
-        Booking,
-        pk=booking_id,
-        teacher=teacher,
-        status=Booking.Status.CONFIRMED,
-    )
+    fault_party = request.POST.get("fault_party")
 
-    if not booking.is_awaiting_resolution:
-        return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
+    with transaction.atomic():
+        teacher = get_object_or_404(
+            TeacherProfile.objects.select_for_update(),
+            user=request.user,
+        )
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            pk=booking_id,
+            teacher=teacher,
+            status=Booking.Status.CONFIRMED,
+        )
 
-    booking.status = Booking.Status.CANCELLED
-    booking.save()
+        if not booking.is_awaiting_resolution:
+            return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
+
+        if booking.payment_status == Booking.PaymentStatus.RESERVED:
+            if fault_party not in ("teacher", "student"):
+                return JsonResponse(
+                    {"error": "fault_party must be 'teacher' or 'student'."},
+                    status=400,
+                )
+        elif fault_party not in (None, "", "teacher", "student"):
+            return JsonResponse(
+                {"error": "fault_party must be 'teacher' or 'student'."},
+                status=400,
+            )
+
+        booking.status = Booking.Status.CANCELLED
+        booking.save()
+
+        if fault_party == "student":
+            settle_action = "consume"
+            settle_reason = Booking.SettlementReason.STUDENT_ABSENT
+        else:
+            settle_action = "release"
+            settle_reason = Booking.SettlementReason.NOT_HELD_TEACHER_FAULT
+
+        _settle_booking_for_teacher(
+            teacher=teacher,
+            booking=booking,
+            action=settle_action,
+            actor=request.user,
+            reason=settle_reason,
+        )
     return JsonResponse({"success": True})
 
 

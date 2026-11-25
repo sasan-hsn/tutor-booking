@@ -187,6 +187,19 @@ class Booking(models.Model):
         CONSUMED = "CONSUMED", "Consumed"
         RELEASED = "RELEASED", "Released"
 
+    class SettlementReason(models.TextChoices):
+        COMPLETED = "COMPLETED", "Completed"
+        LATE_CANCEL = "LATE_CANCEL", "Late Cancel"
+        STUDENT_ABSENT = "STUDENT_ABSENT", "Student Absent"
+        NOT_HELD_TEACHER_FAULT = "NOT_HELD_TEACHER_FAULT", "Not Held (Teacher Fault)"
+        STUDENT_CANCELLED = "STUDENT_CANCELLED", "Student Cancelled"
+        TEACHER_CANCELLED = "TEACHER_CANCELLED", "Teacher Cancelled"
+        TEACHER_DECLINED = "TEACHER_DECLINED", "Teacher Declined"
+        EXPIRED_PENDING = "EXPIRED_PENDING", "Expired Pending"
+        DISPUTE_STUDENT_FAVOR = "DISPUTE_STUDENT_FAVOR", "Dispute (Student Favor)"
+        DISPUTE_TEACHER_FAVOR = "DISPUTE_TEACHER_FAVOR", "Dispute (Teacher Favor)"
+        DISPUTE_EXPIRED = "DISPUTE_EXPIRED", "Dispute Expired"
+
     JOIN_WINDOW_PRE_START_MINUTES = 10
     JOIN_WINDOW_POST_END_MINUTES = 10
 
@@ -227,7 +240,12 @@ class Booking(models.Model):
         decimal_places=2,
         default=Decimal("0.00"),
     )
-    settlement_reason = models.CharField(max_length=32, blank=True, null=True)
+    settlement_reason = models.CharField(
+        max_length=32,
+        choices=SettlementReason.choices,
+        blank=True,
+        null=True,
+    )
     dispute_opened_at = models.DateTimeField(null=True, blank=True)
     dispute_resolved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
