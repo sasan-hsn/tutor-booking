@@ -367,7 +367,12 @@ class Booking(models.Model):
 
     @property
     def is_awaiting_resolution(self):
-        return self.status == self.Status.CONFIRMED and self.end_at < timezone.now()
+        if self.status != self.Status.CONFIRMED:
+            return False
+        now = timezone.now()
+        if self.cancellation_requested and now >= self.start_at:
+            return True
+        return self.end_at < now
 
     @property
     def meeting_link(self):

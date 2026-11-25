@@ -267,7 +267,7 @@ class BookingViewSettlementTests(TestCase):
         self.assertEqual(self.wallet.settled_balance, Decimal("100.00"))
         self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
 
-    def test_respond_to_booking_accept_cancellation_request_releases_hold(self):
+    def test_respond_to_booking_accept_cancellation_request_consumes_late_cancel(self):
         booking = create_booking_with_hold(
             teacher=self.teacher,
             student=self.student_user,
@@ -286,13 +286,13 @@ class BookingViewSettlementTests(TestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CANCELLED)
         self.assertFalse(booking.cancellation_requested)
-        self.assertEqual(booking.payment_status, Booking.PaymentStatus.RELEASED)
+        self.assertEqual(booking.payment_status, Booking.PaymentStatus.CONSUMED)
         self.assertEqual(
-            booking.settlement_reason, Booking.SettlementReason.STUDENT_CANCELLED
+            booking.settlement_reason, Booking.SettlementReason.LATE_CANCEL
         )
 
         self.wallet.refresh_from_db()
-        self.assertEqual(self.wallet.settled_balance, Decimal("100.00"))
+        self.assertEqual(self.wallet.settled_balance, Decimal("75.00"))
         self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
 
 

@@ -176,6 +176,18 @@
     {% if booking.is_awaiting_resolution %}
     {% if user.teacher_profile %}
     <div class="lesson-detail-resolution">
+        {% if booking.cancellation_requested %}
+        <div class="alert alert-warning small mb-2" role="alert">
+            A student cancellation request is pending. Resolve it in Lesson Requests before completing, or mark this lesson as Not Held.
+        </div>
+        <div class="lesson-resolution-actions">
+            <button type="button" class="btn-resolution btn-resolution-not-held" id="markNotHeldBtn"
+                data-not-held-url="{% url 'booking:mark_lesson_not_held' booking_id=booking.id %}"
+                data-fault-party="teacher">
+                Not Held
+            </button>
+        </div>
+        {% else %}
         <p class="text-muted small mb-2">This lesson has ended. Did it take place?</p>
         <textarea class="form-control mb-2" id="completionNoteInput" rows="2" placeholder="Optional note..."></textarea>
         <div class="lesson-resolution-actions">
@@ -188,25 +200,39 @@
                 Mark Completed
             </button>
         </div>
+        {% endif %}
     </div>
     {% else %}
     <div class="lesson-detail-notice">
+        {% if booking.cancellation_requested %}
+        Your cancellation request was not answered before the lesson started and is awaiting your teacher's resolution.
+        {% else %}
         This lesson has ended and is awaiting your teacher's confirmation.
+        {% endif %}
     </div>
     {% endif %}
     {% elif booking.status in cancellable_statuses %}
     <div class="lesson-detail-actions">
         <button type="button" class="btn-danger-outline" id="cancelLessonBtn"
-            data-cancel-url="{% url 'booking:cancel_lesson' booking_id=booking.id %}">
+            data-cancel-url="{{ cancel_url }}">
             Cancel Lesson
         </button>
     </div>
     {% elif can_request_cancellation %}
     <div class="lesson-detail-actions">
-        <button type="button" class="btn-danger-outline" id="requestCancellationBtn"
-            data-request-url="{% url 'booking:request_cancellation' booking_id=booking.id %}">
+        <button type="button" class="btn-danger-outline" id="requestCancellationBtn">
             Request Cancellation
         </button>
+        <div class="alert alert-warning mt-2 d-none" id="requestCancellationConfirm" role="alert">
+            <p class="small mb-2">Cancelling less than {{ cancellation_window_hours|default:24 }} hours in advance forfeits the lesson fee unless waived by your teacher.</p>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="abortRequestCancellationBtn">Keep Lesson</button>
+                <button type="button" class="btn btn-sm btn-danger" id="confirmRequestCancellationBtn"
+                    data-request-url="{% url 'booking:request_cancellation' booking_id=booking.id %}">
+                    Confirm Cancellation Request
+                </button>
+            </div>
+        </div>
     </div>
     {% elif booking.cancellation_requested %}
     <div class="lesson-detail-notice">

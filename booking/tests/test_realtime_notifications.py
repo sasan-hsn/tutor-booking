@@ -323,7 +323,7 @@ class BookingRealtimeNotificationIntegrationTests(TransactionTestCase):
         await student_ws.disconnect()
 
     async def test_request_cancellation_emits_cancellation_requested_to_teacher(self):
-        target_dt = timezone.now() + timedelta(days=2)
+        target_dt = timezone.now() + timedelta(hours=12)
         booking = await Booking.objects.acreate(
             student=self.student_user,
             teacher=self.teacher,

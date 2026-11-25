@@ -1,7 +1,9 @@
 import logging
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -10,6 +12,7 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -28,6 +31,7 @@ from wallet.services import settle_booking
 from .forms import ReviewForm
 from .models import Booking, RegularAvailability, Review, WeeklyOverride
 from .notifications import (
+    mark_booking_reminders_read,
     mark_booking_requests_read,
     notify_booking_cancelled,
     notify_booking_confirmed,
@@ -564,12 +568,18 @@ def respond_to_booking(request, booking_id):
             booking.cancellation_requested = False
             booking.save()
             if action == "accept":
+                settle_action = "consume" if was_confirmed else "release"
+                settle_reason = (
+                    Booking.SettlementReason.LATE_CANCEL
+                    if was_confirmed
+                    else Booking.SettlementReason.STUDENT_CANCELLED
+                )
                 _settle_booking_for_teacher(
                     teacher=teacher,
                     booking=booking,
-                    action="release",
+                    action=settle_action,
                     actor=request.user,
-                    reason=Booking.SettlementReason.STUDENT_CANCELLED,
+                    reason=settle_reason,
                 )
                 transaction.on_commit(
                     lambda: safe_record_booking_event(booking, "booking_cancelled")
@@ -923,6 +933,9 @@ def lesson_detail(request, booking_id):
     context = {
         "booking": booking,
         "cancellable_statuses": [Booking.Status.CONFIRMED],
+        "cancel_url": reverse(
+            "booking:cancel_lesson", kwargs={"booking_id": booking.id}
+        ),
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
     }
     return render(request, "partials/_lesson_detail_modal.html", context)
@@ -986,6 +999,17 @@ def complete_lesson(request, booking_id):
             status=Booking.Status.CONFIRMED,
         )
 
+        if booking.cancellation_requested:
+            return JsonResponse(
+                {
+                    "error": (
+                        "Cannot complete lesson while a cancellation request is "
+                        "pending. Please resolve the cancellation request first."
+                    )
+                },
+                status=400,
+            )
+
         if not booking.is_awaiting_resolution:
             return JsonResponse({"error": "This lesson hasn't ended yet."}, status=400)
 
@@ -1034,7 +1058,9 @@ def mark_lesson_not_held(request, booking_id):
                 status=400,
             )
 
+        had_cancellation_request = booking.cancellation_requested
         booking.status = Booking.Status.CANCELLED
+        booking.cancellation_requested = False
         booking.save()
 
         if fault_party == "student":
@@ -1051,6 +1077,8 @@ def mark_lesson_not_held(request, booking_id):
             actor=request.user,
             reason=settle_reason,
         )
+        if had_cancellation_request:
+            mark_booking_requests_read(booking)
     return JsonResponse({"success": True})
 
 
@@ -1119,6 +1147,45 @@ def student_calendar_ajax(request):
     return render(request, "partials/_calendar_grid.html", context)
 
 
+def _get_cancellation_window_hours() -> int:
+    return getattr(settings, "CANCELLATION_WINDOW_HOURS", 24)
+
+
+def _get_cancellation_cutoff(booking: Booking):
+    return booking.start_at - timedelta(hours=_get_cancellation_window_hours())
+
+
+def _can_student_cancel_directly(booking: Booking, now=None) -> bool:
+    if booking.status == Booking.Status.PENDING:
+        return True
+    if booking.status != Booking.Status.CONFIRMED or booking.cancellation_requested:
+        return False
+    if now is None:
+        now = timezone.now()
+    return now <= _get_cancellation_cutoff(booking)
+
+
+@contextmanager
+def _locked_student_booking(student, booking_id, **filters):
+    booking_meta = get_object_or_404(
+        Booking.objects.values("id", "teacher_id"),
+        pk=booking_id,
+        student=student,
+        **filters,
+    )
+    with transaction.atomic():
+        teacher = TeacherProfile.objects.select_for_update().get(
+            pk=booking_meta["teacher_id"]
+        )
+        booking = get_object_or_404(
+            Booking.objects.select_for_update(),
+            pk=booking_id,
+            student=student,
+            **filters,
+        )
+        yield teacher, booking
+
+
 @student_required
 def lesson_detail_student(request, booking_id):
     booking = get_object_or_404(
@@ -1130,10 +1197,14 @@ def lesson_detail_student(request, booking_id):
     viewer_tz = ZoneInfo(request.user.timezone)
     local_start = timezone.localtime(booking.start_at, viewer_tz)
     local_end = timezone.localtime(booking.end_at, viewer_tz)
+    now = timezone.now()
 
+    can_cancel_directly = _can_student_cancel_directly(booking, now=now)
     can_request_cancellation = (
         booking.status == Booking.Status.CONFIRMED
         and not booking.cancellation_requested
+        and not can_cancel_directly
+        and now < booking.start_at
     )
     review_form = None
     if booking.status == Booking.Status.COMPLETED and not hasattr(booking, "review"):
@@ -1141,8 +1212,12 @@ def lesson_detail_student(request, booking_id):
 
     context = {
         "booking": booking,
-        "cancellable_statuses": [],
+        "cancellable_statuses": [booking.status] if can_cancel_directly else [],
+        "cancel_url": reverse(
+            "booking:cancel_lesson_student", kwargs={"booking_id": booking.id}
+        ),
         "can_request_cancellation": can_request_cancellation,
+        "cancellation_window_hours": _get_cancellation_window_hours(),
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
         "review_form": review_form,
     }
@@ -1151,16 +1226,90 @@ def lesson_detail_student(request, booking_id):
 
 @student_required
 @require_POST
+def cancel_lesson_student(request, booking_id):
+    window_hours = _get_cancellation_window_hours()
+    with _locked_student_booking(request.user, booking_id) as (teacher, booking):
+        if booking.status not in (Booking.Status.PENDING, Booking.Status.CONFIRMED):
+            return JsonResponse(
+                {"error": "This lesson cannot be cancelled."},
+                status=400,
+            )
+
+        now = timezone.now()
+        if booking.status == Booking.Status.CONFIRMED:
+            if booking.is_awaiting_resolution or now >= booking.start_at:
+                return JsonResponse(
+                    {"error": "This lesson has already started or ended."},
+                    status=400,
+                )
+            if booking.cancellation_requested:
+                return JsonResponse(
+                    {"error": "A cancellation request is already pending."},
+                    status=400,
+                )
+            if not _can_student_cancel_directly(booking, now=now):
+                return JsonResponse(
+                    {
+                        "error": (
+                            f"Direct cancellation is disabled within {window_hours} hours of "
+                            "lesson start. Please submit a cancellation request."
+                        )
+                    },
+                    status=400,
+                )
+
+        was_pending = booking.status == Booking.Status.PENDING
+        booking.status = Booking.Status.CANCELLED
+        booking.cancellation_requested = False
+        booking.save()
+        _settle_booking_for_teacher(
+            teacher=teacher,
+            booking=booking,
+            action="release",
+            actor=request.user,
+            reason=Booking.SettlementReason.STUDENT_CANCELLED,
+        )
+        if was_pending:
+            mark_booking_requests_read(booking)
+        else:
+            mark_booking_reminders_read(booking)
+        transaction.on_commit(
+            lambda: safe_record_booking_event(booking, "booking_cancelled")
+        )
+    return JsonResponse({"success": True})
+
+
+@student_required
+@require_POST
 def request_cancellation(request, booking_id):
-    booking = get_object_or_404(
-        Booking,
-        pk=booking_id,
-        student=request.user,
+    window_hours = _get_cancellation_window_hours()
+    with _locked_student_booking(
+        request.user,
+        booking_id,
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED],
         cancellation_requested=False,
-    )
+    ) as (_, booking):
+        now = timezone.now()
+        if booking.status != Booking.Status.CONFIRMED:
+            return JsonResponse(
+                {"error": "Pending requests can be cancelled directly."},
+                status=400,
+            )
+        if now >= booking.start_at:
+            return JsonResponse(
+                {"error": "This lesson has already started or ended."},
+                status=400,
+            )
+        if _can_student_cancel_directly(booking, now=now):
+            return JsonResponse(
+                {
+                    "error": (
+                        f"Direct cancellation is available more than {window_hours} hours in advance."
+                    )
+                },
+                status=400,
+            )
 
-    with transaction.atomic():
         booking.cancellation_requested = True
         booking.save()
         booking_id = booking.id

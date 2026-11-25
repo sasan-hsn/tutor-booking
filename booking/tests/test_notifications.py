@@ -1194,9 +1194,8 @@ class RequestCancellationNotificationTests(RoleTestCase):
     def setUp(self):
         super().setUp()
         self.teacher_tz = ZoneInfo(self.teacher_user.timezone)
-        future_date = timezone.localdate() + timedelta(days=3)
-        self.start_at = timezone.datetime.combine(
-            future_date, time(16, 0), tzinfo=ZoneInfo("UTC")
+        self.start_at = (timezone.now() + timedelta(hours=12)).replace(
+            minute=0, second=0, microsecond=0
         )
         self.end_at = self.start_at + timedelta(minutes=60)
 

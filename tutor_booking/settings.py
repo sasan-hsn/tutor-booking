@@ -345,6 +345,7 @@ MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 
 # Financial & Payments Configuration
 MIN_TOPUP_AMOUNT = Decimal(os.getenv("MIN_TOPUP_AMOUNT", "20.00"))
+CANCELLATION_WINDOW_HOURS = int(os.getenv("CANCELLATION_WINDOW_HOURS", "24"))
 ORDER_EXPIRY_HOURS = int(os.getenv("ORDER_EXPIRY_HOURS", "24"))
 ORDER_GRACE_HOURS = int(os.getenv("ORDER_GRACE_HOURS", "24"))
 PAYOUT_CONFIRMATION_HOURS = int(os.getenv("PAYOUT_CONFIRMATION_HOURS", "24"))
