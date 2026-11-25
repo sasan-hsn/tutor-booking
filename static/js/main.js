@@ -550,8 +550,26 @@ function initLessonDetailModalManager() {
         // 2. Request cancellation (Student)
         const reqCancelBtn = e.target.closest('#requestCancellationBtn');
         if (reqCancelBtn) {
-            if (!confirm('Request cancellation for this lesson? Your teacher will need to approve it.')) return;
-            await handleModalPostAction(reqCancelBtn, reqCancelBtn.dataset.requestUrl);
+            const confirmPanel = document.getElementById('requestCancellationConfirm');
+            if (confirmPanel) {
+                reqCancelBtn.classList.add('d-none');
+                confirmPanel.classList.remove('d-none');
+            }
+            return;
+        }
+
+        const abortReqCancelBtn = e.target.closest('#abortRequestCancellationBtn');
+        if (abortReqCancelBtn) {
+            const confirmPanel = document.getElementById('requestCancellationConfirm');
+            const origReqBtn = document.getElementById('requestCancellationBtn');
+            if (confirmPanel) confirmPanel.classList.add('d-none');
+            if (origReqBtn) origReqBtn.classList.remove('d-none');
+            return;
+        }
+
+        const confirmReqCancelBtn = e.target.closest('#confirmRequestCancellationBtn');
+        if (confirmReqCancelBtn) {
+            await handleModalPostAction(confirmReqCancelBtn, confirmReqCancelBtn.dataset.requestUrl);
             return;
         }
 
@@ -572,7 +590,14 @@ function initLessonDetailModalManager() {
         const notHeldBtn = e.target.closest('#markNotHeldBtn');
         if (notHeldBtn) {
             if (!confirm('Mark this lesson as not held? This will cancel the booking.')) return;
-            await handleModalPostAction(notHeldBtn, notHeldBtn.dataset.notHeldUrl);
+            const faultParty = notHeldBtn.dataset.faultParty;
+            const postOptions = faultParty
+                ? {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `fault_party=${encodeURIComponent(faultParty)}`
+                }
+                : {};
+            await handleModalPostAction(notHeldBtn, notHeldBtn.dataset.notHeldUrl, postOptions);
             return;
         }
 

@@ -93,6 +93,11 @@ urlpatterns = [
         name="lesson_detail_student",
     ),
     path(
+        "student/lesson/<int:booking_id>/cancel/",
+        views.cancel_lesson_student,
+        name="cancel_lesson_student",
+    ),
+    path(
         "student/lesson/<int:booking_id>/request-cancellation/",
         views.request_cancellation,
         name="request_cancellation",

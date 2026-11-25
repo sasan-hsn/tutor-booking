@@ -3,6 +3,7 @@ import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 
@@ -471,6 +472,44 @@ def adjust_wallet(
         return entry
 
 
+def _lock_booking_wallet(tenant: "Tenant", student_id: int) -> Wallet:
+    locked_wallet = (
+        Wallet.objects.select_for_update()
+        .filter(
+            tenant=tenant,
+            user_id=student_id,
+            currency=tenant.default_currency,
+        )
+        .first()
+    )
+    if locked_wallet is None:
+        mismatched = Wallet.objects.filter(tenant=tenant, user_id=student_id).first()
+        if mismatched is not None:
+            raise CurrencyMismatchError(
+                f"Wallet currency {mismatched.currency} does not match "
+                f"tenant default currency {tenant.default_currency}."
+            )
+        raise Wallet.DoesNotExist(
+            f"No wallet found for user {student_id} in tenant {tenant.pk}."
+        )
+    return locked_wallet
+
+
+def _lock_tenant_booking(tenant: "Tenant", booking: "Booking"):
+    from booking.models import Booking
+    from portfolio.models import TeacherProfile
+
+    locked_teacher = TeacherProfile.objects.select_for_update().get(
+        pk=booking.teacher_id
+    )
+    if tenant.teacher_profile_id != locked_teacher.pk:
+        raise TenantMismatchError(
+            f"Booking {booking.pk} does not belong to tenant {tenant.pk}."
+        )
+    locked_booking = Booking.objects.select_for_update().get(pk=booking.pk)
+    return locked_teacher, locked_booking
+
+
 def settle_booking(
     *,
     tenant: "Tenant",
@@ -487,7 +526,6 @@ def settle_booking(
     Permits settling existing holds even when the student's wallet is frozen.
     """
     from booking.models import Booking
-    from portfolio.models import TeacherProfile
 
     if action not in ("consume", "release"):
         raise ValueError(
@@ -500,15 +538,7 @@ def settle_booking(
         )
 
     with transaction.atomic():
-        locked_teacher = TeacherProfile.objects.select_for_update().get(
-            pk=booking.teacher_id
-        )
-        if tenant.teacher_profile_id != locked_teacher.pk:
-            raise TenantMismatchError(
-                f"Booking {booking.pk} does not belong to tenant {tenant.pk}."
-            )
-
-        locked_booking = Booking.objects.select_for_update().get(pk=booking.pk)
+        _, locked_booking = _lock_tenant_booking(tenant, booking)
         if locked_booking.payment_status != Booking.PaymentStatus.RESERVED:
             booking.payment_status = locked_booking.payment_status
             booking.settlement_reason = locked_booking.settlement_reason
@@ -517,27 +547,7 @@ def settle_booking(
         amount = locked_booking.held_amount
         _validate_positive_decimal(amount)
 
-        locked_wallet = (
-            Wallet.objects.select_for_update()
-            .filter(
-                tenant=tenant,
-                user_id=locked_booking.student_id,
-                currency=tenant.default_currency,
-            )
-            .first()
-        )
-        if locked_wallet is None:
-            mismatched = Wallet.objects.filter(
-                tenant=tenant, user_id=locked_booking.student_id
-            ).first()
-            if mismatched is not None:
-                raise CurrencyMismatchError(
-                    f"Wallet currency {mismatched.currency} does not match "
-                    f"tenant default currency {tenant.default_currency}."
-                )
-            raise Wallet.DoesNotExist(
-                f"No wallet found for user {locked_booking.student_id} in tenant {tenant.pk}."
-            )
+        locked_wallet = _lock_booking_wallet(tenant, locked_booking.student_id)
 
         if action == "release":
             if locked_wallet.reserved_balance < amount:
@@ -592,4 +602,74 @@ def settle_booking(
         booking.payment_status = locked_booking.payment_status
         booking.settlement_reason = locked_booking.settlement_reason
         booking.updated_at = locked_booking.updated_at
+        return entry
+
+
+def waive_penalty(
+    *,
+    tenant: "Tenant",
+    booking: "Booking",
+    teacher_user: "User",
+    reason: str = "Goodwill fee waiver",
+) -> LedgerEntry:
+    """
+    Issues a single-use compensatory WAIVER ledger entry restoring a consumed
+    late-cancellation or student-absence fee under TeacherProfile -> Booking -> Wallet locks.
+    """
+    from booking.models import Booking
+
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError("Waiver reason must be a non-empty string.")
+
+    waivable_reasons = (
+        Booking.SettlementReason.LATE_CANCEL,
+        Booking.SettlementReason.STUDENT_ABSENT,
+    )
+
+    with transaction.atomic():
+        locked_teacher, locked_booking = _lock_tenant_booking(tenant, booking)
+
+        if locked_teacher.user_id != teacher_user.id:
+            raise ValidationError(
+                f"User {teacher_user.id} is not authorized to waive penalties for tenant {tenant.pk}."
+            )
+
+        if (
+            locked_booking.settlement_reason not in waivable_reasons
+            or locked_booking.payment_status != Booking.PaymentStatus.CONSUMED
+        ):
+            raise ValidationError(
+                "Penalty waiver is only permitted for consumed LATE_CANCEL or STUDENT_ABSENT bookings."
+            )
+
+        amount = locked_booking.held_amount
+        _validate_positive_decimal(amount)
+
+        locked_wallet = _lock_booking_wallet(tenant, locked_booking.student_id)
+        locked_wallet.settled_balance += amount
+        locked_wallet.save(update_fields=["settled_balance", "updated_at"])
+
+        description = (
+            f"Penalty waiver for booking #{locked_booking.id}: {reason.strip()}"
+        )[:255]
+        entry = LedgerEntry.objects.create(
+            tenant=tenant,
+            wallet=locked_wallet,
+            entry_type=LedgerEntry.EntryType.WAIVER,
+            amount=amount,
+            settled_after=locked_wallet.settled_balance,
+            reserved_after=locked_wallet.reserved_balance,
+            idempotency_key=f"tenant:{tenant.id}:booking:{locked_booking.id}:waiver",
+            reference_id=f"booking_{locked_booking.id}",
+            description=description,
+        )
+
+        logger.info(
+            "Penalty waived: tenant_id=%s booking_id=%s teacher_user_id=%s amount=%s entry_id=%s",
+            tenant.id,
+            locked_booking.id,
+            teacher_user.id,
+            amount,
+            entry.id,
+        )
         return entry
