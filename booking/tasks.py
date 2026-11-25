@@ -10,11 +10,14 @@ import requests
 from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.conf import settings
+from django.core.cache import cache
 from django.db import models, transaction
 from django.utils import timezone
 
+from accounts.models import Tenant
 from notifications.models import Notification
 from portfolio.models import TeacherProfile
+from wallet.services import settle_booking
 
 from . import emails, notifications
 from .models import Booking, TeacherDailyDigestRecord
@@ -739,3 +742,217 @@ def send_daily_schedule_digests(now=None):
         "evaluated_teachers": evaluated_count,
         "dispatched_digests": dispatched_count,
     }
+
+
+def _settle_booking_batch(
+    *,
+    candidates: list[tuple[int, int]],
+    is_eligible,
+    action: str,
+    reason: str,
+    apply_post_settlement,
+    task_label: str,
+) -> int:
+    """
+    Process a list of (booking_id, teacher_id) candidates, each in its own atomic
+    transaction under TeacherProfile -> Booking -> Wallet lock order, re-checking
+    eligibility after acquiring row locks so one failure never rolls back the batch.
+    """
+    settled_count = 0
+    for booking_id, teacher_id in candidates:
+        try:
+            with transaction.atomic():
+                TeacherProfile.objects.select_for_update().get(pk=teacher_id)
+                booking = (
+                    Booking.objects.select_for_update().filter(pk=booking_id).first()
+                )
+                if booking is None or not is_eligible(booking):
+                    continue
+
+                tenant = Tenant.objects.filter(teacher_profile_id=teacher_id).first()
+                if tenant is None:
+                    continue
+
+                settle_booking(
+                    tenant=tenant,
+                    booking=booking,
+                    action=action,
+                    actor=None,
+                    reason=reason,
+                )
+                apply_post_settlement(booking)
+                settled_count += 1
+        except Exception:
+            logger.exception(
+                "Failed to %s booking #%s during hourly sweep.",
+                task_label,
+                booking_id,
+            )
+    return settled_count
+
+
+@shared_task(name="booking.tasks.auto_complete_lessons_task")
+def auto_complete_lessons_task(now=None) -> int:
+    """
+    Hourly Celery Beat task that sweeps CONFIRMED, RESERVED bookings whose end_at
+    has passed AUTO_COMPLETE_HOURS (48h) without an open dispute, consuming the hold
+    and marking the booking COMPLETED.
+    """
+    if now is None:
+        now = timezone.now()
+
+    auto_complete_hours = getattr(settings, "AUTO_COMPLETE_HOURS", 48)
+    cutoff = now - timedelta(hours=auto_complete_hours)
+
+    candidates = list(
+        Booking.objects.filter(
+            status=Booking.Status.CONFIRMED,
+            payment_status=Booking.PaymentStatus.RESERVED,
+            cancellation_requested=False,
+            end_at__lte=cutoff,
+        )
+        .exclude(status=Booking.Status.DISPUTING)
+        .order_by("id")
+        .values_list("id", "teacher_id")
+    )
+
+    def _is_eligible(booking: Booking) -> bool:
+        return (
+            booking.status == Booking.Status.CONFIRMED
+            and booking.payment_status == Booking.PaymentStatus.RESERVED
+            and not booking.cancellation_requested
+            and booking.end_at <= cutoff
+        )
+
+    def _mark_completed(booking: Booking) -> None:
+        booking.status = Booking.Status.COMPLETED
+        booking.save(update_fields=["status", "updated_at"])
+
+    completed_count = _settle_booking_batch(
+        candidates=candidates,
+        is_eligible=_is_eligible,
+        action="consume",
+        reason=Booking.SettlementReason.COMPLETED,
+        apply_post_settlement=_mark_completed,
+        task_label="auto-complete",
+    )
+
+    logger.info(
+        "Auto-complete lessons sweep completed: %d booking(s) completed.",
+        completed_count,
+    )
+    return completed_count
+
+
+@shared_task(name="booking.tasks.expire_disputes_task")
+def expire_disputes_task(now=None) -> int:
+    """
+    Hourly Celery Beat task that sweeps DISPUTING, RESERVED bookings whose
+    dispute_opened_at has passed DISPUTE_WINDOW_DAYS (7 days), releasing held funds
+    back to the student wallet and marking the booking CANCELLED.
+    """
+    if now is None:
+        now = timezone.now()
+
+    dispute_window_days = getattr(settings, "DISPUTE_WINDOW_DAYS", 7)
+    cutoff = now - timedelta(days=dispute_window_days)
+
+    candidates = list(
+        Booking.objects.filter(
+            status=Booking.Status.DISPUTING,
+            payment_status=Booking.PaymentStatus.RESERVED,
+            dispute_opened_at__lte=cutoff,
+        )
+        .order_by("id")
+        .values_list("id", "teacher_id")
+    )
+
+    def _is_eligible(booking: Booking) -> bool:
+        return (
+            booking.status == Booking.Status.DISPUTING
+            and booking.payment_status == Booking.PaymentStatus.RESERVED
+            and booking.dispute_opened_at is not None
+            and booking.dispute_opened_at <= cutoff
+        )
+
+    def _mark_expired_auto_student(booking: Booking) -> None:
+        booking.status = Booking.Status.CANCELLED
+        booking.dispute_resolution = Booking.DisputeResolution.EXPIRED_AUTO_STUDENT
+        booking.save(update_fields=["status", "dispute_resolution", "updated_at"])
+
+    expired_count = _settle_booking_batch(
+        candidates=candidates,
+        is_eligible=_is_eligible,
+        action="release",
+        reason=Booking.SettlementReason.DISPUTE_EXPIRED,
+        apply_post_settlement=_mark_expired_auto_student,
+        task_label="expire dispute for",
+    )
+
+    logger.info(
+        "Expire disputes sweep completed: %d dispute(s) auto-expired in student favor.",
+        expired_count,
+    )
+    return expired_count
+
+
+@shared_task(name="booking.tasks.dispute_warning_task")
+def dispute_warning_task(now=None) -> int:
+    """
+    Daily Celery Beat task that detects open disputes reaching Day 3
+    (3 days <= age < 4 days) and Day 6 (6 days <= age < 7 days), sending
+    urgent warning emails to the teacher before automatic student refund.
+    """
+    if now is None:
+        now = timezone.now()
+
+    dispute_window_days = getattr(settings, "DISPUTE_WINDOW_DAYS", 7)
+    sent_count = 0
+
+    for warning_day in (3, 6):
+        window_end = now - timedelta(days=warning_day)
+        window_start = now - timedelta(days=warning_day + 1)
+        days_remaining = max(dispute_window_days - warning_day, 1)
+
+        disputes = (
+            Booking.objects.filter(
+                status=Booking.Status.DISPUTING,
+                payment_status=Booking.PaymentStatus.RESERVED,
+                dispute_opened_at__lte=window_end,
+                dispute_opened_at__gt=window_start,
+            )
+            .select_related("student", "teacher__user")
+            .order_by("id")
+        )
+
+        for booking in disputes:
+            dedup_key = (
+                f"dispute_warning:{booking.id}:day{warning_day}:"
+                f"{booking.dispute_opened_at.isoformat()}"
+            )
+            if not cache.add(dedup_key, True, timeout=86400 * dispute_window_days):
+                continue
+
+            try:
+                dispatched = emails.send_dispute_warning_teacher_email(
+                    booking,
+                    warning_day=warning_day,
+                    days_remaining=days_remaining,
+                )
+                if dispatched:
+                    sent_count += 1
+                else:
+                    cache.delete(dedup_key)
+            except Exception:
+                cache.delete(dedup_key)
+                logger.exception(
+                    "Failed to send Day %s dispute warning email for booking #%s.",
+                    warning_day,
+                    booking.id,
+                )
+
+    logger.info(
+        "Dispute warning sweep completed: %d urgent warning email(s) sent.",
+        sent_count,
+    )
+    return sent_count

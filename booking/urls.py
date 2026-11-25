@@ -102,6 +102,11 @@ urlpatterns = [
         views.request_cancellation,
         name="request_cancellation",
     ),
+    path(
+        "student/lesson/<int:booking_id>/dispute/",
+        views.open_dispute,
+        name="open_dispute",
+    ),
     path("lessons/<int:booking_id>/review/", views.submit_review, name="submit_review"),
     path("reviews/", views.teacher_pending_reviews, name="teacher_pending_reviews"),
     path(

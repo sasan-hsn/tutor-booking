@@ -3,7 +3,7 @@ from datetime import timezone as dt_timezone
 from urllib.parse import urlparse
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, send_mail
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -747,5 +747,55 @@ def send_teacher_daily_digest_email(teacher, target_date, bookings) -> bool:
         total_lessons,
         teacher_email,
         target_date,
+    )
+    return True
+
+
+def send_dispute_warning_teacher_email(
+    booking, *, warning_day: int, days_remaining: int
+) -> bool:
+    """Send urgent dispute expiration warning email to the teacher on Day 3 or Day 6."""
+    teacher_email = booking.teacher.user.email or booking.teacher.contact_email
+    if not teacher_email:
+        logger.info(
+            "Teacher %s for booking #%s has no email address; skipping Day %s dispute warning email.",
+            booking.teacher_id,
+            booking.id,
+            warning_day,
+        )
+        return False
+
+    site_url = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+    dashboard_url = f"{site_url}{reverse('booking:teacher_dashboard')}"
+    days_label = (
+        f"{days_remaining} day" if days_remaining == 1 else f"{days_remaining} days"
+    )
+
+    subject = (
+        f"[Urgent: Day {warning_day} Dispute Warning] "
+        f"Booking #{booking.id} auto-refunds in {days_label}"
+    )
+    message = (
+        f"Hello {booking.teacher_display_name},\n\n"
+        f"An open dispute for Booking #{booking.id} with {booking.student_display_name} "
+        f"has reached Day {warning_day}.\n\n"
+        f"If unresolved, held funds (${booking.held_amount}) will automatically be "
+        f"released back to the student's wallet in {days_label}.\n\n"
+        f"Please review and resolve this dispute in your Teacher Dashboard:\n"
+        f"{dashboard_url}\n"
+    )
+
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[teacher_email],
+        fail_silently=False,
+    )
+    logger.info(
+        "Sent Day %s dispute warning email to teacher %s for booking #%s.",
+        warning_day,
+        teacher_email,
+        booking.id,
     )
     return True

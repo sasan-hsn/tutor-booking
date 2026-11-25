@@ -200,6 +200,11 @@ class Booking(models.Model):
         DISPUTE_TEACHER_FAVOR = "DISPUTE_TEACHER_FAVOR", "Dispute (Teacher Favor)"
         DISPUTE_EXPIRED = "DISPUTE_EXPIRED", "Dispute Expired"
 
+    class DisputeResolution(models.TextChoices):
+        STUDENT_FAVOR = "STUDENT_FAVOR", "Student Favor"
+        TEACHER_FAVOR = "TEACHER_FAVOR", "Teacher Favor"
+        EXPIRED_AUTO_STUDENT = "EXPIRED_AUTO_STUDENT", "Expired (Auto Student)"
+
     JOIN_WINDOW_PRE_START_MINUTES = 10
     JOIN_WINDOW_POST_END_MINUTES = 10
 
