@@ -12,7 +12,7 @@ from accounts.models import Tenant
 from portfolio.models import TeacherProfile
 from wallet.exceptions import CurrencyMismatchError
 from wallet.models import Wallet
-from wallet.services import get_or_create_wallet, reserve_funds
+from wallet.services import get_or_create_wallet, reserve_funds, settle_booking
 
 from .models import Booking, RegularAvailability, WeeklyOverride
 from .notifications import notify_booking_expired
@@ -30,38 +30,61 @@ def expire_stale_bookings(teacher=None, student=None, now=None):
     """
     Finds all PENDING bookings with start_at <= now and transitions them to EXPIRED.
     Optionally scoped by teacher and/or student.
+    Wraps each booking's expiration and hold release in its own atomic transaction
+    preserving the TeacherProfile -> Booking -> Wallet lock hierarchy.
     Emits real-time booking_expired notifications to both student and teacher.
     Returns the count of bookings updated.
     """
     if now is None:
         now = timezone.now()
 
-    with transaction.atomic():
-        qs = (
-            Booking.objects.select_for_update(of=("self",))
-            .select_related("student", "teacher__user")
-            .filter(
-                status=Booking.Status.PENDING,
-                start_at__lte=now,
+    qs = Booking.objects.filter(
+        status=Booking.Status.PENDING,
+        start_at__lte=now,
+    )
+    if teacher is not None:
+        qs = qs.filter(teacher=teacher)
+    if student is not None:
+        qs = qs.filter(student=student)
+
+    candidates = list(qs.order_by("id").values_list("id", "teacher_id"))
+    if not candidates:
+        return 0
+
+    count = 0
+    for booking_id, teacher_id in candidates:
+        with transaction.atomic():
+            TeacherProfile.objects.select_for_update().filter(pk=teacher_id).first()
+            booking = (
+                Booking.objects.select_for_update(of=("self",))
+                .select_related("student", "teacher__user")
+                .filter(
+                    pk=booking_id,
+                    status=Booking.Status.PENDING,
+                    start_at__lte=now,
+                )
+                .first()
             )
-        )
-        if teacher is not None:
-            qs = qs.filter(teacher=teacher)
-        if student is not None:
-            qs = qs.filter(student=student)
+            if booking is None:
+                continue
 
-        stale_bookings = list(qs)
-        if not stale_bookings:
-            return 0
-
-        stale_ids = [b.id for b in stale_bookings]
-        count = Booking.objects.filter(id__in=stale_ids).update(
-            status=Booking.Status.EXPIRED
-        )
-
-        for booking in stale_bookings:
+            Booking.objects.filter(pk=booking.pk).update(status=Booking.Status.EXPIRED)
             booking.status = Booking.Status.EXPIRED
+
+            tenant = Tenant.objects.filter(
+                teacher_profile_id=booking.teacher_id
+            ).first()
+            if tenant is not None:
+                settle_booking(
+                    tenant=tenant,
+                    booking=booking,
+                    action="release",
+                    actor=None,
+                    reason=Booking.SettlementReason.EXPIRED_PENDING,
+                )
+
             notify_booking_expired(booking)
+            count += 1
 
     return count
 

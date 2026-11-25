@@ -17,6 +17,7 @@ from wallet.services import (
     compute_expected_balances,
     credit_wallet,
     get_or_create_wallet,
+    settle_booking,
 )
 
 
@@ -249,6 +250,136 @@ class BookingHoldConcurrencyTests(TransactionTestCase):
             ).count(),
             1,
         )
+        expected = compute_expected_balances(wallet)
+        self.assertEqual(wallet.settled_balance, expected.expected_settled)
+        self.assertEqual(wallet.reserved_balance, expected.expected_reserved)
+
+    def test_parallel_terminal_settlement_race_commits_exactly_one_entry(self):
+        """
+        Simultaneous consume (auto-complete) vs release (cancellation) on real PostgreSQL
+        commits exactly 1 terminal settlement entry and short-circuits the second call cleanly.
+        """
+        wallet = get_or_create_wallet(tenant=self.tenant, user=self.student)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("50.00"),
+            idempotency_key="race-settle-seed-50",
+            reference_id="race_settle_seed",
+            description="Seed $50.00 for terminal settlement race",
+        )
+        booking = create_booking_with_hold(
+            teacher=self.teacher,
+            student=self.student,
+            start_at=self.slot_starts[0],
+            lesson_option="regular_50",
+        )
+
+        def run_consume():
+            b = Booking.objects.get(pk=booking.pk)
+            return settle_booking(
+                tenant=self.tenant,
+                booking=b,
+                action="consume",
+                actor=self.teacher_user,
+                reason=Booking.SettlementReason.COMPLETED,
+            )
+
+        def run_release():
+            b = Booking.objects.get(pk=booking.pk)
+            return settle_booking(
+                tenant=self.tenant,
+                booking=b,
+                action="release",
+                actor=self.teacher_user,
+                reason=Booking.SettlementReason.TEACHER_CANCELLED,
+            )
+
+        results = run_concurrently([run_consume, run_release])
+        for _, exc in results:
+            self.assertIsNone(
+                exc, f"Unexpected exception during settlement race: {exc}"
+            )
+
+        entries = [res for res, _ in results if res is not None]
+        nones = [res for res, _ in results if res is None]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(len(nones), 1)
+
+        settle_key = f"tenant:{self.tenant.id}:booking:{booking.id}:settle"
+        db_entries = LedgerEntry.objects.filter(idempotency_key=settle_key)
+        self.assertEqual(db_entries.count(), 1)
+        winner = db_entries.first()
+
+        booking.refresh_from_db()
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.reserved_balance, Decimal("0.00"))
+
+        if winner.entry_type == LedgerEntry.EntryType.CONSUME:
+            self.assertEqual(booking.payment_status, Booking.PaymentStatus.CONSUMED)
+            self.assertEqual(
+                booking.settlement_reason, Booking.SettlementReason.COMPLETED
+            )
+            self.assertEqual(wallet.settled_balance, Decimal("25.00"))
+        else:
+            self.assertEqual(winner.entry_type, LedgerEntry.EntryType.RELEASE)
+            self.assertEqual(booking.payment_status, Booking.PaymentStatus.RELEASED)
+            self.assertEqual(
+                booking.settlement_reason, Booking.SettlementReason.TEACHER_CANCELLED
+            )
+            self.assertEqual(wallet.settled_balance, Decimal("50.00"))
+
+        expected = compute_expected_balances(wallet)
+        self.assertEqual(wallet.settled_balance, expected.expected_settled)
+        self.assertEqual(wallet.reserved_balance, expected.expected_reserved)
+
+    def test_concurrent_hold_and_settlement_no_deadlock(self):
+        """
+        Concurrent create_booking_with_hold and settle_booking on the same TeacherProfile and Wallet
+        complete cleanly without deadlock due to unified TeacherProfile -> Booking -> Wallet locking.
+        """
+        wallet = get_or_create_wallet(tenant=self.tenant, user=self.student)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("100.00"),
+            idempotency_key="race-lock-order-seed",
+            reference_id="race_lock_seed",
+            description="Seed $100.00 for lock hierarchy test",
+        )
+        existing_booking = create_booking_with_hold(
+            teacher=self.teacher,
+            student=self.student,
+            start_at=self.slot_starts[0],
+            lesson_option="regular_50",
+        )
+
+        def create_second():
+            return create_booking_with_hold(
+                teacher=self.teacher,
+                student=self.student,
+                start_at=self.slot_starts[1],
+                lesson_option="regular_50",
+            )
+
+        def settle_first():
+            b = Booking.objects.get(pk=existing_booking.pk)
+            return settle_booking(
+                tenant=self.tenant,
+                booking=b,
+                action="consume",
+                actor=self.teacher_user,
+                reason=Booking.SettlementReason.COMPLETED,
+            )
+
+        results = run_concurrently([create_second, settle_first])
+        for res, exc in results:
+            self.assertIsNone(exc, f"Unexpected deadlock or exception: {exc}")
+            self.assertIsNotNone(res)
+
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.settled_balance, Decimal("75.00"))
+        self.assertEqual(wallet.reserved_balance, Decimal("25.00"))
         expected = compute_expected_balances(wallet)
         self.assertEqual(wallet.settled_balance, expected.expected_settled)
         self.assertEqual(wallet.reserved_balance, expected.expected_reserved)
