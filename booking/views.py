@@ -41,14 +41,16 @@ from .notifications import (
 )
 from .services import (
     SlotUnavailableError,
+    can_open_dispute,
     create_booking_with_hold,
     expire_stale_bookings,
     get_calendar_grid,
     get_calendar_navigation,
     get_eligible_lesson_options,
     get_week_data,
-    resolve_lesson_option,
 )
+from .services import open_dispute as open_dispute_service
+from .services import resolve_lesson_option
 from .tasks import (
     safe_send_booking_cancelled_email,
     safe_send_booking_confirmed_email,
@@ -1206,6 +1208,7 @@ def lesson_detail_student(request, booking_id):
         and not can_cancel_directly
         and now < booking.start_at
     )
+    can_dispute = can_open_dispute(booking, now=now)
     review_form = None
     if booking.status == Booking.Status.COMPLETED and not hasattr(booking, "review"):
         review_form = ReviewForm()
@@ -1217,6 +1220,7 @@ def lesson_detail_student(request, booking_id):
             "booking:cancel_lesson_student", kwargs={"booking_id": booking.id}
         ),
         "can_request_cancellation": can_request_cancellation,
+        "can_open_dispute": can_dispute,
         "cancellation_window_hours": _get_cancellation_window_hours(),
         "date_time_label": f"{local_start.strftime('%a, %b')} {local_start.day}, {local_start.year} · {local_start.strftime('%H:%M')}–{local_end.strftime('%H:%M')}",
         "review_form": review_form,
@@ -1320,6 +1324,22 @@ def request_cancellation(request, booking_id):
         transaction.on_commit(
             lambda: safe_record_booking_event(booking, "cancellation_requested")
         )
+    return JsonResponse({"success": True})
+
+
+@student_required
+@require_POST
+def open_dispute(request, booking_id):
+    booking = get_object_or_404(
+        Booking,
+        pk=booking_id,
+        student=request.user,
+    )
+    try:
+        open_dispute_service(booking=booking, student=request.user)
+    except ValidationError as exc:
+        error_message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        return JsonResponse({"error": error_message}, status=400)
     return JsonResponse({"success": True})
 
 

@@ -306,6 +306,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "payments.tasks.payout_reminder_task",
         "schedule": 21600.0,
     },
+    "auto-complete-lessons-hourly": {
+        "task": "booking.tasks.auto_complete_lessons_task",
+        "schedule": 3600.0,
+    },
+    "expire-disputes-hourly": {
+        "task": "booking.tasks.expire_disputes_task",
+        "schedule": 3600.0,
+    },
+    "dispute-warning-daily": {
+        "task": "booking.tasks.dispute_warning_task",
+        "schedule": 86400.0,
+    },
 }
 
 TEACHER_DAILY_DIGEST_HOUR = int(os.getenv("TEACHER_DAILY_DIGEST_HOUR", "20"))
@@ -346,6 +358,9 @@ MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 # Financial & Payments Configuration
 MIN_TOPUP_AMOUNT = Decimal(os.getenv("MIN_TOPUP_AMOUNT", "20.00"))
 CANCELLATION_WINDOW_HOURS = int(os.getenv("CANCELLATION_WINDOW_HOURS", "24"))
+AUTO_COMPLETE_HOURS = int(os.getenv("AUTO_COMPLETE_HOURS", "48"))
+DISPUTE_WINDOW_HOURS = int(os.getenv("DISPUTE_WINDOW_HOURS", "48"))
+DISPUTE_WINDOW_DAYS = int(os.getenv("DISPUTE_WINDOW_DAYS", "7"))
 ORDER_EXPIRY_HOURS = int(os.getenv("ORDER_EXPIRY_HOURS", "24"))
 ORDER_GRACE_HOURS = int(os.getenv("ORDER_GRACE_HOURS", "24"))
 PAYOUT_CONFIRMATION_HOURS = int(os.getenv("PAYOUT_CONFIRMATION_HOURS", "24"))

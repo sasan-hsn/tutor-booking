@@ -234,9 +234,31 @@
             </div>
         </div>
     </div>
+    {% elif booking.status == 'disputing' %}
+    <div class="lesson-detail-notice">
+        A dispute has been opened for this lesson and is pending teacher review.
+    </div>
     {% elif booking.cancellation_requested %}
     <div class="lesson-detail-notice">
         Cancellation request pending teacher approval.
+    </div>
+    {% endif %}
+    {% if can_open_dispute and not user.teacher_profile %}
+    <div class="lesson-detail-actions mt-2">
+        <button type="button" class="btn-danger-outline" id="openDisputeBtn"
+            data-dispute-url="{% url 'booking:open_dispute' booking_id=booking.id %}">
+            Open Dispute
+        </button>
+        <div class="alert alert-warning mt-2 d-none" id="openDisputeConfirm" role="alert">
+            <p class="small mb-2">Opening a dispute freezes lesson settlement for up to 7 days while your teacher reviews the issue.</p>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="abortOpenDisputeBtn">Cancel</button>
+                <button type="button" class="btn btn-sm btn-danger" id="confirmOpenDisputeBtn"
+                    data-dispute-url="{% url 'booking:open_dispute' booking_id=booking.id %}">
+                    Confirm Dispute
+                </button>
+            </div>
+        </div>
     </div>
     {% endif %}
 </div>

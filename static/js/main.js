@@ -547,30 +547,48 @@ function initLessonDetailModalManager() {
             return;
         }
 
-        // 2. Request cancellation (Student)
-        const reqCancelBtn = e.target.closest('#requestCancellationBtn');
-        if (reqCancelBtn) {
-            const confirmPanel = document.getElementById('requestCancellationConfirm');
-            if (confirmPanel) {
-                reqCancelBtn.classList.add('d-none');
-                confirmPanel.classList.remove('d-none');
+        // 2. Confirm-and-POST modal actions (Request Cancellation, Open Dispute)
+        const confirmActionConfigs = [
+            {
+                trigger: '#requestCancellationBtn',
+                panel: '#requestCancellationConfirm',
+                abort: '#abortRequestCancellationBtn',
+                confirm: '#confirmRequestCancellationBtn',
+                urlAttr: 'requestUrl',
+            },
+            {
+                trigger: '#openDisputeBtn',
+                panel: '#openDisputeConfirm',
+                abort: '#abortOpenDisputeBtn',
+                confirm: '#confirmOpenDisputeBtn',
+                urlAttr: 'disputeUrl',
+            },
+        ];
+
+        for (const cfg of confirmActionConfigs) {
+            const triggerBtn = e.target.closest(cfg.trigger);
+            if (triggerBtn) {
+                const confirmPanel = document.querySelector(cfg.panel);
+                if (confirmPanel) {
+                    triggerBtn.classList.add('d-none');
+                    confirmPanel.classList.remove('d-none');
+                }
+                return;
             }
-            return;
-        }
 
-        const abortReqCancelBtn = e.target.closest('#abortRequestCancellationBtn');
-        if (abortReqCancelBtn) {
-            const confirmPanel = document.getElementById('requestCancellationConfirm');
-            const origReqBtn = document.getElementById('requestCancellationBtn');
-            if (confirmPanel) confirmPanel.classList.add('d-none');
-            if (origReqBtn) origReqBtn.classList.remove('d-none');
-            return;
-        }
+            if (e.target.closest(cfg.abort)) {
+                const confirmPanel = document.querySelector(cfg.panel);
+                const origBtn = document.querySelector(cfg.trigger);
+                if (confirmPanel) confirmPanel.classList.add('d-none');
+                if (origBtn) origBtn.classList.remove('d-none');
+                return;
+            }
 
-        const confirmReqCancelBtn = e.target.closest('#confirmRequestCancellationBtn');
-        if (confirmReqCancelBtn) {
-            await handleModalPostAction(confirmReqCancelBtn, confirmReqCancelBtn.dataset.requestUrl);
-            return;
+            const confirmBtn = e.target.closest(cfg.confirm);
+            if (confirmBtn) {
+                await handleModalPostAction(confirmBtn, confirmBtn.dataset[cfg.urlAttr]);
+                return;
+            }
         }
 
         // 3. Complete lesson (Teacher)

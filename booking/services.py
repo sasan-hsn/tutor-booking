@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -589,3 +590,56 @@ def create_booking_with_hold(
         booking.held_amount = price
         booking.save(update_fields=["payment_status", "held_amount", "updated_at"])
         return booking
+
+
+def can_open_dispute(booking: Booking, *, now=None) -> bool:
+    """Return True when a booking is eligible for student dispute initiation."""
+    if now is None:
+        now = timezone.now()
+    window_hours = getattr(settings, "DISPUTE_WINDOW_HOURS", 48)
+    return (
+        booking.status == Booking.Status.CONFIRMED
+        and not booking.cancellation_requested
+        and booking.end_at <= now <= booking.end_at + timedelta(hours=window_hours)
+    )
+
+
+def open_dispute(*, booking: Booking, student, now=None) -> Booking:
+    """
+    Student-only dispute initiation under TeacherProfile -> Booking row locks.
+    Transitions CONFIRMED booking within [end_at, end_at + DISPUTE_WINDOW_HOURS] to DISPUTING
+    while leaving held funds RESERVED.
+    """
+    if now is None:
+        now = timezone.now()
+
+    window_hours = getattr(settings, "DISPUTE_WINDOW_HOURS", 48)
+
+    with transaction.atomic():
+        TeacherProfile.objects.select_for_update().get(pk=booking.teacher_id)
+        locked_booking = Booking.objects.select_for_update().get(pk=booking.pk)
+
+        if student is None or locked_booking.student_id != getattr(student, "id", None):
+            raise ValidationError("Only the enrolled student can dispute this lesson.")
+
+        if locked_booking.status == Booking.Status.COMPLETED:
+            raise ValidationError("Lesson completion is final.")
+
+        if locked_booking.status != Booking.Status.CONFIRMED:
+            raise ValidationError("Only confirmed lessons can be disputed.")
+
+        if locked_booking.cancellation_requested:
+            raise ValidationError(
+                "Cannot dispute a lesson with a pending cancellation request."
+            )
+
+        if now < locked_booking.end_at:
+            raise ValidationError("Cannot dispute an unfinished lesson.")
+
+        if now > locked_booking.end_at + timedelta(hours=window_hours):
+            raise ValidationError("Dispute window has expired.")
+
+        locked_booking.status = Booking.Status.DISPUTING
+        locked_booking.dispute_opened_at = now
+        locked_booking.save(update_fields=["status", "dispute_opened_at", "updated_at"])
+        return locked_booking

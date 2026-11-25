@@ -77,6 +77,7 @@ class StudentOnlyViewsAccessTests(RoleTestCase):
             reverse("booking:lesson_detail_student", kwargs={"booking_id": 1}),
             reverse("booking:cancel_lesson_student", kwargs={"booking_id": 1}),
             reverse("booking:request_cancellation", kwargs={"booking_id": 1}),
+            reverse("booking:open_dispute", kwargs={"booking_id": 1}),
             reverse("booking:submit_review", kwargs={"booking_id": 1}),
         ]
 
