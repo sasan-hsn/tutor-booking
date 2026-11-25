@@ -1,0 +1,29 @@
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="finance-summary-card">
+            <div class="finance-summary-label">Total Student Balances</div>
+            <div class="finance-summary-value">${{ total_settled|floatformat:2 }}</div>
+            <div class="finance-summary-sub">
+                ${{ total_available|floatformat:2 }} available &middot; ${{ total_reserved|floatformat:2 }} reserved
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="finance-summary-card">
+            <div class="finance-summary-label">Active Booking Holds</div>
+            <div class="finance-summary-value">${{ active_holds_total|floatformat:2 }}</div>
+            <div class="finance-summary-sub">
+                {{ active_holds_count }} active held lesson{{ active_holds_count|pluralize }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="finance-summary-card">
+            <div class="finance-summary-label">Pending Payment Claims</div>
+            <div class="finance-summary-value">{{ claims_count }}</div>
+            <div class="finance-summary-sub">
+                Awaiting verification
+            </div>
+        </div>
+    </div>
+</div>

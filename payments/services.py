@@ -188,6 +188,11 @@ def mark_payment_successful(
         return locked_payment
 
 
+def build_manual_external_id(tenant_id: int, reference_id: str) -> str:
+    """Return the prefixed external_id used for manual top-up Payments."""
+    return f"tenant_{tenant_id}:manual_{reference_id.strip()}"
+
+
 def process_manual_topup(
     *,
     tenant: "Tenant",
@@ -210,7 +215,7 @@ def process_manual_topup(
         raise ValidationError("Reference ID cannot be empty.")
 
     clean_ref = reference_id.strip()
-    external_id = f"tenant_{tenant.id}:manual_{clean_ref}"
+    external_id = build_manual_external_id(tenant.id, clean_ref)
 
     with transaction.atomic():
         existing_payment = Payment.objects.filter(external_id=external_id).first()

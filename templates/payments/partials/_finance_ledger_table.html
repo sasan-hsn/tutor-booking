@@ -1,0 +1,41 @@
+{% if recent_ledger_entries %}
+<div class="table-responsive">
+    <table class="student-roster-table">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Student</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Balance After</th>
+                <th>Reference</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in recent_ledger_entries %}
+            <tr>
+                <td class="text-nowrap">{{ entry.local_created_at|date:"M d, Y H:i" }}</td>
+                <td class="fw-semibold">{{ entry.student_display_name }}</td>
+                <td>
+                    <span class="badge finance-entry-badge finance-entry-{{ entry.entry_type|lower }}">
+                        {{ entry.get_entry_type_display }}
+                    </span>
+                </td>
+                <td class="fw-semibold">${{ entry.amount|floatformat:2 }}</td>
+                <td class="text-nowrap small text-muted">
+                    Settled: ${{ entry.settled_after|floatformat:2 }}<br>
+                    Reserved: ${{ entry.reserved_after|floatformat:2 }}
+                </td>
+                <td><code class="small text-break">{{ entry.reference_id }}</code></td>
+                <td class="small">{{ entry.description }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <p class="mb-0">No ledger entries recorded yet.</p>
+</div>
+{% endif %}

@@ -2612,3 +2612,72 @@ h1, h2, h3, h4, h5, h6,
     color: var(--text-main);
     border-color: #d1d5db;
 }
+
+/* --------------------------------------------------------------------------
+   Teacher Finance Tab
+   -------------------------------------------------------------------------- */
+.finance-summary-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    height: 100%;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.04));
+}
+
+.finance-summary-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+}
+
+.finance-summary-value {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.2;
+    margin-bottom: 0.35rem;
+}
+
+.finance-summary-sub {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.finance-entry-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3em 0.6em;
+    border-radius: 999px;
+    background-color: #e5e7eb;
+    color: #374151;
+}
+
+.finance-entry-credit,
+.finance-entry-waiver,
+.finance-entry-adjustment_credit {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.finance-entry-reserve,
+.finance-entry-payout_hold {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.finance-entry-release,
+.finance-entry-payout_release {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.finance-entry-consume,
+.finance-entry-payout_settle,
+.finance-entry-adjustment_debit {
+    background-color: #f3f4f6;
+    color: #4b5563;
+}

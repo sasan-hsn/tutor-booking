@@ -1,0 +1,45 @@
+{% if claims_queue %}
+<div class="table-responsive">
+    <table class="student-roster-table">
+        <thead>
+            <tr>
+                <th>Student</th>
+                <th>Claimed Amount</th>
+                <th>Submitted</th>
+                <th>Reference / TXHash</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for claim in claims_queue %}
+            <tr class="finance-claim-row" data-order-id="{{ claim.id }}">
+                <td class="fw-semibold">{{ claim.student_display_name }}</td>
+                <td>${{ claim.amount|floatformat:2 }} {{ claim.currency }}</td>
+                <td>{{ claim.local_claimed_paid_at|date:"M d, Y H:i" }}</td>
+                <td>
+                    {% if claim.claimed_txhash %}
+                    <code class="text-break">{{ claim.claimed_txhash }}</code>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button type="button"
+                        class="btn btn-sm btn-primary btn-credit-deposit"
+                        data-student-id="{{ claim.student_id }}"
+                        data-amount="{{ claim.amount|floatformat:2 }}"
+                        data-reference="{{ claim.claimed_txhash }}"
+                        data-notes="{{ claim.prefill_notes }}">
+                        <i class="bi bi-check2-circle me-1"></i>Credit Deposit
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <p class="mb-0">No pending top-up claims.</p>
+</div>
+{% endif %}
