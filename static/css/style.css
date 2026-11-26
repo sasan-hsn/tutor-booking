@@ -2701,3 +2701,32 @@ h1, h2, h3, h4, h5, h6,
 .finance-copy-btn:hover {
     color: var(--primary-blue) !important;
 }
+
+.finance-payout-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3em 0.65em;
+    border-radius: 999px;
+    background-color: #e5e7eb;
+    color: #374151;
+}
+
+.finance-payout-requested {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.finance-payout-processing {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.finance-payout-completed {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.finance-payout-rejected {
+    background-color: #fee2e2;
+    color: #991b1b;
+}

@@ -630,3 +630,108 @@ class TeacherPayoutWorkflowTests(TestCase):
                 payout=self.payout,
                 reason="Cannot reject settled payout",
             )
+
+    def test_mark_payout_processing_sends_email_on_commit(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            mark_payout_processing(
+                tenant=self.tenant,
+                payout=self.payout,
+                admin_user=self.teacher,
+            )
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, [self.student.email])
+        self.assertIn("processing", sent.subject.lower() + " " + sent.body.lower())
+        self.assertIn("25.00", sent.body)
+
+    def test_settle_payout_sends_email_on_commit(self):
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=self.payout,
+            admin_user=self.teacher,
+        )
+        mail.outbox.clear()
+        txhash = "0xsettledemailhash1234567890abcdef"
+        with self.captureOnCommitCallbacks(execute=True):
+            settle_payout(
+                tenant=self.tenant,
+                payout=self.payout,
+                external_ref=txhash,
+                admin_user=self.teacher,
+            )
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, [self.student.email])
+        self.assertIn(txhash, sent.body)
+        self.assertIn("25.00", sent.body)
+
+    def test_release_payout_sends_email_with_reason_on_commit(self):
+        mail.outbox.clear()
+        reason = "Destination address is not BEP-20 compatible."
+        with self.captureOnCommitCallbacks(execute=True):
+            release_payout(
+                tenant=self.tenant,
+                payout=self.payout,
+                reason=reason,
+                admin_user=self.teacher,
+            )
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, [self.student.email])
+        self.assertIn(reason, sent.body)
+        self.assertIn("25.00", sent.body)
+
+    def test_settle_payout_duplicate_external_ref_raises_validation_error(self):
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=self.payout,
+            admin_user=self.teacher,
+        )
+        txhash = "0xduplicatetxhash0001"
+        settle_payout(
+            tenant=self.tenant,
+            payout=self.payout,
+            external_ref=txhash,
+            admin_user=self.teacher,
+        )
+
+        second_payout = create_payout_request(
+            tenant=self.tenant,
+            student=self.student,
+            amount_gross=Decimal("10.00"),
+            destination="0x71C8000000000000000000000000000000000000",
+        )
+        verify_and_reserve_payout(
+            tenant=self.tenant,
+            payout=second_payout,
+            raw_token=second_payout.raw_token,
+        )
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=second_payout,
+            admin_user=self.teacher,
+        )
+
+        with self.assertRaises(ValidationError):
+            settle_payout(
+                tenant=self.tenant,
+                payout=second_payout,
+                external_ref=txhash,
+                admin_user=self.teacher,
+            )
+
+    def test_release_payout_bounds_ledger_description_within_255_chars(self):
+        long_reason = "R" * 300
+        entry = release_payout(
+            tenant=self.tenant,
+            payout=self.payout,
+            reason=long_reason,
+            admin_user=self.teacher,
+        )
+        self.assertLessEqual(len(entry.description), 255)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, Payout.Status.REJECTED)

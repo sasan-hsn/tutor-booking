@@ -592,6 +592,51 @@ def cancel_payout_request(
     return entry
 
 
+DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR = (
+    "A payout with this transaction hash / external reference already exists."
+)
+
+
+def has_duplicate_payout_external_ref(
+    *,
+    provider: str,
+    external_ref: str,
+    exclude_payout_id: Optional[int] = None,
+) -> bool:
+    """Return True if another Payout with the same provider already uses external_ref."""
+    qs = Payout.objects.filter(provider=provider, external_ref=external_ref)
+    if exclude_payout_id is not None:
+        qs = qs.exclude(pk=exclude_payout_id)
+    return qs.exists()
+
+
+def _schedule_payout_status_email(
+    *,
+    student: "User",
+    subject: str,
+    body_lines: list[str],
+) -> None:
+    """Schedule a transactional payout status email on transaction commit."""
+    recipient_email = (getattr(student, "email", "") or "").strip()
+    if not recipient_email:
+        return
+
+    student_name = student.first_name or student.username
+    message = f"Hello {student_name},\n\n" + "\n".join(body_lines)
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
+
+    def _send():
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=from_email,
+            recipient_list=[recipient_email],
+            fail_silently=False,
+        )
+
+    transaction.on_commit(_send)
+
+
 def mark_payout_processing(
     *,
     tenant: "Tenant",
@@ -627,6 +672,23 @@ def mark_payout_processing(
         locked_payout.status = Payout.Status.PROCESSING
         locked_payout.processed_at = now
         locked_payout.save(update_fields=["status", "processed_at"])
+
+        _schedule_payout_status_email(
+            student=locked_payout.student,
+            subject=f"Payout Request #{locked_payout.id} Is Being Processed",
+            body_lines=[
+                (
+                    f"Your refund request #{locked_payout.id} for "
+                    f"${locked_payout.amount_net:.2f} {tenant.default_currency} "
+                    f"to {locked_payout.destination} is now marked as PROCESSING."
+                ),
+                "",
+                (
+                    "Your teacher is executing the transfer and you will receive another "
+                    "confirmation once the transaction reference is recorded."
+                ),
+            ],
+        )
 
     # Sync memory instance
     payout.status = locked_payout.status
@@ -679,6 +741,13 @@ def settle_payout(
                 f"Cannot settle payout: status is '{locked_payout.status}', expected 'PROCESSING'."
             )
 
+        if has_duplicate_payout_external_ref(
+            provider=locked_payout.provider,
+            external_ref=clean_ref,
+            exclude_payout_id=locked_payout.pk,
+        ):
+            raise ValidationError(DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR)
+
         if locked_wallet.settled_balance < locked_payout.amount_gross:
             raise PayoutInsufficientBalanceError(
                 f"Settled balance ({locked_wallet.settled_balance}) is less than payout amount ({locked_payout.amount_gross})."
@@ -696,7 +765,8 @@ def settle_payout(
 
         locked_payout.status = Payout.Status.COMPLETED
         locked_payout.external_ref = clean_ref
-        locked_payout.save(update_fields=["status", "external_ref"])
+        locked_payout.processed_at = timezone.now()
+        locked_payout.save(update_fields=["status", "external_ref", "processed_at"])
 
         idempotency_key = f"tenant:{tenant.id}:payout:{locked_payout.id}:settle"
         entry = LedgerEntry.objects.create(
@@ -708,12 +778,30 @@ def settle_payout(
             reserved_after=locked_wallet.reserved_balance,
             idempotency_key=idempotency_key,
             reference_id=clean_ref,
-            description=f"Payout settled: {clean_ref} for payout #{locked_payout.id}",
+            description=f"Payout settled: {clean_ref} for payout #{locked_payout.id}"[
+                :255
+            ],
+        )
+
+        _schedule_payout_status_email(
+            student=locked_payout.student,
+            subject=f"Payout Request #{locked_payout.id} Completed",
+            body_lines=[
+                (
+                    f"Your refund request #{locked_payout.id} for "
+                    f"${locked_payout.amount_net:.2f} {tenant.default_currency} "
+                    f"to {locked_payout.destination} has been completed."
+                ),
+                "",
+                f"Transaction reference: {clean_ref}",
+                "This settlement has been recorded in your wallet ledger.",
+            ],
         )
 
     # Sync memory instance
     payout.status = locked_payout.status
     payout.external_ref = locked_payout.external_ref
+    payout.processed_at = locked_payout.processed_at
     wallet.settled_balance = locked_wallet.settled_balance
     wallet.reserved_balance = locked_wallet.reserved_balance
 
@@ -746,6 +834,8 @@ def release_payout(
             f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
         )
 
+    clean_reason = reason.strip()
+
     with transaction.atomic():
         wallet = get_or_create_wallet(
             tenant=tenant,
@@ -766,8 +856,8 @@ def release_payout(
             )
 
         entry_description = (
-            f"Payout rejected ({reason.strip()}): payout #{locked_payout.id}"
-            if reason.strip()
+            f"Payout rejected ({clean_reason}): payout #{locked_payout.id}"[:255]
+            if clean_reason
             else f"Payout rejected: payout #{locked_payout.id}"
         )
         entry = _execute_payout_hold_release(
@@ -778,8 +868,32 @@ def release_payout(
             description=entry_description,
         )
 
+        locked_payout.processed_at = timezone.now()
+        locked_payout.save(update_fields=["processed_at"])
+
+        body_lines = [
+            (
+                f"Your refund request #{locked_payout.id} for "
+                f"${locked_payout.amount_gross:.2f} {tenant.default_currency} "
+                f"has been rejected."
+            ),
+            "",
+        ]
+        if clean_reason:
+            body_lines.extend([f"Reason: {clean_reason}", ""])
+        body_lines.append(
+            f"The held amount (${locked_payout.amount_gross:.2f} {tenant.default_currency}) "
+            "has been released back to your available wallet balance."
+        )
+        _schedule_payout_status_email(
+            student=locked_payout.student,
+            subject=f"Payout Request #{locked_payout.id} Rejected",
+            body_lines=body_lines,
+        )
+
     # Sync memory instance
     payout.status = locked_payout.status
+    payout.processed_at = locked_payout.processed_at
     wallet.reserved_balance = locked_wallet.reserved_balance
 
     logger.info(
@@ -788,7 +902,7 @@ def release_payout(
         tenant.id,
         payout.student_id,
         payout.amount_gross,
-        reason,
+        clean_reason,
         entry.id,
     )
 
