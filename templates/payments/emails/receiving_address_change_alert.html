@@ -1,0 +1,54 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Security Alert: Receiving Address Change – {{ site_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+    <span style="display: inline-block; padding: 4px 12px; background-color: #FEE2E2; color: #991B1B; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Security Alert
+    </span>
+</div>
+
+<h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: #2F3E32; line-height: 1.3;">
+    Receiving Address Change Scheduled
+</h1>
+
+<p style="margin: 0 0 20px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    Hello <strong>{{ teacher_name }}</strong>, a new receiving address has been submitted on your Teacher Finance dashboard and placed under a 24-hour security cooling-off window.
+</p>
+
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAF9; border-radius: 12px; border: 1px solid #E8F0EA; margin-bottom: 24px;">
+    <tr>
+        <td style="padding: 20px;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; width: 35%; font-weight: 500;">Pending Address</td>
+                    <td style="padding: 6px 0; font-size: 13px; color: #2F3E32; font-weight: 600; font-family: monospace; word-break: break-all;">{{ pending_address }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Network</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">{{ network }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Scheduled Activation</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #B45309; font-weight: 600;">{{ activates_at_str }}</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0 0 20px; font-size: 14px; color: #991B1B; background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 14px; line-height: 1.5;">
+    <strong>If you did not authorize this change</strong>, please contact support immediately and secure your account password. Your previous receiving address remains active until the 24-hour cooling-off window completes.
+</p>
+
+<div style="text-align: center; margin-bottom: 8px;">
+    <a href="{{ finance_url }}" style="display: inline-block; background-color: #4F7A62; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; padding: 12px 28px; border-radius: 8px;">
+        Review Finance Settings
+    </a>
+</div>
+{% endblock %}
+
+{% block footer_note %}
+This is an automated security notification regarding your receiving address settings.
+{% endblock %}

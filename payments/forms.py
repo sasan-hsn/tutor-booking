@@ -12,6 +12,7 @@ from payments.services import (
     build_manual_external_id,
     get_user_display_name,
     has_duplicate_payout_external_ref,
+    validate_bep20_address,
 )
 
 User = get_user_model()
@@ -233,3 +234,38 @@ class ResolveDisputeForm(forms.Form):
         if resolution not in self.ALLOWED_RESOLUTIONS:
             raise ValidationError("Resolution must be STUDENT_FAVOR or TEACHER_FAVOR.")
         return resolution
+
+
+class ReceivingAddressForm(forms.Form):
+    """Validates BEP-20 USDT receiving address updates and password re-authentication."""
+
+    address = forms.CharField(
+        max_length=128,
+        required=True,
+        label="New BEP-20 USDT Wallet Address",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control font-monospace",
+                "id": "receivingAddressInput",
+                "placeholder": "0x...",
+                "autocomplete": "off",
+                "required": True,
+            }
+        ),
+    )
+    current_password = forms.CharField(
+        required=True,
+        label="Current Account Password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-control",
+                "id": "receivingAddressPassword",
+                "placeholder": "Enter your current password to authorize",
+                "autocomplete": "current-password",
+                "required": True,
+            }
+        ),
+    )
+
+    def clean_address(self) -> str:
+        return validate_bep20_address(self.cleaned_data.get("address", ""))

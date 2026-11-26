@@ -7,9 +7,10 @@ from django.test import TestCase
 from django.utils import timezone
 
 from accounts.models import Tenant, User
-from payments.models import Order, Payout
+from payments.models import Order, PaymentAddress, Payout
 from payments.services import create_payout_request
 from payments.tasks import (
+    activate_pending_tenant_accounts_task,
     expire_orders_task,
     expire_payout_tokens_task,
     payout_reminder_task,
@@ -227,3 +228,94 @@ class PeriodicExpirationTasksTests(TestCase):
         self.assertIn(self.teacher.email, sent_email.to)
         self.assertIn("Reminder", sent_email.subject)
         self.assertIn(str(payout_due.id), sent_email.body)
+
+    def test_activate_pending_tenant_accounts_task_promotes_matured_and_retires_active(
+        self,
+    ):
+        now = timezone.now()
+
+        # Tenant 1: ACTIVE + matured PENDING_ACTIVATION
+        addr_old_active = PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address="0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=now - timedelta(days=5),
+        )
+        addr_matured_pending = PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address="0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+            status=PaymentAddress.Status.PENDING_ACTIVATION,
+            activates_at=now - timedelta(minutes=1),
+        )
+
+        # Tenant 2: ACTIVE + unmatured PENDING_ACTIVATION (must not promote yet)
+        teacher2 = User.objects.create_user(
+            username="teacher_tasks_test_2",
+            password="testpassword",
+            role=User.Role.TEACHER,
+            email="teacher_task2@example.com",
+        )
+        tenant2 = Tenant.objects.get(teacher_profile=teacher2.teacher_profile)
+        addr_t2_active = PaymentAddress.objects.create(
+            tenant=tenant2,
+            provider="crypto_usdt",
+            address="0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=now - timedelta(days=3),
+        )
+        addr_t2_future = PaymentAddress.objects.create(
+            tenant=tenant2,
+            provider="crypto_usdt",
+            address="0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+            status=PaymentAddress.Status.PENDING_ACTIVATION,
+            activates_at=now + timedelta(hours=2),
+        )
+
+        # Tenant 3: RETIRED + matured PENDING_ACTIVATION (no current ACTIVE)
+        teacher3 = User.objects.create_user(
+            username="teacher_tasks_test_3",
+            password="testpassword",
+            role=User.Role.TEACHER,
+            email="teacher_task3@example.com",
+        )
+        tenant3 = Tenant.objects.get(teacher_profile=teacher3.teacher_profile)
+        addr_t3_retired = PaymentAddress.objects.create(
+            tenant=tenant3,
+            provider="crypto_usdt",
+            address="0x1111111111111111111111111111111111111111",
+            status=PaymentAddress.Status.RETIRED,
+            activates_at=now - timedelta(days=10),
+            retired_at=now - timedelta(days=2),
+        )
+        addr_t3_matured = PaymentAddress.objects.create(
+            tenant=tenant3,
+            provider="crypto_usdt",
+            address="0x2222222222222222222222222222222222222222",
+            status=PaymentAddress.Status.PENDING_ACTIVATION,
+            activates_at=now,
+        )
+
+        activated_count = activate_pending_tenant_accounts_task()
+
+        self.assertEqual(activated_count, 2)
+
+        addr_old_active.refresh_from_db()
+        self.assertEqual(addr_old_active.status, PaymentAddress.Status.RETIRED)
+        self.assertIsNotNone(addr_old_active.retired_at)
+
+        addr_matured_pending.refresh_from_db()
+        self.assertEqual(addr_matured_pending.status, PaymentAddress.Status.ACTIVE)
+
+        addr_t2_active.refresh_from_db()
+        self.assertEqual(addr_t2_active.status, PaymentAddress.Status.ACTIVE)
+        addr_t2_future.refresh_from_db()
+        self.assertEqual(
+            addr_t2_future.status, PaymentAddress.Status.PENDING_ACTIVATION
+        )
+
+        addr_t3_retired.refresh_from_db()
+        self.assertEqual(addr_t3_retired.status, PaymentAddress.Status.RETIRED)
+        addr_t3_matured.refresh_from_db()
+        self.assertEqual(addr_t3_matured.status, PaymentAddress.Status.ACTIVE)

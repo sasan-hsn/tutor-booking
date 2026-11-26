@@ -14,7 +14,7 @@ from accounts.tests.base import RoleTestCase
 from booking.models import Booking
 from booking.services import open_dispute
 from notifications.models import Notification
-from payments.models import Order, Payment, Payout
+from payments.models import Order, Payment, PaymentAddress, Payout
 from payments.services import (
     create_payout_request,
     mark_payout_processing,
@@ -1187,3 +1187,180 @@ class TeacherLedgerCsvExportTests(RoleTestCase):
         self.assertEqual(reserve_row["Settled Balance After"], "50.00")
         self.assertEqual(reserve_row["Reserved Balance After"], "20.00")
         self.assertTrue(reserve_row["Timestamp"])
+
+
+class TeacherReceivingAddressViewTests(RoleTestCase):
+    """Tests for Teacher Finance receiving address section, re-auth, EIP-55, and 24h cooldown."""
+
+    ADDR_1 = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    ADDR_2 = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.tenant = Tenant.objects.get(teacher_profile=cls.teacher)
+
+    def test_receiving_address_endpoint_permissions_and_method_enforcement(self):
+        url = reverse("payments:receiving_address_update")
+
+        anon_resp = self.anon_client.post(
+            url,
+            {"address": self.ADDR_1, "current_password": "password123"},
+        )
+        self.assertEqual(anon_resp.status_code, 302)
+        self.assertIn("/accounts/login/", anon_resp.url)
+
+        student_resp = self.student_client.post(
+            url,
+            {"address": self.ADDR_1, "current_password": "password123"},
+        )
+        self.assertEqual(student_resp.status_code, 403)
+
+        get_resp = self.teacher_client.get(url)
+        self.assertEqual(get_resp.status_code, 405)
+
+    def test_finance_tab_renders_receiving_address_section_active_and_pending_banner(
+        self,
+    ):
+        now = timezone.now()
+        activated_at = now - timedelta(days=3)
+        pending_at = now + timedelta(hours=18)
+
+        PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address=self.ADDR_1,
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=activated_at,
+        )
+        PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address=self.ADDR_2,
+            status=PaymentAddress.Status.PENDING_ACTIVATION,
+            activates_at=pending_at,
+        )
+
+        response = self.teacher_client.get(reverse("payments:teacher_finance"))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+
+        self.assertIn("Receiving Address &amp; Payout Destination", html)
+        self.assertIn("BNB Smart Chain (BEP-20)", html)
+        self.assertIn(self.ADDR_1, html)
+        self.assertIn(self.ADDR_2, html)
+        self.assertIn('id="receivingAddressForm"', html)
+        self.assertIn('id="receivingAddressInput"', html)
+        self.assertIn('id="receivingAddressPassword"', html)
+        self.assertIn('id="pendingReceivingAddressBanner"', html)
+        self.assertIn(f'data-address-activates-at="{pending_at.isoformat()}"', html)
+
+    def test_incorrect_password_returns_403_without_altering_database(self):
+        PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address=self.ADDR_1,
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=timezone.now() - timedelta(days=1),
+        )
+        mail.outbox.clear()
+
+        response = self.teacher_client.post(
+            reverse("payments:receiving_address_update"),
+            {"address": self.ADDR_2, "current_password": "wrong-password"},
+        )
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertFalse(data["success"])
+        self.assertEqual(
+            PaymentAddress.objects.filter(tenant=self.tenant).count(),
+            1,
+        )
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_invalid_eip55_checksum_returns_400_without_altering_database(self):
+        response = self.teacher_client.post(
+            reverse("payments:receiving_address_update"),
+            {
+                "address": "0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+                "current_password": "password123",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["success"])
+        self.assertEqual(PaymentAddress.objects.filter(tenant=self.tenant).count(), 0)
+
+    def test_first_address_submission_activates_immediately(self):
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse("payments:receiving_address_update"),
+                {
+                    "address": self.ADDR_1.lower(),
+                    "current_password": "password123",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["address"], self.ADDR_1)
+        self.assertEqual(data["address_status"], PaymentAddress.Status.ACTIVE)
+        self.assertIn(self.ADDR_1, data["receiving_address_html"])
+
+        addr = PaymentAddress.objects.get(tenant=self.tenant)
+        self.assertEqual(addr.status, PaymentAddress.Status.ACTIVE)
+        self.assertEqual(addr.address, self.ADDR_1)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_subsequent_address_submission_creates_24h_pending_and_sends_alert(self):
+        PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address=self.ADDR_1,
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=timezone.now() - timedelta(days=2),
+        )
+
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(
+                reverse("payments:receiving_address_update"),
+                {
+                    "address": self.ADDR_2,
+                    "current_password": "password123",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["address"], self.ADDR_2)
+        self.assertEqual(
+            data["address_status"], PaymentAddress.Status.PENDING_ACTIVATION
+        )
+        self.assertIn("pendingReceivingAddressBanner", data["receiving_address_html"])
+        self.assertIn(self.ADDR_2, data["receiving_address_html"])
+        self.assertIn(self.ADDR_1, data["receiving_address_html"])
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.teacher_user.email])
+
+    def test_same_active_address_submission_returns_400(self):
+        PaymentAddress.objects.create(
+            tenant=self.tenant,
+            provider="crypto_usdt",
+            address=self.ADDR_1,
+            status=PaymentAddress.Status.ACTIVE,
+            activates_at=timezone.now() - timedelta(days=2),
+        )
+        response = self.teacher_client.post(
+            reverse("payments:receiving_address_update"),
+            {
+                "address": self.ADDR_1,
+                "current_password": "password123",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["success"])

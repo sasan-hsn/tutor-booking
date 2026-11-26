@@ -42,6 +42,16 @@ class PayoutSettingsAndExceptionsTests(SimpleTestCase):
             21600.0,
         )
 
+        self.assertIn("activate-pending-tenant-accounts-hourly", schedule)
+        self.assertEqual(
+            schedule["activate-pending-tenant-accounts-hourly"]["task"],
+            "payments.tasks.activate_pending_tenant_accounts_task",
+        )
+        self.assertEqual(
+            schedule["activate-pending-tenant-accounts-hourly"]["schedule"],
+            3600.0,
+        )
+
     def test_payout_exceptions_hierarchy(self):
         from payments.exceptions import (
             PayoutConflictError,

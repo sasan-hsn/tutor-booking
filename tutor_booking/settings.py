@@ -318,6 +318,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "booking.tasks.dispute_warning_task",
         "schedule": 86400.0,
     },
+    "activate-pending-tenant-accounts-hourly": {
+        "task": "payments.tasks.activate_pending_tenant_accounts_task",
+        "schedule": 3600.0,
+    },
 }
 
 TEACHER_DAILY_DIGEST_HOUR = int(os.getenv("TEACHER_DAILY_DIGEST_HOUR", "20"))
