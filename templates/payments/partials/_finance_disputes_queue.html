@@ -15,7 +15,7 @@
                     <th>Lesson &amp; Dispute</th>
                     <th>Price</th>
                     <th>Auto-Expire</th>
-                    <th>Actions</th>
+                    <th class="finance-dispute-actions-col">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -42,8 +42,8 @@
                             {{ booking.dispute_countdown_label }}
                         </span>
                     </td>
-                    <td>
-                        <div class="finance-payout-actions">
+                    <td class="finance-dispute-actions-col">
+                        <div class="finance-dispute-actions">
                             <button type="button"
                                 class="btn finance-payout-action-btn finance-dispute-btn-student btn-resolve-dispute"
                                 data-action-url="{% url 'payments:dispute_resolve' booking.id %}"

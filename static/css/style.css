@@ -2858,6 +2858,23 @@ h1, h2, h3, h4, h5, h6,
     word-break: break-word;
 }
 
+.finance-dispute-actions-col {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.finance-dispute-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    width: 198px;
+}
+
+.finance-dispute-actions .btn-resolve-dispute {
+    width: 100%;
+}
+
 .finance-dispute-btn-student {
     background-color: transparent;
     color: #b91c1c;
