@@ -316,3 +316,72 @@ def mark_booking_reminders_read(booking):
         logger.exception(
             "Failed to mark reminder notifications as read for booking #%s", booking.id
         )
+
+
+def notify_dispute_resolved(booking, *, resolution: str):
+    """Create and send deduplicated in-platform DISPUTE_RESOLVED notifications to both parties."""
+    from .models import Booking
+
+    created = []
+    is_student_favor = resolution == Booking.DisputeResolution.STUDENT_FAVOR
+    outcome_label = (
+        "in student favor (funds released)"
+        if is_student_favor
+        else "in teacher favor (lesson completed)"
+    )
+
+    targets = [
+        (
+            "student",
+            booking.student,
+            booking.teacher_display_name,
+            Notification.Level.SUCCESS if is_student_favor else Notification.Level.INFO,
+            (
+                f"Your dispute for Booking #{booking.id} with "
+                f"{booking.teacher_display_name} was resolved {outcome_label}."
+            ),
+            f"{reverse('booking:student_dashboard')}#booking-{booking.id}",
+        ),
+        (
+            "teacher",
+            booking.teacher.user,
+            booking.student_display_name,
+            Notification.Level.INFO,
+            (
+                f"Dispute for Booking #{booking.id} with "
+                f"{booking.student_display_name} was resolved {outcome_label}."
+            ),
+            reverse("payments:teacher_finance"),
+        ),
+    ]
+
+    for role, recipient, counterpart_name, level, message, action_url in targets:
+        try:
+            if Notification.objects.filter(
+                recipient=recipient,
+                event_type=Notification.EventType.DISPUTE_RESOLVED,
+                metadata__booking_id=booking.id,
+            ).exists():
+                continue
+            metadata = _build_booking_metadata(booking, counterpart_name)
+            metadata["dispute_resolution"] = resolution
+            created.append(
+                create_and_send_notification(
+                    recipient=recipient,
+                    actor=booking.teacher.user,
+                    event_type=Notification.EventType.DISPUTE_RESOLVED,
+                    level=level,
+                    title="Lesson Dispute Resolved",
+                    message=message,
+                    action_url=action_url,
+                    metadata=metadata,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Failed to emit dispute_resolved notification to %s for booking #%s",
+                role,
+                booking.id,
+            )
+
+    return created

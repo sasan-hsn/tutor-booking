@@ -1,6 +1,9 @@
+import csv
+import io
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.urls import reverse
@@ -9,11 +12,15 @@ from django.utils import timezone
 from accounts.models import Tenant
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking
+from booking.services import open_dispute
+from notifications.models import Notification
 from payments.models import Order, Payment, Payout
 from payments.services import (
     create_payout_request,
     mark_payout_processing,
+    process_manual_topup,
     release_payout,
+    sanitize_csv_cell,
     settle_payout,
     verify_and_reserve_payout,
 )
@@ -795,3 +802,388 @@ class TeacherPayoutReviewQueueTests(RoleTestCase):
         )
         self.assertEqual(conflict_resp.status_code, 409)
         self.assertFalse(conflict_resp.json()["success"])
+
+
+class TeacherDisputeReviewQueueTests(RoleTestCase):
+    """Tests for Teacher Dashboard Finance Dispute Queue & dispute resolution."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.tenant = Tenant.objects.get(teacher_profile=cls.teacher)
+        cls.tenant.payments_enabled = True
+        cls.tenant.save(update_fields=["payments_enabled"])
+
+        cls.other_teacher_user = User.objects.create_user(
+            username="other_dispute_teacher",
+            email="other_dispute_teacher@example.com",
+            password="password123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
+        )
+        cls.other_tenant = Tenant.objects.get(
+            teacher_profile=cls.other_teacher_user.teacher_profile
+        )
+        cls.other_tenant.payments_enabled = True
+        cls.other_tenant.save(update_fields=["payments_enabled"])
+
+    def setUp(self):
+        super().setUp()
+        self.teacher_user.email = "mary.teacher@example.com"
+        self.teacher_user.save(update_fields=["email"])
+        self.student_user.first_name = "Alice"
+        self.student_user.last_name = "Disputer"
+        self.student_user.email = "alice.disputer@example.com"
+        self.student_user.save(update_fields=["first_name", "last_name", "email"])
+
+        self.wallet = get_or_create_wallet(self.tenant, self.student_user)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=self.wallet,
+            amount=Decimal("100.00"),
+            idempotency_key="dispute-queue-seed-100",
+            reference_id="dispute_seed_100",
+            description="Seed wallet for dispute queue tests",
+        )
+
+    def _create_disputed_booking(
+        self,
+        *,
+        teacher=None,
+        tenant=None,
+        price=Decimal("25.00"),
+        reason="Student reported audio outage.",
+        opened_hours_ago=6,
+    ) -> Booking:
+        target_teacher = teacher or self.teacher
+        target_tenant = tenant or self.tenant
+        target_wallet = get_or_create_wallet(target_tenant, self.student_user)
+        if target_wallet.available_balance < price:
+            credit_wallet(
+                tenant=target_tenant,
+                wallet=target_wallet,
+                amount=price,
+                idempotency_key=f"dispute-extra-{target_tenant.id}-{timezone.now().timestamp()}",
+                reference_id="extra_seed",
+                description="Extra seed",
+            )
+
+        now = timezone.now()
+        end_at = now - timedelta(hours=opened_hours_ago + 1)
+        start_at = end_at - timedelta(minutes=50)
+        booking = Booking.objects.create(
+            student=self.student_user,
+            teacher=target_teacher,
+            start_at=start_at,
+            end_at=end_at,
+            duration_minutes=50,
+            lesson_type=Booking.LessonType.REGULAR,
+            status=Booking.Status.CONFIRMED,
+            price=price,
+            payment_status=Booking.PaymentStatus.RESERVED,
+            held_amount=price,
+        )
+        reserve_funds(
+            tenant=target_tenant,
+            wallet=target_wallet,
+            amount=price,
+            idempotency_key=f"tenant:{target_tenant.id}:booking:{booking.id}:reserve",
+            reference_id=f"booking_{booking.id}",
+            description=f"Booking hold: booking #{booking.id}",
+        )
+        open_dispute(
+            booking=booking,
+            student=self.student_user,
+            reason=reason,
+            now=now - timedelta(hours=opened_hours_ago),
+        )
+        booking.refresh_from_db()
+        return booking
+
+    def test_dispute_resolve_permissions_and_cross_tenant_isolation(self):
+        disputed = self._create_disputed_booking()
+        other_disputed = self._create_disputed_booking(
+            teacher=self.other_teacher_user.teacher_profile,
+            tenant=self.other_tenant,
+            reason="Other teacher dispute",
+        )
+
+        url = reverse("payments:dispute_resolve", args=[disputed.id])
+        anon_resp = self.anon_client.post(url, {"resolution": "STUDENT_FAVOR"})
+        self.assertEqual(anon_resp.status_code, 302)
+        self.assertIn("/accounts/login/", anon_resp.url)
+
+        student_resp = self.student_client.post(url, {"resolution": "STUDENT_FAVOR"})
+        self.assertEqual(student_resp.status_code, 403)
+
+        get_resp = self.teacher_client.get(url)
+        self.assertEqual(get_resp.status_code, 405)
+
+        cross_resp = self.teacher_client.post(
+            reverse("payments:dispute_resolve", args=[other_disputed.id]),
+            {"resolution": "STUDENT_FAVOR"},
+        )
+        self.assertEqual(cross_resp.status_code, 404)
+
+    def test_finance_tab_lists_active_disputes_with_details_countdown_and_reason(self):
+        active_dispute = self._create_disputed_booking(
+            price=Decimal("32.50"),
+            reason="Meeting link failed to connect after 10 minutes.",
+            opened_hours_ago=24,
+        )
+        # Non-disputing booking must not appear in dispute queue
+        now = timezone.now()
+        Booking.objects.create(
+            student=self.student_user,
+            teacher=self.teacher,
+            start_at=now - timedelta(days=5),
+            end_at=now - timedelta(days=5) + timedelta(minutes=50),
+            status=Booking.Status.COMPLETED,
+            price=Decimal("25.00"),
+            payment_status=Booking.PaymentStatus.CONSUMED,
+            held_amount=Decimal("25.00"),
+            dispute_reason="Should not appear",
+        )
+        # Other teacher's dispute must not appear
+        other_dispute = self._create_disputed_booking(
+            teacher=self.other_teacher_user.teacher_profile,
+            tenant=self.other_tenant,
+            reason="Hidden other teacher dispute reason",
+        )
+
+        response = self.teacher_client.get(reverse("payments:teacher_finance"))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+
+        self.assertIn("Dispute Review Queue", html)
+        self.assertIn(f'data-dispute-booking-id="{active_dispute.id}"', html)
+        self.assertIn("Alice Disputer", html)
+        self.assertIn("$32.50", html)
+        self.assertIn("Meeting link failed to connect after 10 minutes.", html)
+        self.assertIn('class="finance-dispute-reason-row"', html)
+        self.assertIn('colspan="5"', html)
+        expected_deadline = (
+            active_dispute.dispute_opened_at
+            + timedelta(days=settings.DISPUTE_WINDOW_DAYS)
+        ).isoformat()
+        self.assertIn(f'data-dispute-deadline="{expected_deadline}"', html)
+        self.assertIn("Resolve in Student Favor", html)
+        self.assertIn("Resolve in Teacher Favor", html)
+
+        self.assertNotIn("Should not appear", html)
+        self.assertNotIn("Hidden other teacher dispute reason", html)
+        self.assertNotIn(f'data-dispute-booking-id="{other_dispute.id}"', html)
+
+    def test_resolve_in_student_favor_releases_hold_updates_booking_and_notifies(self):
+        disputed = self._create_disputed_booking(price=Decimal("25.00"))
+        mail.outbox.clear()
+
+        url = reverse("payments:dispute_resolve", args=[disputed.id])
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(url, {"resolution": "STUDENT_FAVOR"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["booking_status"], Booking.Status.RESOLVED)
+        self.assertEqual(data["dispute_resolution"], "STUDENT_FAVOR")
+        self.assertNotIn(
+            f'data-dispute-booking-id="{disputed.id}"', data["disputes_html"]
+        )
+        self.assertIn("overview_html", data)
+        self.assertIn("ledger_html", data)
+
+        disputed.refresh_from_db()
+        self.assertEqual(disputed.status, Booking.Status.RESOLVED)
+        self.assertEqual(disputed.payment_status, Booking.PaymentStatus.RELEASED)
+        self.assertEqual(
+            disputed.settlement_reason, Booking.SettlementReason.DISPUTE_STUDENT_FAVOR
+        )
+        self.assertEqual(disputed.dispute_resolution, "STUDENT_FAVOR")
+        self.assertEqual(disputed.dispute_resolved_by, self.teacher_user)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("100.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("100.00"))
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(
+            Notification.objects.filter(
+                event_type=Notification.EventType.DISPUTE_RESOLVED,
+                metadata__booking_id=disputed.id,
+            ).count(),
+            2,
+        )
+
+        # Second resolution attempt must return 409 Conflict
+        conflict_resp = self.teacher_client.post(url, {"resolution": "TEACHER_FAVOR"})
+        self.assertEqual(conflict_resp.status_code, 409)
+        self.assertFalse(conflict_resp.json()["success"])
+
+    def test_resolve_in_teacher_favor_consumes_hold_updates_booking_and_notifies(self):
+        disputed = self._create_disputed_booking(price=Decimal("25.00"))
+        mail.outbox.clear()
+
+        url = reverse("payments:dispute_resolve", args=[disputed.id])
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(url, {"resolution": "TEACHER_FAVOR"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["booking_status"], Booking.Status.COMPLETED)
+        self.assertEqual(data["dispute_resolution"], "TEACHER_FAVOR")
+        self.assertNotIn(
+            f'data-dispute-booking-id="{disputed.id}"', data["disputes_html"]
+        )
+
+        disputed.refresh_from_db()
+        self.assertEqual(disputed.status, Booking.Status.COMPLETED)
+        self.assertEqual(disputed.payment_status, Booking.PaymentStatus.CONSUMED)
+        self.assertEqual(
+            disputed.settlement_reason, Booking.SettlementReason.DISPUTE_TEACHER_FAVOR
+        )
+        self.assertEqual(disputed.dispute_resolution, "TEACHER_FAVOR")
+        self.assertEqual(disputed.dispute_resolved_by, self.teacher_user)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("75.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("75.00"))
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(
+            Notification.objects.filter(
+                event_type=Notification.EventType.DISPUTE_RESOLVED,
+                metadata__booking_id=disputed.id,
+            ).count(),
+            2,
+        )
+
+    def test_resolve_dispute_invalid_resolution_returns_400(self):
+        disputed = self._create_disputed_booking()
+        resp = self.teacher_client.post(
+            reverse("payments:dispute_resolve", args=[disputed.id]),
+            {"resolution": "INVALID"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()["success"])
+
+
+class TeacherLedgerCsvExportTests(RoleTestCase):
+    """Tests for Finance tab formula-sanitized CSV ledger export."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.tenant = Tenant.objects.get(teacher_profile=cls.teacher)
+
+        cls.other_teacher_user = User.objects.create_user(
+            username="other_csv_teacher",
+            email="other_csv_teacher@example.com",
+            password="password123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
+        )
+        cls.other_tenant = Tenant.objects.get(
+            teacher_profile=cls.other_teacher_user.teacher_profile
+        )
+
+    def test_sanitize_csv_cell_prefixes_all_formula_injection_triggers(self):
+        self.assertEqual(sanitize_csv_cell("=SUM(A1:A10)"), "'=SUM(A1:A10)")
+        self.assertEqual(sanitize_csv_cell("+cmd|' /C calc'"), "'+cmd|' /C calc'")
+        self.assertEqual(sanitize_csv_cell("-10"), "'-10")
+        self.assertEqual(sanitize_csv_cell("@user"), "'@user")
+        self.assertEqual(sanitize_csv_cell("\t=1+1"), "'\t=1+1")
+        self.assertEqual(sanitize_csv_cell("\r=2+2"), "'\r=2+2")
+        self.assertEqual(sanitize_csv_cell("Normal text"), "Normal text")
+        self.assertEqual(sanitize_csv_cell(None), "")
+
+    def test_csv_export_permissions_and_button_presence(self):
+        export_url = reverse("payments:export_ledger_csv")
+
+        anon_resp = self.anon_client.get(export_url)
+        self.assertEqual(anon_resp.status_code, 302)
+        self.assertIn("/accounts/login/", anon_resp.url)
+
+        student_resp = self.student_client.get(export_url)
+        self.assertEqual(student_resp.status_code, 403)
+
+        finance_resp = self.teacher_client.get(reverse("payments:teacher_finance"))
+        self.assertContains(finance_resp, "Export Ledger CSV")
+        self.assertContains(finance_resp, f'href="{export_url}"')
+
+    def test_csv_export_includes_tenant_ledger_entries_and_sanitizes_formula_injection(
+        self,
+    ):
+        self.student_user.first_name = "Alice"
+        self.student_user.last_name = "Ledger"
+        self.student_user.email = "alice.ledger@example.com"
+        self.student_user.save(update_fields=["first_name", "last_name", "email"])
+
+        process_manual_topup(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("50.00"),
+            reference_id="=SUM(A1:A10)",
+            admin_user=self.teacher_user,
+            notes="+cmd|' /C calc'",
+        )
+        wallet = get_or_create_wallet(self.tenant, self.student_user)
+        reserve_funds(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("20.00"),
+            idempotency_key="csv-reserve-20",
+            reference_id="-10",
+            description="@user",
+        )
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("5.00"),
+            idempotency_key="csv-tab-5",
+            reference_id="tab_ref",
+            description='\t=HYPERLINK("http://evil.example")',
+        )
+
+        # Other tenant entry must be excluded
+        other_wallet = get_or_create_wallet(self.other_tenant, self.student_user)
+        credit_wallet(
+            tenant=self.other_tenant,
+            wallet=other_wallet,
+            amount=Decimal("999.00"),
+            idempotency_key="csv-other-tenant-999",
+            reference_id="other_secret_ref",
+            description="Secret other tenant transaction",
+        )
+
+        resp = self.teacher_client.get(reverse("payments:export_ledger_csv"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/csv", resp["Content-Type"])
+        self.assertIn("attachment; filename=", resp["Content-Disposition"])
+
+        content = resp.content.decode("utf-8")
+        rows = list(csv.DictReader(io.StringIO(content)))
+        self.assertEqual(len(rows), 3)
+
+        all_values = [val for row in rows for val in row.values()]
+        self.assertNotIn("other_secret_ref", content)
+        self.assertNotIn("Secret other tenant transaction", content)
+
+        self.assertIn("'=SUM(A1:A10)", all_values)
+        self.assertIn("'+cmd|' /C calc'", all_values)
+        self.assertIn("'-10", all_values)
+        self.assertIn("'@user", all_values)
+        self.assertIn('\'\t=HYPERLINK("http://evil.example")', all_values)
+
+        # Verify expected columns & values on the reserve row
+        reserve_row = next(r for r in rows if r["Entry Type"] == "RESERVE")
+        self.assertEqual(reserve_row["Student"], "Alice Ledger")
+        self.assertEqual(reserve_row["Amount"], "20.00")
+        self.assertEqual(reserve_row["Settled Balance After"], "50.00")
+        self.assertEqual(reserve_row["Reserved Balance After"], "20.00")
+        self.assertTrue(reserve_row["Timestamp"])

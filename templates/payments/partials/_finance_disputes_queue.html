@@ -1,0 +1,85 @@
+<div id="financeActiveDisputesSection">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <h4 class="mb-0">Dispute Review Queue</h4>
+            <span class="badge bg-secondary-subtle text-dark">{{ disputes_queue_count }}</span>
+        </div>
+    </div>
+
+    {% if disputes_queue %}
+    <div class="table-responsive">
+        <table class="student-roster-table finance-disputes-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Lesson &amp; Dispute</th>
+                    <th>Price</th>
+                    <th>Auto-Expire</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for booking in disputes_queue %}
+                <tr class="finance-dispute-row" data-dispute-booking-id="{{ booking.id }}">
+                    <td>
+                        <div class="fw-semibold">{{ booking.student_display_name }}</div>
+                        <div class="small text-muted">{{ booking.student.email|default:"—" }}</div>
+                    </td>
+                    <td class="text-nowrap small">
+                        <div class="fw-medium">
+                            {{ booking.local_start_at|date:"M d, Y H:i" }} – {{ booking.local_end_at|date:"H:i" }}
+                        </div>
+                        <div class="text-muted">
+                            Opened: {{ booking.local_dispute_opened_at|date:"M d, Y H:i" }}
+                        </div>
+                    </td>
+                    <td class="text-nowrap fw-semibold">
+                        ${{ booking.price|default:booking.held_amount|floatformat:2 }} {{ tenant.default_currency }}
+                    </td>
+                    <td class="text-nowrap">
+                        <span class="badge finance-dispute-countdown"
+                            data-dispute-deadline="{{ booking.dispute_deadline_iso }}">
+                            {{ booking.dispute_countdown_label }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="finance-payout-actions">
+                            <button type="button"
+                                class="btn finance-payout-action-btn finance-dispute-btn-student btn-resolve-dispute"
+                                data-action-url="{% url 'payments:dispute_resolve' booking.id %}"
+                                data-booking-id="{{ booking.id }}"
+                                data-student-name="{{ booking.student_display_name }}"
+                                data-amount="{{ booking.held_amount|floatformat:2 }}"
+                                data-resolution="STUDENT_FAVOR">
+                                <i class="bi bi-arrow-counterclockwise"></i>Resolve in Student Favor
+                            </button>
+                            <button type="button"
+                                class="btn finance-payout-action-btn finance-dispute-btn-teacher btn-resolve-dispute"
+                                data-action-url="{% url 'payments:dispute_resolve' booking.id %}"
+                                data-booking-id="{{ booking.id }}"
+                                data-student-name="{{ booking.student_display_name }}"
+                                data-amount="{{ booking.held_amount|floatformat:2 }}"
+                                data-resolution="TEACHER_FAVOR">
+                                <i class="bi bi-check2-circle"></i>Resolve in Teacher Favor
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr class="finance-dispute-reason-row">
+                    <td colspan="5">
+                        <div class="finance-dispute-reason-callout">
+                            <span class="finance-dispute-reason-label">Student Reason:</span>
+                            <span class="finance-dispute-reason">{{ booking.dispute_reason|default:"—" }}</span>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p class="mb-0">No active lesson disputes awaiting review.</p>
+    </div>
+    {% endif %}
+</div>

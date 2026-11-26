@@ -579,6 +579,11 @@ function initLessonDetailModalManager() {
             if (e.target.closest(cfg.abort)) {
                 const confirmPanel = document.querySelector(cfg.panel);
                 const origBtn = document.querySelector(cfg.trigger);
+                const disputeErrorEl = document.getElementById('openDisputeError');
+                if (disputeErrorEl) {
+                    disputeErrorEl.textContent = '';
+                    disputeErrorEl.classList.add('d-none');
+                }
                 if (confirmPanel) confirmPanel.classList.add('d-none');
                 if (origBtn) origBtn.classList.remove('d-none');
                 return;
@@ -586,6 +591,28 @@ function initLessonDetailModalManager() {
 
             const confirmBtn = e.target.closest(cfg.confirm);
             if (confirmBtn) {
+                if (cfg.confirm === '#confirmOpenDisputeBtn') {
+                    const reasonInput = document.getElementById('disputeReasonInput');
+                    const errorEl = document.getElementById('openDisputeError');
+                    const reason = reasonInput ? reasonInput.value.trim() : '';
+                    if (!reason) {
+                        if (errorEl) {
+                            errorEl.textContent = 'Please provide a reason for opening this dispute.';
+                            errorEl.classList.remove('d-none');
+                        }
+                        if (reasonInput) reasonInput.focus();
+                        return;
+                    }
+                    if (errorEl) {
+                        errorEl.textContent = '';
+                        errorEl.classList.add('d-none');
+                    }
+                    await handleModalPostAction(confirmBtn, confirmBtn.dataset[cfg.urlAttr], {
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `reason=${encodeURIComponent(reason)}`
+                    });
+                    return;
+                }
                 await handleModalPostAction(confirmBtn, confirmBtn.dataset[cfg.urlAttr]);
                 return;
             }
@@ -790,7 +817,12 @@ function initLessonDetailModalManager() {
         try {
             const response = await csrfFetch(url, { method: 'POST', ...extraOptions });
             if (!response.ok) {
-                alert('Something went wrong. Please try again.');
+                let errMsg = 'Something went wrong. Please try again.';
+                try {
+                    const errData = await response.json();
+                    if (errData && errData.error) errMsg = errData.error;
+                } catch (_) {}
+                alert(errMsg);
                 btn.disabled = false;
                 return;
             }

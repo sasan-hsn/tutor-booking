@@ -5,12 +5,19 @@
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
     <div>
         <h2 class="mb-1">Finance</h2>
-        <p class="text-muted small mb-0">Manage student balances, manual top-ups, and payment claims.</p>
+        <p class="text-muted small mb-0">Manage student balances, manual top-ups, payment claims, disputes, and ledger exports.</p>
     </div>
-    <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2"
-        id="openManualTopupBtn" data-bs-toggle="modal" data-bs-target="#manualTopupModal">
-        <i class="bi bi-plus-circle"></i> Manual Top-Up
-    </button>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <a href="{% url 'payments:export_ledger_csv' %}"
+            class="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
+            id="exportLedgerCsvBtn">
+            <i class="bi bi-download"></i> Export Ledger CSV
+        </a>
+        <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2"
+            id="openManualTopupBtn" data-bs-toggle="modal" data-bs-target="#manualTopupModal">
+            <i class="bi bi-plus-circle"></i> Manual Top-Up
+        </button>
+    </div>
 </div>
 
 <section id="financeOverviewContainer" aria-label="Financial Overview">
@@ -29,6 +36,12 @@
 <section class="mb-4" aria-label="Payout Review Queue">
     <div id="financePayoutsContainer">
         {% include "payments/partials/_finance_payouts_queue.html" %}
+    </div>
+</section>
+
+<section class="mb-4" aria-label="Dispute Review Queue">
+    <div id="financeDisputesContainer">
+        {% include "payments/partials/_finance_disputes_queue.html" %}
     </div>
 </section>
 
@@ -156,6 +169,32 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-danger" id="rejectPayoutSubmitBtn">
                         Reject &amp; Release Funds
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="resolveDisputeModal" tabindex="-1" aria-labelledby="resolveDisputeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resolveDisputeModalLabel">Confirm Dispute Resolution</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="resolveDisputeForm" action="" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="mb-2" id="resolveDisputeSummary"></p>
+                    <p class="small text-muted mb-0" id="resolveDisputeConsequence"></p>
+                    <div class="alert alert-danger d-none mt-3 mb-0" id="resolveDisputeErrorAlert" role="alert"></div>
+                    {{ resolve_dispute_form.resolution }}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="resolveDisputeSubmitBtn">
+                        Confirm Resolution
                     </button>
                 </div>
             </form>

@@ -11,7 +11,12 @@ from django.utils import timezone
 
 from accounts.models import Tenant, User
 from booking.models import Booking, RegularAvailability
-from booking.services import create_booking_with_hold, open_dispute
+from booking.services import (
+    DisputeConflictError,
+    create_booking_with_hold,
+    open_dispute,
+    resolve_dispute,
+)
 from booking.tasks import auto_complete_lessons_task
 from tutor_booking.tests.concurrency import run_concurrently
 from wallet.exceptions import InsufficientBalanceError
@@ -458,6 +463,91 @@ class BookingHoldConcurrencyTests(TransactionTestCase):
             )
             self.assertEqual(wallet.settled_balance, Decimal("25.00"))
             self.assertEqual(wallet.reserved_balance, Decimal("0.00"))
+
+        expected = compute_expected_balances(wallet)
+        self.assertEqual(wallet.settled_balance, expected.expected_settled)
+        self.assertEqual(wallet.reserved_balance, expected.expected_reserved)
+
+    def test_concurrent_dispute_resolution_race_executes_once(self):
+        """
+        Two concurrent threads attempt to resolve the same DISPUTING booking
+        (one in student favor, one in teacher favor) under TeacherProfile -> Booking -> Wallet locks.
+        Exactly 1 succeeds, the other fails with DisputeConflictError, and exactly 1
+        terminal settlement entry is committed.
+        """
+        wallet = get_or_create_wallet(tenant=self.tenant, user=self.student)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("50.00"),
+            idempotency_key="race-dispute-resolve-seed",
+            reference_id="race_resolve_seed",
+            description="Seed $50.00 for dispute resolution race",
+        )
+        booking = create_booking_with_hold(
+            teacher=self.teacher,
+            student=self.student,
+            start_at=self.slot_starts[0],
+            lesson_option="regular_50",
+        )
+
+        end_at = timezone.now() - timedelta(hours=2)
+        booking.status = Booking.Status.CONFIRMED
+        booking.end_at = end_at
+        booking.start_at = end_at - timedelta(minutes=50)
+        booking.save()
+
+        open_dispute(
+            booking=booking,
+            student=self.student,
+            reason="Concurrent resolution race test",
+            now=end_at + timedelta(minutes=30),
+        )
+
+        def resolve_student():
+            b = Booking.objects.get(pk=booking.pk)
+            return resolve_dispute(
+                tenant=self.tenant,
+                booking=b,
+                teacher_user=self.teacher_user,
+                resolution=Booking.DisputeResolution.STUDENT_FAVOR,
+            )
+
+        def resolve_teacher():
+            b = Booking.objects.get(pk=booking.pk)
+            return resolve_dispute(
+                tenant=self.tenant,
+                booking=b,
+                teacher_user=self.teacher_user,
+                resolution=Booking.DisputeResolution.TEACHER_FAVOR,
+            )
+
+        results = run_concurrently([resolve_student, resolve_teacher])
+        successes = [res for res, exc in results if exc is None]
+        exceptions = [exc for res, exc in results if exc is not None]
+
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(exceptions), 1)
+        self.assertIsInstance(exceptions[0], DisputeConflictError)
+
+        booking.refresh_from_db()
+        wallet.refresh_from_db()
+        settle_key = f"tenant:{self.tenant.id}:booking:{booking.id}:settle"
+        settle_entries = LedgerEntry.objects.filter(idempotency_key=settle_key)
+        self.assertEqual(settle_entries.count(), 1)
+        self.assertEqual(wallet.reserved_balance, Decimal("0.00"))
+
+        if booking.dispute_resolution == Booking.DisputeResolution.STUDENT_FAVOR:
+            self.assertEqual(booking.status, Booking.Status.RESOLVED)
+            self.assertEqual(booking.payment_status, Booking.PaymentStatus.RELEASED)
+            self.assertEqual(wallet.settled_balance, Decimal("50.00"))
+        else:
+            self.assertEqual(
+                booking.dispute_resolution, Booking.DisputeResolution.TEACHER_FAVOR
+            )
+            self.assertEqual(booking.status, Booking.Status.COMPLETED)
+            self.assertEqual(booking.payment_status, Booking.PaymentStatus.CONSUMED)
+            self.assertEqual(wallet.settled_balance, Decimal("25.00"))
 
         expected = compute_expected_balances(wallet)
         self.assertEqual(wallet.settled_balance, expected.expected_settled)

@@ -22,4 +22,14 @@ urlpatterns = [
         views.payout_reject,
         name="payout_reject",
     ),
+    path(
+        "disputes/<int:booking_id>/resolve/",
+        views.dispute_resolve,
+        name="dispute_resolve",
+    ),
+    path(
+        "export-csv/",
+        views.export_ledger_csv,
+        name="export_ledger_csv",
+    ),
 ]

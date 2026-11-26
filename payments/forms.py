@@ -5,10 +5,12 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
 from accounts.models import get_default_min_topup_amount
+from booking.models import Booking
 from payments.models import Payment
 from payments.services import (
     DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
     build_manual_external_id,
+    get_user_display_name,
     has_duplicate_payout_external_ref,
 )
 
@@ -20,11 +22,6 @@ DUPLICATE_REFERENCE_ERROR = (
 DUPLICATE_IDEMPOTENCY_ERROR = (
     "This submission token has already been used for another deposit."
 )
-
-
-def get_user_display_name(user) -> str:
-    """Return full name if present, otherwise username."""
-    return user.get_full_name() or user.username
 
 
 class StudentChoiceField(forms.ModelChoiceField):
@@ -212,3 +209,27 @@ class RejectPayoutForm(forms.Form):
         if not reason:
             raise ValidationError("Rejection reason is required.")
         return reason
+
+
+class ResolveDisputeForm(forms.Form):
+    """Validates teacher dispute resolution decision."""
+
+    ALLOWED_RESOLUTIONS = (
+        Booking.DisputeResolution.STUDENT_FAVOR,
+        Booking.DisputeResolution.TEACHER_FAVOR,
+    )
+
+    resolution = forms.ChoiceField(
+        choices=[
+            (Booking.DisputeResolution.STUDENT_FAVOR, "Resolve in Student Favor"),
+            (Booking.DisputeResolution.TEACHER_FAVOR, "Resolve in Teacher Favor"),
+        ],
+        required=True,
+        widget=forms.HiddenInput(attrs={"id": "resolveDisputeResolution"}),
+    )
+
+    def clean_resolution(self) -> str:
+        resolution = (self.cleaned_data.get("resolution") or "").strip()
+        if resolution not in self.ALLOWED_RESOLUTIONS:
+            raise ValidationError("Resolution must be STUDENT_FAVOR or TEACHER_FAVOR.")
+        return resolution

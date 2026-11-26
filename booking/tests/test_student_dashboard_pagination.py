@@ -140,6 +140,47 @@ class StudentDashboardPaginationTests(RoleTestCase):
         # Completed booking has Leave Review
         self.assertContains(response, "badge-leave-review")
 
+    def test_student_dashboard_past_lessons_includes_disputing_and_resolved(self):
+        """DISPUTING and RESOLVED bookings remain visible in the student's Past Lessons feed."""
+        now = timezone.now()
+        b_disputing = self._create_booking(
+            self.student_user,
+            now - timedelta(hours=5),
+            now - timedelta(hours=4),
+            status=Booking.Status.DISPUTING,
+        )
+        b_resolved = self._create_booking(
+            self.student_user,
+            now - timedelta(days=2),
+            now - timedelta(days=2) + timedelta(hours=1),
+            status=Booking.Status.RESOLVED,
+        )
+        b_cancelled = self._create_booking(
+            self.student_user,
+            now - timedelta(days=3),
+            now - timedelta(days=3) + timedelta(hours=1),
+            status=Booking.Status.CANCELLED,
+        )
+
+        response = self.student_client.get(reverse("booking:student_dashboard"))
+        self.assertEqual(response.status_code, 200)
+        past_ids = [b.id for b in response.context["past_bookings"]]
+        self.assertIn(b_disputing.id, past_ids)
+        self.assertIn(b_resolved.id, past_ids)
+        self.assertNotIn(b_cancelled.id, past_ids)
+        self.assertContains(response, "Dispute Open")
+        self.assertContains(response, "Dispute Resolved")
+        self.assertNotContains(response, "Leave Review")
+
+        ajax_resp = self.student_client.get(
+            reverse("booking:student_dashboard") + "?section=past&page=1",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(ajax_resp.status_code, 200)
+        self.assertContains(ajax_resp, f'data-booking-id="{b_disputing.id}"')
+        self.assertContains(ajax_resp, f'data-booking-id="{b_resolved.id}"')
+        self.assertNotContains(ajax_resp, f'data-booking-id="{b_cancelled.id}"')
+
     def test_student_dashboard_excludes_cancelled_and_expired(self):
         """Cancelled and expired bookings must be excluded from both upcoming and past feeds."""
         now = timezone.now()

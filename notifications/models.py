@@ -22,6 +22,7 @@ class Notification(models.Model):
         BOOKING_EXPIRED = "booking_expired", "Booking Expired"
         LESSON_REMINDER_24H = "lesson_reminder_24h", "Lesson Reminder 24h"
         LESSON_REMINDER_1H = "lesson_reminder_1h", "Lesson Reminder 1h"
+        DISPUTE_RESOLVED = "dispute_resolved", "Dispute Resolved"
 
     class Level(models.TextChoices):
         INFO = "info", "Info"
