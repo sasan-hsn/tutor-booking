@@ -124,6 +124,7 @@ class TermsAcceptance(models.Model):
     )
     version = models.CharField(max_length=16)
     ip_address = models.GenericIPAddressField()
+    user_agent = models.TextField(blank=True, default="")
     accepted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

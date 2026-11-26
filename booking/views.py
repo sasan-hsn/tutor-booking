@@ -17,7 +17,16 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.avatar_utils import get_avatar_color
-from accounts.decorators import student_required, teacher_required
+from accounts.decorators import (
+    student_required,
+    teacher_required,
+    terms_accepted_required,
+)
+from accounts.legal import (
+    get_terms_gate_state,
+    load_terms_markdown,
+    render_terms_html,
+)
 from accounts.models import StudentProfile, Tenant
 from chat.services import record_booking_event
 from portfolio.models import TeacherProfile
@@ -250,6 +259,11 @@ def student_booking(request):
     teacher_profile_picture = (
         teacher.profile_picture.url if (teacher and teacher.profile_picture) else None
     )
+    terms_required, terms_accepted = get_terms_gate_state(
+        request.user,
+        teacher=teacher,
+        only_if_payments_enabled=True,
+    )
 
     context = {
         "week_data": week_data,
@@ -267,6 +281,10 @@ def student_booking(request):
         ),
         "teacher_profile_picture": teacher_profile_picture,
         "viewer_timezone": request.user.timezone,
+        "terms_required": terms_required,
+        "terms_accepted": terms_accepted,
+        "terms_version": settings.TERMS_CURRENT_VERSION,
+        "terms_html": render_terms_html(load_terms_markdown()),
     }
     return render(request, "booking/student_booking.html", context)
 
@@ -341,6 +359,7 @@ def student_booking_week_ajax(request):
 
 @student_required
 @require_POST
+@terms_accepted_required(only_if_payments_enabled=True)
 def book_slot(request):
     if not request.user.is_email_verified:
         return JsonResponse({"error": "email_unverified"}, status=403)
