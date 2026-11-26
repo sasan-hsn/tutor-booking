@@ -1,0 +1,173 @@
+<div class="mb-4" id="financeActivePayoutsSection">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <h4 class="mb-0">Payout Review Queue</h4>
+            <span class="badge bg-secondary-subtle text-dark">{{ payouts_queue_count }}</span>
+        </div>
+    </div>
+
+    {% if payouts_queue %}
+    <div class="table-responsive">
+        <table class="student-roster-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Amounts</th>
+                    <th>Destination</th>
+                    <th>Requested</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payout in payouts_queue %}
+                <tr class="finance-payout-row" data-payout-id="{{ payout.id }}">
+                    <td>
+                        <div class="fw-semibold">{{ payout.student_display_name }}</div>
+                        <div class="small text-muted">{{ payout.student.email|default:"—" }}</div>
+                    </td>
+                    <td class="text-nowrap">
+                        <div class="fw-semibold">${{ payout.amount_net|floatformat:2 }} {{ payout.tenant.default_currency }}</div>
+                        <div class="small text-muted">
+                            Gross: ${{ payout.amount_gross|floatformat:2 }}
+                            {% if payout.fee_deducted > 0 %}
+                            &middot; Fee: ${{ payout.fee_deducted|floatformat:2 }}
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-inline-flex align-items-center gap-1">
+                            <code class="small d-inline-block text-truncate finance-ledger-ref"
+                                title="{{ payout.destination }}">{{ payout.destination }}</code>
+                            <button type="button"
+                                class="btn btn-link btn-sm p-0 text-muted finance-copy-btn"
+                                data-copy-text="{{ payout.destination }}"
+                                title="Copy destination address"
+                                aria-label="Copy destination {{ payout.destination }}">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                        <div class="small text-muted">{{ payout.provider }}</div>
+                    </td>
+                    <td class="text-nowrap small">{{ payout.local_requested_at|date:"M d, Y H:i" }}</td>
+                    <td>
+                        <span class="badge finance-payout-badge finance-payout-{{ payout.status|lower }}">
+                            {{ payout.get_status_display }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="finance-payout-actions">
+                            {% if payout.status == "REQUESTED" %}
+                            <button type="button"
+                                class="btn finance-payout-action-btn finance-payout-btn-process btn-mark-payout-processing"
+                                data-action-url="{% url 'payments:payout_mark_processing' payout.id %}"
+                                data-payout-id="{{ payout.id }}">
+                                <i class="bi bi-hourglass-split"></i>Mark Processing
+                            </button>
+                            {% elif payout.status == "PROCESSING" %}
+                            <button type="button"
+                                class="btn finance-payout-action-btn finance-payout-btn-complete btn-complete-payout"
+                                data-action-url="{% url 'payments:payout_complete' payout.id %}"
+                                data-payout-id="{{ payout.id }}"
+                                data-student-name="{{ payout.student_display_name }}"
+                                data-amount="{{ payout.amount_net|floatformat:2 }}">
+                                <i class="bi bi-check2-circle"></i>Complete Payout
+                            </button>
+                            {% endif %}
+                            <button type="button"
+                                class="btn finance-payout-action-btn finance-payout-btn-reject btn-reject-payout"
+                                data-action-url="{% url 'payments:payout_reject' payout.id %}"
+                                data-payout-id="{{ payout.id }}"
+                                data-student-name="{{ payout.student_display_name }}"
+                                data-amount="{{ payout.amount_gross|floatformat:2 }}">
+                                <i class="bi bi-x-circle"></i>Reject Payout
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p class="mb-0">No active payout requests awaiting review.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div id="financePayoutHistorySection">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h5 class="mb-0">Historical Payouts</h5>
+    </div>
+
+    {% if payouts_history %}
+    <div class="table-responsive">
+        <table class="student-roster-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Net Refund</th>
+                    <th>Destination</th>
+                    <th>Status</th>
+                    <th>Reference / Reason</th>
+                    <th>Processed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payout in payouts_history %}
+                <tr class="finance-payout-history-row" data-history-payout-id="{{ payout.id }}">
+                    <td>
+                        <div class="fw-semibold">{{ payout.student_display_name }}</div>
+                        <div class="small text-muted">{{ payout.student.email|default:"—" }}</div>
+                    </td>
+                    <td class="text-nowrap fw-semibold">
+                        ${{ payout.amount_net|floatformat:2 }} {{ payout.tenant.default_currency }}
+                    </td>
+                    <td>
+                        <code class="small d-inline-block text-truncate finance-ledger-ref"
+                            title="{{ payout.destination }}">{{ payout.destination }}</code>
+                    </td>
+                    <td>
+                        <span class="badge finance-payout-badge finance-payout-{{ payout.status|lower }}">
+                            {{ payout.get_status_display }}
+                        </span>
+                    </td>
+                    <td class="small">
+                        {% if payout.external_ref %}
+                        <div class="d-inline-flex align-items-center gap-1">
+                            <code class="small d-inline-block text-truncate finance-ledger-ref"
+                                title="{{ payout.external_ref }}">{{ payout.external_ref }}</code>
+                            <button type="button"
+                                class="btn btn-link btn-sm p-0 text-muted finance-copy-btn"
+                                data-copy-text="{{ payout.external_ref }}"
+                                title="Copy transaction hash"
+                                aria-label="Copy transaction hash {{ payout.external_ref }}">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                        {% elif payout.rejection_reason %}
+                        <span class="d-inline-block text-truncate finance-ledger-desc"
+                            title="{{ payout.rejection_reason }}">{{ payout.rejection_reason }}</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-nowrap small">
+                        {% if payout.local_processed_at %}
+                        {{ payout.local_processed_at|date:"M d, Y H:i" }}
+                        {% else %}
+                        {{ payout.local_requested_at|date:"M d, Y H:i" }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p class="mb-0">No completed or rejected payouts yet.</p>
+    </div>
+    {% endif %}
+</div>

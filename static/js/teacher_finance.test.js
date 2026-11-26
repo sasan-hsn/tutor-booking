@@ -308,4 +308,200 @@ describe('Teacher Finance JS Controller', () => {
             global.setTimeout = origSetTimeout;
         }
     });
+
+    test('clicking Mark Processing posts to processing endpoint, updates DOM, and shows toast', async () => {
+        elements.financePayoutsContainer = new MockEl('DIV', 'financePayoutsContainer');
+        elements.completePayoutModal = new MockEl('DIV', 'completePayoutModal');
+        elements.completePayoutForm = new MockEl('FORM', 'completePayoutForm');
+        elements.completePayoutSummary = new MockEl('DIV', 'completePayoutSummary');
+        elements.completePayoutTxhash = new MockEl('INPUT', 'completePayoutTxhash');
+        elements.completePayoutErrorAlert = new MockEl('DIV', 'completePayoutErrorAlert');
+        elements.completePayoutSubmitBtn = new MockEl('BUTTON', 'completePayoutSubmitBtn');
+        elements.rejectPayoutModal = new MockEl('DIV', 'rejectPayoutModal');
+        elements.rejectPayoutForm = new MockEl('FORM', 'rejectPayoutForm');
+        elements.rejectPayoutSummary = new MockEl('DIV', 'rejectPayoutSummary');
+        elements.rejectPayoutReason = new MockEl('TEXTAREA', 'rejectPayoutReason');
+        elements.rejectPayoutErrorAlert = new MockEl('DIV', 'rejectPayoutErrorAlert');
+        elements.rejectPayoutSubmitBtn = new MockEl('BUTTON', 'rejectPayoutSubmitBtn');
+
+        let fetchedUrl = null;
+        let fetchedOptions = null;
+        global.fetch = async (url, options) => {
+            fetchedUrl = url;
+            fetchedOptions = options;
+            return {
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    message: 'Payout #12 marked as processing.',
+                    overview_html: '<div id="ov">Updated</div>',
+                    payouts_html: '<div id="pq">PROCESSING</div>',
+                    ledger_html: '<div id="lg">Ledger</div>',
+                }),
+            };
+        };
+
+        initTeacherFinance(mockDoc);
+
+        const procBtn = new MockEl('BUTTON');
+        procBtn.dataset = {
+            actionUrl: '/dashboard/finance/payouts/12/processing/',
+            payoutId: '12',
+        };
+
+        await elements.financePayoutsContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-mark-payout-processing' ? procBtn : null),
+            },
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(fetchedUrl, '/dashboard/finance/payouts/12/processing/');
+        assert.strictEqual(fetchedOptions.method, 'POST');
+        assert.strictEqual(fetchedOptions.headers['X-CSRFToken'], 'test-csrf-token');
+        assert.strictEqual(elements.financePayoutsContainer.innerHTML, '<div id="pq">PROCESSING</div>');
+        assert.strictEqual(elements.financeOverviewContainer.innerHTML, '<div id="ov">Updated</div>');
+        assert.strictEqual(elements.notificationToastContainer.children.length, 1);
+    });
+
+    test('Complete Payout modal opens with target action and submits txhash cleanly', async () => {
+        elements.financePayoutsContainer = new MockEl('DIV', 'financePayoutsContainer');
+        elements.completePayoutModal = new MockEl('DIV', 'completePayoutModal');
+        elements.completePayoutForm = new MockEl('FORM', 'completePayoutForm');
+        elements.completePayoutSummary = new MockEl('DIV', 'completePayoutSummary');
+        elements.completePayoutTxhash = new MockEl('INPUT', 'completePayoutTxhash');
+        elements.completePayoutErrorAlert = new MockEl('DIV', 'completePayoutErrorAlert');
+        elements.completePayoutErrorAlert.classList.add('d-none');
+        elements.completePayoutSubmitBtn = new MockEl('BUTTON', 'completePayoutSubmitBtn');
+
+        let fetchedUrl = null;
+        global.FormData = function (form) { return { _form: form }; };
+        global.fetch = async (url) => {
+            fetchedUrl = url;
+            return {
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    message: 'Payout #15 completed.',
+                    overview_html: '<div id="ov">Settled</div>',
+                    payouts_html: '<div id="pq">Empty</div>',
+                    ledger_html: '<div id="lg">PAYOUT_SETTLE</div>',
+                }),
+            };
+        };
+
+        initTeacherFinance(mockDoc);
+
+        const openBtn = new MockEl('BUTTON');
+        openBtn.dataset = {
+            actionUrl: '/dashboard/finance/payouts/15/complete/',
+            payoutId: '15',
+            studentName: 'Alice Student',
+            amount: '30.00',
+        };
+
+        elements.financePayoutsContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-complete-payout' ? openBtn : null),
+            },
+        });
+
+        assert.strictEqual(modalShown, true);
+        assert.strictEqual(elements.completePayoutForm.action, '/dashboard/finance/payouts/15/complete/');
+        assert.ok(elements.completePayoutSummary.textContent.includes('Alice Student'));
+        assert.ok(elements.completePayoutSummary.textContent.includes('30.00'));
+
+        elements.completePayoutTxhash.value = '0xabc123';
+        const submitHandler = elements.completePayoutForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(fetchedUrl, '/dashboard/finance/payouts/15/complete/');
+        assert.strictEqual(modalHidden, true);
+        assert.strictEqual(elements.financePayoutsContainer.innerHTML, '<div id="pq">Empty</div>');
+        assert.strictEqual(elements.financeLedgerContainer.innerHTML, '<div id="lg">PAYOUT_SETTLE</div>');
+    });
+
+    test('Reject Payout modal displays inline validation error without closing on 400', async () => {
+        elements.financePayoutsContainer = new MockEl('DIV', 'financePayoutsContainer');
+        elements.rejectPayoutModal = new MockEl('DIV', 'rejectPayoutModal');
+        elements.rejectPayoutForm = new MockEl('FORM', 'rejectPayoutForm');
+        elements.rejectPayoutSummary = new MockEl('DIV', 'rejectPayoutSummary');
+        elements.rejectPayoutReason = new MockEl('TEXTAREA', 'rejectPayoutReason');
+        elements.rejectPayoutErrorAlert = new MockEl('DIV', 'rejectPayoutErrorAlert');
+        elements.rejectPayoutErrorAlert.classList.add('d-none');
+        elements.rejectPayoutSubmitBtn = new MockEl('BUTTON', 'rejectPayoutSubmitBtn');
+
+        global.FormData = function () { return {}; };
+        global.fetch = async () => ({
+            ok: false,
+            json: async () => ({
+                success: false,
+                error: 'Rejection reason is required.',
+            }),
+        });
+
+        initTeacherFinance(mockDoc);
+
+        const openBtn = new MockEl('BUTTON');
+        openBtn.dataset = {
+            actionUrl: '/dashboard/finance/payouts/19/reject/',
+            payoutId: '19',
+            studentName: 'Bob Student',
+            amount: '20.00',
+        };
+
+        elements.financePayoutsContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-reject-payout' ? openBtn : null),
+            },
+        });
+
+        assert.strictEqual(modalShown, true);
+        assert.strictEqual(elements.rejectPayoutForm.action, '/dashboard/finance/payouts/19/reject/');
+
+        const submitHandler = elements.rejectPayoutForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(modalHidden, false);
+        assert.strictEqual(elements.rejectPayoutErrorAlert.textContent, 'Rejection reason is required.');
+        assert.strictEqual(elements.rejectPayoutErrorAlert.classList.contains('d-none'), false);
+    });
+
+    test('Mark Processing shows error toast when server returns 409 conflict', async () => {
+        elements.financePayoutsContainer = new MockEl('DIV', 'financePayoutsContainer');
+
+        global.fetch = async () => ({
+            ok: false,
+            json: async () => ({
+                success: false,
+                error: "Cannot mark payout as processing: status is 'PROCESSING', expected 'REQUESTED'.",
+            }),
+        });
+
+        initTeacherFinance(mockDoc);
+
+        const procBtn = new MockEl('BUTTON');
+        procBtn.dataset = {
+            actionUrl: '/dashboard/finance/payouts/12/processing/',
+            payoutId: '12',
+        };
+
+        await elements.financePayoutsContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-mark-payout-processing' ? procBtn : null),
+            },
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(elements.notificationToastContainer.children.length, 1);
+        assert.strictEqual(procBtn.disabled, false);
+    });
 });

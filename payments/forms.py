@@ -6,7 +6,11 @@ from django.core.exceptions import ValidationError
 
 from accounts.models import get_default_min_topup_amount
 from payments.models import Payment
-from payments.services import build_manual_external_id
+from payments.services import (
+    DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
+    build_manual_external_id,
+    has_duplicate_payout_external_ref,
+)
 
 User = get_user_model()
 
@@ -145,3 +149,66 @@ class ManualTopUpForm(forms.Form):
                     self.add_error("reference_id", DUPLICATE_IDEMPOTENCY_ERROR)
 
         return cleaned_data
+
+
+class CompletePayoutForm(forms.Form):
+    """Validates external transaction hash / reference when completing a payout."""
+
+    txhash = forms.CharField(
+        max_length=128,
+        required=True,
+        label="Transaction Hash / External Reference",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "id": "completePayoutTxhash",
+                "placeholder": "e.g. 0x... transaction hash or reference ID",
+                "required": True,
+            }
+        ),
+    )
+
+    def __init__(self, *args, payout=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.payout = payout
+
+    def clean_txhash(self) -> str:
+        txhash = (self.cleaned_data.get("txhash") or "").strip()
+        if not txhash:
+            raise ValidationError("Transaction hash / external reference is required.")
+
+        if self.payout is not None and has_duplicate_payout_external_ref(
+            provider=self.payout.provider,
+            external_ref=txhash,
+            exclude_payout_id=self.payout.pk,
+        ):
+            raise ValidationError(DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR)
+
+        return txhash
+
+
+class RejectPayoutForm(forms.Form):
+    """Validates mandatory rejection reason when rejecting a payout."""
+
+    # Bounded at 200 chars so the formatted LedgerEntry.description stays within 255 chars.
+    reason = forms.CharField(
+        max_length=200,
+        required=True,
+        label="Rejection Reason",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "id": "rejectPayoutReason",
+                "rows": 3,
+                "maxlength": 200,
+                "placeholder": "Explain why this refund request is being rejected...",
+                "required": True,
+            }
+        ),
+    )
+
+    def clean_reason(self) -> str:
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError("Rejection reason is required.")
+        return reason

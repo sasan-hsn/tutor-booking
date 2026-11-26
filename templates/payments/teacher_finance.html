@@ -26,6 +26,12 @@
     </div>
 </section>
 
+<section class="mb-4" aria-label="Payout Review Queue">
+    <div id="financePayoutsContainer">
+        {% include "payments/partials/_finance_payouts_queue.html" %}
+    </div>
+</section>
+
 <section aria-label="Recent Ledger Entries">
     <div class="d-flex align-items-center justify-content-between mb-3">
         <h4 class="mb-0">Recent Ledger Entries</h4>
@@ -82,6 +88,74 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="manualTopupSubmitBtn">
                         Credit Student Wallet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="completePayoutModal" tabindex="-1" aria-labelledby="completePayoutModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="completePayoutModalLabel">Complete Payout</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="completePayoutForm" action="" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="small text-muted mb-3" id="completePayoutSummary"></p>
+                    <div class="alert alert-danger d-none" id="completePayoutErrorAlert" role="alert"></div>
+
+                    <div class="mb-0">
+                        <label for="{{ complete_payout_form.txhash.id_for_label }}" class="form-label fw-semibold">
+                            Transaction Hash / External Reference
+                        </label>
+                        {{ complete_payout_form.txhash }}
+                        <div class="form-text">
+                            Enter the on-chain transaction hash or payment reference used to settle this refund.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="completePayoutSubmitBtn">
+                        Confirm &amp; Complete Payout
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="rejectPayoutModal" tabindex="-1" aria-labelledby="rejectPayoutModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rejectPayoutModalLabel">Reject Payout</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="rejectPayoutForm" action="" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p class="small text-muted mb-3" id="rejectPayoutSummary"></p>
+                    <div class="alert alert-danger d-none" id="rejectPayoutErrorAlert" role="alert"></div>
+
+                    <div class="mb-0">
+                        <label for="{{ reject_payout_form.reason.id_for_label }}" class="form-label fw-semibold">
+                            Rejection Reason
+                        </label>
+                        {{ reject_payout_form.reason }}
+                        <div class="form-text">
+                            Held funds will be returned to the student's available wallet balance and they will be notified with this reason.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger" id="rejectPayoutSubmitBtn">
+                        Reject &amp; Release Funds
                     </button>
                 </div>
             </form>

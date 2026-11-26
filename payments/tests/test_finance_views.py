@@ -2,13 +2,21 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import Tenant
 from accounts.tests.base import RoleTestCase
 from booking.models import Booking
-from payments.models import Order, Payment
+from payments.models import Order, Payment, Payout
+from payments.services import (
+    create_payout_request,
+    mark_payout_processing,
+    release_payout,
+    settle_payout,
+    verify_and_reserve_payout,
+)
 from wallet.models import LedgerEntry, Wallet
 from wallet.services import credit_wallet, get_or_create_wallet, reserve_funds
 
@@ -419,3 +427,371 @@ class ManualTopUpViewTests(RoleTestCase):
         self.assertEqual(claimed_order.status, Order.Status.COMPLETED)
         self.assertIsNotNone(claimed_order.completed_at)
         self.assertNotIn("0xclaimtx500", response.json()["claims_html"])
+
+
+class TeacherPayoutReviewQueueTests(RoleTestCase):
+    """Tests for Teacher Dashboard Payout (Refund) Review Queue & payout actions."""
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.teacher = cls.teacher_user.teacher_profile
+        cls.tenant = Tenant.objects.get(teacher_profile=cls.teacher)
+
+        cls.other_teacher_user = User.objects.create_user(
+            username="other_payout_teacher",
+            email="other_payout_teacher@example.com",
+            password="password123",
+            role=User.Role.TEACHER,
+            is_email_verified=True,
+        )
+        cls.other_tenant = Tenant.objects.get(
+            teacher_profile=cls.other_teacher_user.teacher_profile
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.student_user.first_name = "Alice"
+        self.student_user.last_name = "Refund"
+        self.student_user.email = "alice.refund@example.com"
+        self.student_user.save(update_fields=["first_name", "last_name", "email"])
+
+        self.wallet = get_or_create_wallet(self.tenant, self.student_user)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=self.wallet,
+            amount=Decimal("200.00"),
+            idempotency_key="payout-view-seed-200",
+            reference_id="seed_200",
+            description="Seed wallet for payout review queue tests",
+        )
+
+    def _create_verified_payout(
+        self,
+        amount: Decimal = Decimal("40.00"),
+        destination: str = "0x1111111111111111111111111111111111111111",
+        tenant: Tenant | None = None,
+    ) -> Payout:
+        target_tenant = tenant or self.tenant
+        if target_tenant != self.tenant:
+            other_wallet = get_or_create_wallet(target_tenant, self.student_user)
+            credit_wallet(
+                tenant=target_tenant,
+                wallet=other_wallet,
+                amount=Decimal("200.00"),
+                idempotency_key=f"other-seed-{target_tenant.id}-{amount}",
+                reference_id=f"other_seed_{target_tenant.id}",
+                description="Other tenant seed",
+            )
+        payout = create_payout_request(
+            tenant=target_tenant,
+            student=self.student_user,
+            amount_gross=amount,
+            destination=destination,
+        )
+        verify_and_reserve_payout(
+            tenant=target_tenant,
+            payout=payout,
+            raw_token=payout.raw_token,
+        )
+        payout.refresh_from_db()
+        return payout
+
+    def test_payout_action_permissions_and_cross_tenant_isolation(self):
+        payout = self._create_verified_payout()
+        other_payout = self._create_verified_payout(
+            amount=Decimal("30.00"),
+            destination="0x2222222222222222222222222222222222222222",
+            tenant=self.other_tenant,
+        )
+
+        endpoints = [
+            reverse("payments:payout_mark_processing", args=[payout.id]),
+            reverse("payments:payout_complete", args=[payout.id]),
+            reverse("payments:payout_reject", args=[payout.id]),
+        ]
+
+        for url in endpoints:
+            anon_resp = self.anon_client.post(url, {})
+            self.assertEqual(anon_resp.status_code, 302)
+            self.assertIn("/accounts/login/", anon_resp.url)
+
+            student_resp = self.student_client.post(url, {})
+            self.assertEqual(student_resp.status_code, 403)
+
+            get_resp = self.teacher_client.get(url)
+            self.assertEqual(get_resp.status_code, 405)
+
+        # Cross-tenant payout access must return 404
+        for url_name in (
+            "payments:payout_mark_processing",
+            "payments:payout_complete",
+            "payments:payout_reject",
+        ):
+            resp = self.teacher_client.post(
+                reverse(url_name, args=[other_payout.id]), {}
+            )
+            self.assertEqual(resp.status_code, 404)
+
+    def test_queue_listing_separates_active_and_historical_payouts(self):
+        requested_payout = self._create_verified_payout(
+            amount=Decimal("25.00"),
+            destination="0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        )
+        processing_payout = self._create_verified_payout(
+            amount=Decimal("35.00"),
+            destination="0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        )
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=processing_payout,
+            admin_user=self.teacher_user,
+        )
+
+        completed_payout = self._create_verified_payout(
+            amount=Decimal("15.00"),
+            destination="0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        )
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=completed_payout,
+            admin_user=self.teacher_user,
+        )
+        settle_payout(
+            tenant=self.tenant,
+            payout=completed_payout,
+            external_ref="0xcompletedref999",
+            admin_user=self.teacher_user,
+        )
+
+        rejected_payout = self._create_verified_payout(
+            amount=Decimal("18.00"),
+            destination="0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+        )
+        release_payout(
+            tenant=self.tenant,
+            payout=rejected_payout,
+            reason="Wrong network address",
+            admin_user=self.teacher_user,
+        )
+
+        # Unconfirmed and expired payouts must not appear in the review queue
+        create_payout_request(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount_gross=Decimal("12.00"),
+            destination="0xEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+        )
+        other_payout = self._create_verified_payout(
+            amount=Decimal("99.00"),
+            destination="0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+            tenant=self.other_tenant,
+        )
+
+        response = self.teacher_client.get(reverse("payments:teacher_finance"))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+
+        # Active queue shows REQUESTED and PROCESSING with full details
+        self.assertContains(response, "Alice Refund")
+        self.assertContains(response, "alice.refund@example.com")
+        self.assertContains(response, "$25.00")
+        self.assertContains(response, "$35.00")
+        self.assertContains(response, "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        self.assertContains(response, "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+        self.assertContains(response, f'data-payout-id="{requested_payout.id}"')
+        self.assertContains(response, f'data-payout-id="{processing_payout.id}"')
+        self.assertContains(response, "Mark Processing")
+        self.assertContains(response, "Complete Payout")
+        self.assertContains(response, "Reject Payout")
+
+        # Historical table displays COMPLETED and REJECTED, excluded from active queue
+        self.assertIn("0xcompletedref999", html)
+        self.assertIn("$15.00", html)
+        self.assertIn("$18.00", html)
+        self.assertIn(f'data-history-payout-id="{completed_payout.id}"', html)
+        self.assertIn(f'data-history-payout-id="{rejected_payout.id}"', html)
+        self.assertNotIn(f'data-payout-id="{completed_payout.id}"', html)
+        self.assertNotIn(f'data-payout-id="{rejected_payout.id}"', html)
+
+        # Unconfirmed and other-tenant payouts must be absent
+        self.assertNotIn("0xEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE", html)
+        self.assertNotIn("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", html)
+        self.assertNotIn(f'data-payout-id="{other_payout.id}"', html)
+
+    def test_mark_processing_transitions_status_without_altering_balances(self):
+        payout = self._create_verified_payout(amount=Decimal("40.00"))
+        mail.outbox.clear()
+
+        url = reverse("payments:payout_mark_processing", args=[payout.id])
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(url)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["payout_status"], Payout.Status.PROCESSING)
+        self.assertIn("payouts_html", data)
+        self.assertIn("overview_html", data)
+        self.assertIn("ledger_html", data)
+        self.assertIn("Complete Payout", data["payouts_html"])
+
+        payout.refresh_from_db()
+        self.assertEqual(payout.status, Payout.Status.PROCESSING)
+        self.assertIsNotNone(payout.processed_at)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("200.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("40.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("160.00"))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["alice.refund@example.com"])
+
+        # Re-posting mark processing on an already PROCESSING payout returns 409 Conflict
+        conflict_resp = self.teacher_client.post(url)
+        self.assertEqual(conflict_resp.status_code, 409)
+        self.assertFalse(conflict_resp.json()["success"])
+
+    def test_complete_payout_with_valid_txhash_settles_ledger_and_clears_queue(self):
+        payout = self._create_verified_payout(amount=Decimal("40.00"))
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=payout,
+            admin_user=self.teacher_user,
+        )
+        mail.outbox.clear()
+
+        txhash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        url = reverse("payments:payout_complete", args=[payout.id])
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.teacher_client.post(url, {"txhash": txhash})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["payout_status"], Payout.Status.COMPLETED)
+        self.assertNotIn(f'data-payout-id="{payout.id}"', data["payouts_html"])
+        self.assertIn(f'data-history-payout-id="{payout.id}"', data["payouts_html"])
+        self.assertIn(txhash, data["payouts_html"])
+        self.assertIn(txhash, data["ledger_html"])
+
+        payout.refresh_from_db()
+        self.assertEqual(payout.status, Payout.Status.COMPLETED)
+        self.assertEqual(payout.external_ref, txhash)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("160.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("160.00"))
+
+        settle_entry = LedgerEntry.objects.get(
+            idempotency_key=f"tenant:{self.tenant.id}:payout:{payout.id}:settle"
+        )
+        self.assertEqual(settle_entry.entry_type, LedgerEntry.EntryType.PAYOUT_SETTLE)
+        self.assertEqual(settle_entry.amount, Decimal("40.00"))
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["alice.refund@example.com"])
+        self.assertIn(txhash, mail.outbox[0].body)
+
+    def test_complete_payout_validation_and_duplicate_txhash_errors(self):
+        first_payout = self._create_verified_payout(amount=Decimal("20.00"))
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=first_payout,
+            admin_user=self.teacher_user,
+        )
+        settle_payout(
+            tenant=self.tenant,
+            payout=first_payout,
+            external_ref="0xalreadyusedhash",
+            admin_user=self.teacher_user,
+        )
+
+        # REQUESTED payout cannot be completed directly (must be PROCESSING -> 409)
+        requested_payout = self._create_verified_payout(amount=Decimal("25.00"))
+        conflict_resp = self.teacher_client.post(
+            reverse("payments:payout_complete", args=[requested_payout.id]),
+            {"txhash": "0xnewhash123"},
+        )
+        self.assertEqual(conflict_resp.status_code, 409)
+        self.assertFalse(conflict_resp.json()["success"])
+
+        mark_payout_processing(
+            tenant=self.tenant,
+            payout=requested_payout,
+            admin_user=self.teacher_user,
+        )
+        complete_url = reverse("payments:payout_complete", args=[requested_payout.id])
+
+        # Empty txhash -> 400 validation error
+        empty_resp = self.teacher_client.post(complete_url, {"txhash": "   "})
+        self.assertEqual(empty_resp.status_code, 400)
+        self.assertFalse(empty_resp.json()["success"])
+        self.assertIn("txhash", empty_resp.json()["errors"])
+
+        # Duplicate txhash -> 400 validation error (no 500 IntegrityError)
+        dup_resp = self.teacher_client.post(
+            complete_url, {"txhash": "0xalreadyusedhash"}
+        )
+        self.assertEqual(dup_resp.status_code, 400)
+        self.assertFalse(dup_resp.json()["success"])
+        self.assertIn("txhash", dup_resp.json()["errors"])
+
+    def test_reject_payout_requires_reason_and_restores_balance_on_valid_post(self):
+        payout = self._create_verified_payout(amount=Decimal("45.00"))
+        reject_url = reverse("payments:payout_reject", args=[payout.id])
+
+        # Missing reason returns 400 form error
+        invalid_resp = self.teacher_client.post(reject_url, {"reason": "   "})
+        self.assertEqual(invalid_resp.status_code, 400)
+        invalid_data = invalid_resp.json()
+        self.assertFalse(invalid_data["success"])
+        self.assertIn("reason", invalid_data["errors"])
+
+        # Reason exceeding 200-char form limit returns 400 rather than DB DataError 500
+        too_long_resp = self.teacher_client.post(reject_url, {"reason": "X" * 201})
+        self.assertEqual(too_long_resp.status_code, 400)
+        self.assertIn("reason", too_long_resp.json()["errors"])
+
+        payout.refresh_from_db()
+        self.assertEqual(payout.status, Payout.Status.REQUESTED)
+
+        # Valid rejection restores available balance, marks REJECTED, and emails student
+        mail.outbox.clear()
+        reason_text = "Invalid receiving address format."
+        with self.captureOnCommitCallbacks(execute=True):
+            valid_resp = self.teacher_client.post(reject_url, {"reason": reason_text})
+
+        self.assertEqual(valid_resp.status_code, 200)
+        data = valid_resp.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["payout_status"], Payout.Status.REJECTED)
+        self.assertNotIn(f'data-payout-id="{payout.id}"', data["payouts_html"])
+        self.assertIn(f'data-history-payout-id="{payout.id}"', data["payouts_html"])
+
+        payout.refresh_from_db()
+        self.assertEqual(payout.status, Payout.Status.REJECTED)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("200.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("200.00"))
+
+        release_entry = LedgerEntry.objects.get(
+            idempotency_key=f"tenant:{self.tenant.id}:payout:{payout.id}:release"
+        )
+        self.assertEqual(release_entry.entry_type, LedgerEntry.EntryType.PAYOUT_RELEASE)
+        self.assertIn(reason_text, release_entry.description)
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["alice.refund@example.com"])
+        self.assertIn(reason_text, mail.outbox[0].body)
+
+        # Re-rejecting already REJECTED payout returns 409 Conflict
+        conflict_resp = self.teacher_client.post(
+            reject_url, {"reason": "Second reject"}
+        )
+        self.assertEqual(conflict_resp.status_code, 409)
+        self.assertFalse(conflict_resp.json()["success"])

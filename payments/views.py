@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, Sum
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -16,13 +16,24 @@ from django.views.decorators.http import require_POST
 from accounts.decorators import teacher_required
 from accounts.models import Tenant
 from booking.models import Booking
+from payments.exceptions import PayoutConflictError, PayoutInsufficientBalanceError
 from payments.forms import (
     DUPLICATE_REFERENCE_ERROR,
+    CompletePayoutForm,
     ManualTopUpForm,
+    RejectPayoutForm,
     get_user_display_name,
 )
-from payments.models import Order, Payment
-from payments.services import build_manual_external_id, process_manual_topup
+from payments.models import Order, Payment, Payout
+from payments.services import (
+    DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
+    build_manual_external_id,
+    has_duplicate_payout_external_ref,
+    mark_payout_processing,
+    process_manual_topup,
+    release_payout,
+    settle_payout,
+)
 from wallet.models import LedgerEntry, Wallet
 
 User = get_user_model()
@@ -82,6 +93,45 @@ def _attach_ledger_display_fields(
             entry.display_description = entry.description
 
 
+_REJECT_DESC_RE = re.compile(r"^Payout rejected \((.+)\): payout #\d+$")
+
+
+def _extract_rejection_reason(description: str) -> str:
+    match = _REJECT_DESC_RE.match(description or "")
+    return match.group(1) if match else ""
+
+
+def _attach_payout_display_fields(
+    payouts: list[Payout],
+    tenant: Tenant,
+    viewer_tz: ZoneInfo,
+    *,
+    include_rejection_reasons: bool = False,
+) -> None:
+    reasons_by_payout_ref: dict[str, str] = {}
+    if include_rejection_reasons:
+        rejected_refs = [
+            f"payout_{p.id}" for p in payouts if p.status == Payout.Status.REJECTED
+        ]
+        if rejected_refs:
+            for entry in LedgerEntry.objects.filter(
+                tenant=tenant,
+                entry_type=LedgerEntry.EntryType.PAYOUT_RELEASE,
+                reference_id__in=rejected_refs,
+            ).only("reference_id", "description"):
+                reason = _extract_rejection_reason(entry.description)
+                if reason:
+                    reasons_by_payout_ref[entry.reference_id] = reason
+
+    for payout in payouts:
+        payout.student_display_name = get_user_display_name(payout.student)
+        payout.local_requested_at = _to_viewer_local(
+            payout.confirmation_used_at or payout.created_at, viewer_tz
+        )
+        payout.local_processed_at = _to_viewer_local(payout.processed_at, viewer_tz)
+        payout.rejection_reason = reasons_by_payout_ref.get(f"payout_{payout.id}", "")
+
+
 def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict:
     wallet_aggs = Wallet.objects.filter(
         tenant=tenant,
@@ -125,6 +175,28 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         claim.student_display_name = get_user_display_name(claim.student)
         claim.prefill_notes = f"Top-up claim for Order #{claim.id}"
 
+    payouts_queue = list(
+        Payout.objects.filter(
+            tenant=tenant,
+            status__in=[Payout.Status.REQUESTED, Payout.Status.PROCESSING],
+        )
+        .select_related("student")
+        .order_by("created_at", "id")
+    )
+    _attach_payout_display_fields(payouts_queue, tenant, viewer_tz)
+
+    payouts_history = list(
+        Payout.objects.filter(
+            tenant=tenant,
+            status__in=[Payout.Status.COMPLETED, Payout.Status.REJECTED],
+        )
+        .select_related("student")
+        .order_by("-processed_at", "-created_at", "-id")[:25]
+    )
+    _attach_payout_display_fields(
+        payouts_history, tenant, viewer_tz, include_rejection_reasons=True
+    )
+
     return {
         "teacher": teacher,
         "tenant": tenant,
@@ -136,10 +208,13 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         "recent_ledger_entries": recent_ledger_entries,
         "claims_queue": claims_queue,
         "claims_count": len(claims_queue),
+        "payouts_queue": payouts_queue,
+        "payouts_queue_count": len(payouts_queue),
+        "payouts_history": payouts_history,
     }
 
 
-def _first_form_error(form: ManualTopUpForm) -> str:
+def _first_form_error(form) -> str:
     if "reference_id" in form.errors:
         return form.errors["reference_id"][0]
     for field_errors in form.errors.values():
@@ -155,6 +230,8 @@ def teacher_finance_dashboard(request):
     viewer_tz = ZoneInfo(request.user.timezone)
     context = _build_finance_context(tenant, teacher, viewer_tz)
     context["form"] = ManualTopUpForm(tenant=tenant)
+    context["complete_payout_form"] = CompletePayoutForm()
+    context["reject_payout_form"] = RejectPayoutForm()
     return render(request, "payments/teacher_finance.html", context)
 
 
@@ -238,4 +315,181 @@ def manual_topup(request):
                 "payments/partials/_finance_claims_queue.html", context, request=request
             ),
         }
+    )
+
+
+def _get_tenant_payout_or_404(tenant: Tenant, payout_id: int) -> Payout:
+    return get_object_or_404(
+        Payout.objects.select_related("student", "tenant"),
+        pk=payout_id,
+        tenant=tenant,
+    )
+
+
+def _validation_error_message(exc: ValidationError) -> str:
+    if hasattr(exc, "messages") and exc.messages:
+        return exc.messages[0]
+    if hasattr(exc, "message"):
+        return exc.message
+    return str(exc)
+
+
+def _payout_action_success_response(
+    request,
+    tenant: Tenant,
+    teacher,
+    payout: Payout,
+    message: str,
+) -> JsonResponse:
+    viewer_tz = ZoneInfo(request.user.timezone)
+    context = _build_finance_context(tenant, teacher, viewer_tz)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": message,
+            "payout_id": payout.id,
+            "payout_status": payout.status,
+            "overview_html": render_to_string(
+                "payments/partials/_finance_overview.html", context, request=request
+            ),
+            "payouts_html": render_to_string(
+                "payments/partials/_finance_payouts_queue.html",
+                context,
+                request=request,
+            ),
+            "ledger_html": render_to_string(
+                "payments/partials/_finance_ledger_table.html", context, request=request
+            ),
+        }
+    )
+
+
+def _run_payout_transition(
+    request,
+    payout_id: int,
+    *,
+    form_class=None,
+    form_kwargs_fn=None,
+    error_field: str = "__all__",
+    action_fn,
+    success_message_fn,
+) -> JsonResponse:
+    """Shared handler for teacher payout review queue POST transitions."""
+    teacher = request.user.teacher_profile
+    tenant = _get_tenant_for_teacher(teacher)
+    payout = _get_tenant_payout_or_404(tenant, payout_id)
+
+    cleaned_data = {}
+    if form_class is not None:
+        kwargs = form_kwargs_fn(payout) if form_kwargs_fn else {}
+        form = form_class(request.POST, **kwargs)
+        if not form.is_valid():
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": _first_form_error(form),
+                    "errors": form.errors,
+                },
+                status=400,
+            )
+        cleaned_data = form.cleaned_data
+
+    try:
+        action_fn(tenant, payout, cleaned_data)
+    except PayoutConflictError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=409)
+    except IntegrityError as exc:
+        is_duplicate_ref = "unique_payout_provider_external_ref" in str(exc) or (
+            error_field == "txhash"
+            and cleaned_data.get("txhash")
+            and has_duplicate_payout_external_ref(
+                provider=payout.provider,
+                external_ref=cleaned_data["txhash"],
+                exclude_payout_id=payout.pk,
+            )
+        )
+        if is_duplicate_ref:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
+                    "errors": {"txhash": [DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR]},
+                },
+                status=400,
+            )
+        raise
+    except (PayoutInsufficientBalanceError, ValidationError) as exc:
+        msg = _validation_error_message(exc)
+        return JsonResponse(
+            {"success": False, "error": msg, "errors": {error_field: [msg]}},
+            status=400,
+        )
+
+    return _payout_action_success_response(
+        request,
+        tenant,
+        teacher,
+        payout,
+        success_message_fn(tenant, payout),
+    )
+
+
+@teacher_required
+@require_POST
+def payout_mark_processing(request, payout_id: int):
+    return _run_payout_transition(
+        request,
+        payout_id,
+        action_fn=lambda tenant, payout, _: mark_payout_processing(
+            tenant=tenant,
+            payout=payout,
+            admin_user=request.user,
+        ),
+        success_message_fn=lambda _tenant, payout: (
+            f"Payout #{payout.id} for {get_user_display_name(payout.student)} marked as processing."
+        ),
+    )
+
+
+@teacher_required
+@require_POST
+def payout_complete(request, payout_id: int):
+    return _run_payout_transition(
+        request,
+        payout_id,
+        form_class=CompletePayoutForm,
+        form_kwargs_fn=lambda payout: {"payout": payout},
+        error_field="txhash",
+        action_fn=lambda tenant, payout, data: settle_payout(
+            tenant=tenant,
+            payout=payout,
+            external_ref=data["txhash"],
+            admin_user=request.user,
+        ),
+        success_message_fn=lambda tenant, payout: (
+            f"Completed payout #{payout.id} (${payout.amount_net:.2f} {tenant.default_currency}) "
+            f"for {get_user_display_name(payout.student)}."
+        ),
+    )
+
+
+@teacher_required
+@require_POST
+def payout_reject(request, payout_id: int):
+    return _run_payout_transition(
+        request,
+        payout_id,
+        form_class=RejectPayoutForm,
+        error_field="reason",
+        action_fn=lambda tenant, payout, data: release_payout(
+            tenant=tenant,
+            payout=payout,
+            reason=data["reason"],
+            admin_user=request.user,
+        ),
+        success_message_fn=lambda tenant, payout: (
+            f"Rejected payout #{payout.id} and restored "
+            f"${payout.amount_gross:.2f} {tenant.default_currency} "
+            f"to {get_user_display_name(payout.student)}."
+        ),
     )

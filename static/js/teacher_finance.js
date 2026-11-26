@@ -81,10 +81,11 @@
         }
     }
 
-    function showFinanceToast(message, containerEl, doc) {
+    function showFinanceToast(message, containerEl, doc, options) {
         const documentRef = doc || (typeof document !== 'undefined' ? document : null);
         if (!containerEl || !documentRef) return null;
 
+        const isError = Boolean(options && options.isError);
         const toastEl = documentRef.createElement('div');
         toastEl.className = 'toast align-items-center border-0 shadow notification-toast';
         toastEl.setAttribute('role', 'alert');
@@ -98,7 +99,9 @@
         toastBody.className = 'toast-body d-flex gap-2 align-items-center flex-grow-1';
 
         const icon = documentRef.createElement('i');
-        icon.className = 'bi bi-check-circle-fill text-success fs-5';
+        icon.className = isError
+            ? 'bi bi-exclamation-triangle-fill text-danger fs-5'
+            : 'bi bi-check-circle-fill text-success fs-5';
         toastBody.appendChild(icon);
 
         const textEl = documentRef.createElement('span');
@@ -160,6 +163,130 @@
         return true;
     }
 
+    function applyFinanceHtmlUpdates(elements, data) {
+        if (!data) return;
+        if (elements.financeOverviewContainer && typeof data.overview_html === 'string') {
+            elements.financeOverviewContainer.innerHTML = data.overview_html;
+        }
+        if (elements.financeClaimsContainer && typeof data.claims_html === 'string') {
+            elements.financeClaimsContainer.innerHTML = data.claims_html;
+        }
+        if (elements.financePayoutsContainer && typeof data.payouts_html === 'string') {
+            elements.financePayoutsContainer.innerHTML = data.payouts_html;
+        }
+        if (elements.financeLedgerContainer && typeof data.ledger_html === 'string') {
+            elements.financeLedgerContainer.innerHTML = data.ledger_html;
+        }
+    }
+
+    async function postFinanceRequest(url, documentRef, body) {
+        const fetchOptions = {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': getCsrfToken(documentRef),
+            },
+        };
+        if (body !== undefined) {
+            fetchOptions.body = body;
+        }
+        const response = await fetch(url, fetchOptions);
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = null;
+        }
+        return { ok: response.ok && Boolean(data && data.success), data: data };
+    }
+
+    function bindModalFormSubmit(options) {
+        const {
+            form,
+            modal,
+            errorAlert,
+            submitBtn,
+            defaultLabel,
+            fallbackError,
+            defaultSuccessMessage,
+            elements,
+            documentRef,
+            onSuccess,
+        } = options;
+        if (!form) return;
+
+        form.addEventListener('submit', async function (e) {
+            if (e && typeof e.preventDefault === 'function') {
+                e.preventDefault();
+            }
+
+            clearErrorAlert(errorAlert);
+            if (typeof options.beforeSubmit === 'function') {
+                options.beforeSubmit();
+            }
+
+            const originalLabel = submitBtn ? submitBtn.textContent : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+            }
+
+            try {
+                const formData = new FormData(form);
+                const result = await postFinanceRequest(form.action, documentRef, formData);
+                if (!result.ok) {
+                    const errMsg = (result.data && result.data.error) ? result.data.error : fallbackError;
+                    showErrorAlert(errorAlert, errMsg);
+                    return;
+                }
+
+                applyFinanceHtmlUpdates(elements, result.data);
+                toggleModal(modal, 'hide');
+                if (typeof onSuccess === 'function') {
+                    onSuccess(result.data);
+                }
+                showFinanceToast(
+                    result.data.message || defaultSuccessMessage,
+                    elements.notificationToastContainer,
+                    documentRef
+                );
+            } catch (_) {
+                showErrorAlert(errorAlert, 'Network error. Please try again.');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalLabel || defaultLabel;
+                }
+            }
+        });
+    }
+
+    function openPayoutActionModal(options) {
+        const {
+            triggerBtn,
+            form,
+            summaryEl,
+            inputEl,
+            errorAlert,
+            modal,
+            verb,
+        } = options;
+        if (!triggerBtn || !form) return;
+
+        form.action = triggerBtn.dataset.actionUrl || '';
+        if (summaryEl) {
+            const studentName = triggerBtn.dataset.studentName || 'Student';
+            const amount = triggerBtn.dataset.amount || '0.00';
+            const payoutId = triggerBtn.dataset.payoutId || '';
+            summaryEl.textContent = `${verb} payout #${payoutId} ($${amount}) for ${studentName}.`;
+        }
+        if (inputEl) {
+            inputEl.value = '';
+        }
+        clearErrorAlert(errorAlert);
+        toggleModal(modal, 'show');
+    }
+
     function initTeacherFinance(doc) {
         const documentRef = doc || (typeof document !== 'undefined' ? document : null);
         if (!documentRef) return;
@@ -175,8 +302,21 @@
             manualTopupIdempotencyKey: documentRef.getElementById('manualTopupIdempotencyKey'),
             manualTopupErrorAlert: documentRef.getElementById('manualTopupErrorAlert'),
             manualTopupSubmitBtn: documentRef.getElementById('manualTopupSubmitBtn'),
+            completePayoutModal: documentRef.getElementById('completePayoutModal'),
+            completePayoutForm: documentRef.getElementById('completePayoutForm'),
+            completePayoutSummary: documentRef.getElementById('completePayoutSummary'),
+            completePayoutTxhash: documentRef.getElementById('completePayoutTxhash'),
+            completePayoutErrorAlert: documentRef.getElementById('completePayoutErrorAlert'),
+            completePayoutSubmitBtn: documentRef.getElementById('completePayoutSubmitBtn'),
+            rejectPayoutModal: documentRef.getElementById('rejectPayoutModal'),
+            rejectPayoutForm: documentRef.getElementById('rejectPayoutForm'),
+            rejectPayoutSummary: documentRef.getElementById('rejectPayoutSummary'),
+            rejectPayoutReason: documentRef.getElementById('rejectPayoutReason'),
+            rejectPayoutErrorAlert: documentRef.getElementById('rejectPayoutErrorAlert'),
+            rejectPayoutSubmitBtn: documentRef.getElementById('rejectPayoutSubmitBtn'),
             financeOverviewContainer: documentRef.getElementById('financeOverviewContainer'),
             financeClaimsContainer: documentRef.getElementById('financeClaimsContainer'),
+            financePayoutsContainer: documentRef.getElementById('financePayoutsContainer'),
             financeLedgerContainer: documentRef.getElementById('financeLedgerContainer'),
             notificationToastContainer: documentRef.getElementById('notificationToastContainer'),
         };
@@ -207,6 +347,79 @@
             });
         }
 
+        if (elements.financePayoutsContainer) {
+            elements.financePayoutsContainer.addEventListener('click', async function (e) {
+                const target = e.target && typeof e.target.closest === 'function' ? e.target : null;
+                if (!target) return;
+
+                const processingBtn = target.closest('.btn-mark-payout-processing');
+                if (processingBtn) {
+                    const actionUrl = processingBtn.dataset ? processingBtn.dataset.actionUrl : '';
+                    if (!actionUrl) return;
+
+                    processingBtn.disabled = true;
+                    try {
+                        const result = await postFinanceRequest(actionUrl, documentRef);
+                        if (result.ok) {
+                            applyFinanceHtmlUpdates(elements, result.data);
+                            showFinanceToast(
+                                result.data.message || 'Payout marked as processing.',
+                                elements.notificationToastContainer,
+                                documentRef
+                            );
+                        } else {
+                            const errMsg = (result.data && result.data.error)
+                                ? result.data.error
+                                : 'Unable to mark payout as processing.';
+                            showFinanceToast(
+                                errMsg,
+                                elements.notificationToastContainer,
+                                documentRef,
+                                { isError: true }
+                            );
+                        }
+                    } catch (_) {
+                        showFinanceToast(
+                            'Network error. Please try again.',
+                            elements.notificationToastContainer,
+                            documentRef,
+                            { isError: true }
+                        );
+                    } finally {
+                        processingBtn.disabled = false;
+                    }
+                    return;
+                }
+
+                const completeBtn = target.closest('.btn-complete-payout');
+                if (completeBtn) {
+                    openPayoutActionModal({
+                        triggerBtn: completeBtn,
+                        form: elements.completePayoutForm,
+                        summaryEl: elements.completePayoutSummary,
+                        inputEl: elements.completePayoutTxhash,
+                        errorAlert: elements.completePayoutErrorAlert,
+                        modal: elements.completePayoutModal,
+                        verb: 'Complete',
+                    });
+                    return;
+                }
+
+                const rejectBtn = target.closest('.btn-reject-payout');
+                if (rejectBtn) {
+                    openPayoutActionModal({
+                        triggerBtn: rejectBtn,
+                        form: elements.rejectPayoutForm,
+                        summaryEl: elements.rejectPayoutSummary,
+                        inputEl: elements.rejectPayoutReason,
+                        errorAlert: elements.rejectPayoutErrorAlert,
+                        modal: elements.rejectPayoutModal,
+                        verb: 'Reject',
+                    });
+                }
+            });
+        }
+
         if (typeof documentRef.addEventListener === 'function') {
             documentRef.addEventListener('click', function (e) {
                 const copyBtn = e.target && typeof e.target.closest === 'function'
@@ -217,80 +430,55 @@
             });
         }
 
-        if (elements.manualTopupForm) {
-            elements.manualTopupForm.addEventListener('submit', async function (e) {
-                if (e && typeof e.preventDefault === 'function') {
-                    e.preventDefault();
-                }
-
-                clearErrorAlert(elements.manualTopupErrorAlert);
+        bindModalFormSubmit({
+            form: elements.manualTopupForm,
+            modal: elements.manualTopupModal,
+            errorAlert: elements.manualTopupErrorAlert,
+            submitBtn: elements.manualTopupSubmitBtn,
+            defaultLabel: 'Credit Student Wallet',
+            fallbackError: 'Unable to process manual top-up. Please check your inputs.',
+            defaultSuccessMessage: 'Manual top-up credited successfully.',
+            elements: elements,
+            documentRef: documentRef,
+            beforeSubmit: function () {
                 if (elements.manualTopupIdempotencyKey && !elements.manualTopupIdempotencyKey.value) {
                     elements.manualTopupIdempotencyKey.value = generateIdempotencyToken();
                 }
+            },
+            onSuccess: function () {
+                resetManualTopupForm(elements);
+            },
+        });
 
-                const submitBtn = elements.manualTopupSubmitBtn;
-                const originalLabel = submitBtn ? submitBtn.textContent : '';
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.textContent = 'Processing...';
-                }
+        bindModalFormSubmit({
+            form: elements.completePayoutForm,
+            modal: elements.completePayoutModal,
+            errorAlert: elements.completePayoutErrorAlert,
+            submitBtn: elements.completePayoutSubmitBtn,
+            defaultLabel: 'Confirm & Complete Payout',
+            fallbackError: 'Unable to complete payout. Please check the transaction hash.',
+            defaultSuccessMessage: 'Payout completed successfully.',
+            elements: elements,
+            documentRef: documentRef,
+            onSuccess: function () {
+                if (elements.completePayoutTxhash) elements.completePayoutTxhash.value = '';
+            },
+        });
 
-                try {
-                    const formData = new FormData(elements.manualTopupForm);
-                    const response = await fetch(elements.manualTopupForm.action, {
-                        method: 'POST',
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'X-CSRFToken': getCsrfToken(documentRef),
-                        },
-                        body: formData,
-                    });
-
-                    let data = null;
-                    try {
-                        data = await response.json();
-                    } catch (_) {
-                        data = null;
-                    }
-
-                    if (!response.ok || !data || !data.success) {
-                        const errMsg = (data && data.error)
-                            ? data.error
-                            : 'Unable to process manual top-up. Please check your inputs.';
-                        showErrorAlert(elements.manualTopupErrorAlert, errMsg);
-                        return;
-                    }
-
-                    if (elements.financeOverviewContainer && typeof data.overview_html === 'string') {
-                        elements.financeOverviewContainer.innerHTML = data.overview_html;
-                    }
-                    if (elements.financeClaimsContainer && typeof data.claims_html === 'string') {
-                        elements.financeClaimsContainer.innerHTML = data.claims_html;
-                    }
-                    if (elements.financeLedgerContainer && typeof data.ledger_html === 'string') {
-                        elements.financeLedgerContainer.innerHTML = data.ledger_html;
-                    }
-
-                    toggleModal(elements.manualTopupModal, 'hide');
-                    resetManualTopupForm(elements);
-                    showFinanceToast(
-                        data.message || 'Manual top-up credited successfully.',
-                        elements.notificationToastContainer,
-                        documentRef
-                    );
-                } catch (_) {
-                    showErrorAlert(
-                        elements.manualTopupErrorAlert,
-                        'Network error. Please try again.'
-                    );
-                } finally {
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = originalLabel || 'Credit Student Wallet';
-                    }
-                }
-            });
-        }
+        bindModalFormSubmit({
+            form: elements.rejectPayoutForm,
+            modal: elements.rejectPayoutModal,
+            errorAlert: elements.rejectPayoutErrorAlert,
+            submitBtn: elements.rejectPayoutSubmitBtn,
+            defaultLabel: 'Reject & Release Funds',
+            fallbackError: 'Unable to reject payout. Please provide a rejection reason.',
+            defaultSuccessMessage: 'Payout rejected and funds released.',
+            elements: elements,
+            documentRef: documentRef,
+            onSuccess: function () {
+                if (elements.rejectPayoutReason) elements.rejectPayoutReason.value = '';
+            },
+        });
     }
 
     return {
