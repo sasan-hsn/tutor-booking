@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -43,6 +44,44 @@ def _to_viewer_local(dt: datetime | None, viewer_tz: ZoneInfo) -> datetime | Non
     return timezone.localtime(dt, viewer_tz).replace(tzinfo=None)
 
 
+_MANUAL_PREFIX_RE = re.compile(r"^tenant_\d+:manual_")
+_MANUAL_TOPUP_DESC_RE = re.compile(r"^Manual top-up:\s*tenant_\d+:manual_")
+
+
+def _strip_manual_prefix(reference_id: str) -> str:
+    return _MANUAL_PREFIX_RE.sub("", reference_id or "")
+
+
+def _attach_ledger_display_fields(
+    entries: list[LedgerEntry], tenant: Tenant, viewer_tz: ZoneInfo
+) -> None:
+    manual_refs = [
+        e.reference_id for e in entries if _MANUAL_PREFIX_RE.match(e.reference_id or "")
+    ]
+    notes_by_external_id: dict[str, str] = {}
+    if manual_refs:
+        for payment in Payment.objects.filter(
+            tenant=tenant,
+            external_id__in=manual_refs,
+        ).only("external_id", "raw_metadata"):
+            note = ((payment.raw_metadata or {}).get("notes") or "").strip()
+            if note:
+                notes_by_external_id[payment.external_id] = note
+
+    for entry in entries:
+        entry.local_created_at = _to_viewer_local(entry.created_at, viewer_tz)
+        entry.student_display_name = get_user_display_name(entry.wallet.user)
+        entry.display_reference = _strip_manual_prefix(entry.reference_id)
+
+        custom_note = notes_by_external_id.get(entry.reference_id)
+        if custom_note:
+            entry.display_description = custom_note
+        elif _MANUAL_TOPUP_DESC_RE.match(entry.description or ""):
+            entry.display_description = "Manual top-up"
+        else:
+            entry.display_description = entry.description
+
+
 def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict:
     wallet_aggs = Wallet.objects.filter(
         tenant=tenant,
@@ -70,9 +109,7 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         .select_related("wallet", "wallet__user")
         .order_by("-created_at", "-id")[:25]
     )
-    for entry in recent_ledger_entries:
-        entry.local_created_at = _to_viewer_local(entry.created_at, viewer_tz)
-        entry.student_display_name = get_user_display_name(entry.wallet.user)
+    _attach_ledger_display_fields(recent_ledger_entries, tenant, viewer_tz)
 
     claims_queue = list(
         Order.objects.filter(

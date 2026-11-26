@@ -27,8 +27,27 @@
                     Settled: ${{ entry.settled_after|floatformat:2 }}<br>
                     Reserved: ${{ entry.reserved_after|floatformat:2 }}
                 </td>
-                <td><code class="small text-break">{{ entry.reference_id }}</code></td>
-                <td class="small">{{ entry.description }}</td>
+                <td>
+                    {% if entry.display_reference %}
+                    <div class="d-inline-flex align-items-center gap-1">
+                        <code class="small d-inline-block text-truncate finance-ledger-ref"
+                            title="{{ entry.display_reference }}">{{ entry.display_reference }}</code>
+                        <button type="button"
+                            class="btn btn-link btn-sm p-0 text-muted finance-copy-btn"
+                            data-copy-text="{{ entry.display_reference }}"
+                            title="Copy reference"
+                            aria-label="Copy reference {{ entry.display_reference }}">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="small">
+                    <span class="d-inline-block text-truncate finance-ledger-desc"
+                        title="{{ entry.display_description }}">{{ entry.display_description }}</span>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

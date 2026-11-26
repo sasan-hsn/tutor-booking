@@ -256,6 +256,34 @@ class ManualTopUpViewTests(RoleTestCase):
         self.assertEqual(entry.entry_type, LedgerEntry.EntryType.CREDIT)
         self.assertEqual(entry.amount, Decimal("40.00"))
         self.assertIn("BANK_REF_1001", data["ledger_html"])
+        self.assertNotIn(f"tenant_{self.tenant.id}:manual_", data["ledger_html"])
+        self.assertIn('title="BANK_REF_1001"', data["ledger_html"])
+        self.assertIn('data-copy-text="BANK_REF_1001"', data["ledger_html"])
+        self.assertIn("bi-clipboard", data["ledger_html"])
+        self.assertIn("Verified wire transfer", data["ledger_html"])
+        self.assertIn('title="Verified wire transfer"', data["ledger_html"])
+
+    def test_ledger_table_uses_clean_manual_topup_fallback_without_notes(self):
+        long_tx = "0x" + "a" * 64
+        response = self.teacher_client.post(
+            reverse("payments:manual_topup"),
+            {
+                "student": self.student_user.id,
+                "amount": "35.00",
+                "reference_id": long_tx,
+                "notes": "",
+                "idempotency_key": "11111111-1111-4111-8111-222222222222",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        ledger_html = response.json()["ledger_html"]
+        self.assertIn(long_tx, ledger_html)
+        self.assertNotIn(f"tenant_{self.tenant.id}:manual_", ledger_html)
+        self.assertIn(f'title="{long_tx}"', ledger_html)
+        self.assertIn(f'data-copy-text="{long_tx}"', ledger_html)
+        self.assertIn("Manual top-up", ledger_html)
+        self.assertIn('title="Manual top-up"', ledger_html)
+        self.assertIn("text-truncate", ledger_html)
 
     def test_manual_topup_duplicate_reference_returns_validation_error(self):
         url = reverse("payments:manual_topup")

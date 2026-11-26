@@ -128,6 +128,38 @@
         return toastEl;
     }
 
+    async function copyTextToClipboard(copyBtn) {
+        const text = copyBtn && copyBtn.dataset ? copyBtn.dataset.copyText : '';
+        if (!text) return false;
+
+        const clipboard = (typeof navigator !== 'undefined' && navigator.clipboard)
+            ? navigator.clipboard
+            : null;
+        if (!clipboard || typeof clipboard.writeText !== 'function') {
+            return false;
+        }
+
+        try {
+            await clipboard.writeText(text);
+        } catch (_) {
+            return false;
+        }
+
+        const icon = typeof copyBtn.querySelector === 'function' ? copyBtn.querySelector('i') : null;
+        if (icon) {
+            if (copyBtn._copyFeedbackTimer) {
+                clearTimeout(copyBtn._copyFeedbackTimer);
+            }
+            icon.className = 'bi bi-check2 text-success';
+            copyBtn._copyFeedbackTimer = setTimeout(function () {
+                icon.className = 'bi bi-clipboard';
+                copyBtn._copyFeedbackTimer = null;
+            }, 1500);
+        }
+
+        return true;
+    }
+
     function initTeacherFinance(doc) {
         const documentRef = doc || (typeof document !== 'undefined' ? document : null);
         if (!documentRef) return;
@@ -172,6 +204,16 @@
                     elements
                 );
                 toggleModal(elements.manualTopupModal, 'show');
+            });
+        }
+
+        if (typeof documentRef.addEventListener === 'function') {
+            documentRef.addEventListener('click', function (e) {
+                const copyBtn = e.target && typeof e.target.closest === 'function'
+                    ? e.target.closest('[data-copy-text]')
+                    : null;
+                if (!copyBtn) return;
+                copyTextToClipboard(copyBtn);
             });
         }
 
@@ -256,6 +298,7 @@
         prefillManualTopupForm: prefillManualTopupForm,
         resetManualTopupForm: resetManualTopupForm,
         showFinanceToast: showFinanceToast,
+        copyTextToClipboard: copyTextToClipboard,
         initTeacherFinance: initTeacherFinance,
     };
 }));

@@ -2681,3 +2681,23 @@ h1, h2, h3, h4, h5, h6,
     background-color: #f3f4f6;
     color: #4b5563;
 }
+
+.finance-ledger-ref {
+    max-width: 140px;
+    vertical-align: middle;
+}
+
+.finance-ledger-desc {
+    max-width: 220px;
+    vertical-align: middle;
+}
+
+.finance-copy-btn {
+    line-height: 1;
+    font-size: 0.85rem;
+    transition: color 0.15s ease;
+}
+
+.finance-copy-btn:hover {
+    color: var(--primary-blue) !important;
+}

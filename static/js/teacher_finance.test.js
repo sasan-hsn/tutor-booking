@@ -92,8 +92,19 @@ describe('Teacher Finance JS Controller', () => {
 
         mockDoc = {
             cookie: 'csrftoken=test-csrf-token',
+            listeners: {},
             getElementById: (id) => elements[id] || null,
             createElement: (tag) => new MockEl(tag),
+            addEventListener: function (type, fn) {
+                if (!this.listeners[type]) this.listeners[type] = [];
+                this.listeners[type].push(fn);
+            },
+            dispatchEvent: function (event) {
+                const handlers = this.listeners[event.type] || [];
+                for (const h of handlers) {
+                    h(event);
+                }
+            },
         };
 
         global.window = {
@@ -243,5 +254,58 @@ describe('Teacher Finance JS Controller', () => {
         assert.strictEqual(modalHidden, false);
         assert.strictEqual(elements.manualTopupErrorAlert.textContent, expectedErr);
         assert.strictEqual(elements.manualTopupErrorAlert.classList.contains('d-none'), false);
+    });
+
+    test('clicking [data-copy-text] copies reference via clipboard and swaps icon for 1.5s', async () => {
+        const copiedTexts = [];
+        Object.defineProperty(global, 'navigator', {
+            configurable: true,
+            value: {
+                clipboard: {
+                    writeText: async (text) => {
+                        copiedTexts.push(text);
+                    },
+                },
+            },
+        });
+
+        const scheduledTimeouts = [];
+        const origSetTimeout = global.setTimeout;
+        global.setTimeout = (fn, delay) => {
+            scheduledTimeouts.push({ fn, delay });
+            return scheduledTimeouts.length;
+        };
+
+        try {
+            const iconEl = new MockEl('I');
+            iconEl.className = 'bi bi-clipboard';
+            const copyBtn = new MockEl('BUTTON');
+            copyBtn.dataset = { copyText: '0x1ce39062b6c846ec82368f45988ceb2e033e765cfb434af9a4c86c4a4aefca1c' };
+            copyBtn.querySelector = (sel) => (sel === 'i' ? iconEl : null);
+
+            initTeacherFinance(mockDoc);
+
+            mockDoc.dispatchEvent({
+                type: 'click',
+                target: {
+                    closest: (sel) => (sel === '[data-copy-text]' ? copyBtn : null),
+                },
+            });
+
+            // Flush microtask from async clipboard.writeText
+            await Promise.resolve();
+
+            assert.deepStrictEqual(copiedTexts, [
+                '0x1ce39062b6c846ec82368f45988ceb2e033e765cfb434af9a4c86c4a4aefca1c',
+            ]);
+            assert.strictEqual(iconEl.className, 'bi bi-check2 text-success');
+            assert.strictEqual(scheduledTimeouts.length, 1);
+            assert.strictEqual(scheduledTimeouts[0].delay, 1500);
+
+            scheduledTimeouts[0].fn();
+            assert.strictEqual(iconEl.className, 'bi bi-clipboard');
+        } finally {
+            global.setTimeout = origSetTimeout;
+        }
     });
 });
