@@ -5,6 +5,7 @@ const {
     generateIdempotencyToken,
     prefillManualTopupForm,
     resetManualTopupForm,
+    formatDisputeCountdown,
     initTeacherFinance,
 } = require('./teacher_finance.js');
 
@@ -503,5 +504,127 @@ describe('Teacher Finance JS Controller', () => {
 
         assert.strictEqual(elements.notificationToastContainer.children.length, 1);
         assert.strictEqual(procBtn.disabled, false);
+    });
+
+    test('formatDisputeCountdown renders remaining days/hours or Expired', () => {
+        const nowMs = Date.UTC(2026, 10, 26, 12, 0, 0);
+        const deadline3d5h = new Date(nowMs + ((3 * 24 + 5) * 3600 * 1000)).toISOString();
+        const deadline4h20m = new Date(nowMs + ((4 * 3600 + 20 * 60) * 1000)).toISOString();
+        const pastDeadline = new Date(nowMs - 60000).toISOString();
+
+        assert.strictEqual(formatDisputeCountdown(deadline3d5h, nowMs), '3d 5h left');
+        assert.strictEqual(formatDisputeCountdown(deadline4h20m, nowMs), '4h 20m left');
+        assert.strictEqual(formatDisputeCountdown(pastDeadline, nowMs), 'Auto-expiring');
+    });
+
+    test('Resolve Dispute modal opens for student/teacher favor, submits POST, and updates DOM', async () => {
+        elements.financeDisputesContainer = new MockEl('DIV', 'financeDisputesContainer');
+        elements.resolveDisputeModal = new MockEl('DIV', 'resolveDisputeModal');
+        elements.resolveDisputeForm = new MockEl('FORM', 'resolveDisputeForm');
+        elements.resolveDisputeSummary = new MockEl('P', 'resolveDisputeSummary');
+        elements.resolveDisputeResolution = new MockEl('INPUT', 'resolveDisputeResolution');
+        elements.resolveDisputeErrorAlert = new MockEl('DIV', 'resolveDisputeErrorAlert');
+        elements.resolveDisputeErrorAlert.classList.add('d-none');
+        elements.resolveDisputeSubmitBtn = new MockEl('BUTTON', 'resolveDisputeSubmitBtn');
+
+        let fetchedUrl = null;
+        global.FormData = function (form) { return { _form: form }; };
+        global.fetch = async (url) => {
+            fetchedUrl = url;
+            return {
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    message: 'Dispute resolved in student favor.',
+                    overview_html: '<div id="ov">Released</div>',
+                    disputes_html: '<div id="dq">Empty</div>',
+                    ledger_html: '<div id="lg">RELEASE</div>',
+                }),
+            };
+        };
+
+        initTeacherFinance(mockDoc);
+
+        const openBtn = new MockEl('BUTTON');
+        openBtn.dataset = {
+            actionUrl: '/dashboard/finance/disputes/42/resolve/',
+            bookingId: '42',
+            studentName: 'Alice Disputer',
+            amount: '25.00',
+            resolution: 'STUDENT_FAVOR',
+        };
+
+        elements.financeDisputesContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-resolve-dispute' ? openBtn : null),
+            },
+        });
+
+        assert.strictEqual(modalShown, true);
+        assert.strictEqual(elements.resolveDisputeForm.action, '/dashboard/finance/disputes/42/resolve/');
+        assert.strictEqual(elements.resolveDisputeResolution.value, 'STUDENT_FAVOR');
+        assert.ok(elements.resolveDisputeSummary.textContent.includes('Alice Disputer'));
+        assert.ok(elements.resolveDisputeSummary.textContent.includes('25.00'));
+
+        const submitHandler = elements.resolveDisputeForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(fetchedUrl, '/dashboard/finance/disputes/42/resolve/');
+        assert.strictEqual(modalHidden, true);
+        assert.strictEqual(elements.financeDisputesContainer.innerHTML, '<div id="dq">Empty</div>');
+        assert.strictEqual(elements.financeOverviewContainer.innerHTML, '<div id="ov">Released</div>');
+        assert.strictEqual(elements.financeLedgerContainer.innerHTML, '<div id="lg">RELEASE</div>');
+    });
+
+    test('Resolve Dispute modal displays inline error on 409 without closing', async () => {
+        elements.financeDisputesContainer = new MockEl('DIV', 'financeDisputesContainer');
+        elements.resolveDisputeModal = new MockEl('DIV', 'resolveDisputeModal');
+        elements.resolveDisputeForm = new MockEl('FORM', 'resolveDisputeForm');
+        elements.resolveDisputeSummary = new MockEl('P', 'resolveDisputeSummary');
+        elements.resolveDisputeResolution = new MockEl('INPUT', 'resolveDisputeResolution');
+        elements.resolveDisputeErrorAlert = new MockEl('DIV', 'resolveDisputeErrorAlert');
+        elements.resolveDisputeErrorAlert.classList.add('d-none');
+        elements.resolveDisputeSubmitBtn = new MockEl('BUTTON', 'resolveDisputeSubmitBtn');
+
+        global.FormData = function () { return {}; };
+        global.fetch = async () => ({
+            ok: false,
+            json: async () => ({
+                success: false,
+                error: 'Booking dispute has already been resolved.',
+            }),
+        });
+
+        initTeacherFinance(mockDoc);
+
+        const openBtn = new MockEl('BUTTON');
+        openBtn.dataset = {
+            actionUrl: '/dashboard/finance/disputes/42/resolve/',
+            bookingId: '42',
+            studentName: 'Alice Disputer',
+            amount: '25.00',
+            resolution: 'TEACHER_FAVOR',
+        };
+
+        elements.financeDisputesContainer.dispatchEvent({
+            type: 'click',
+            target: {
+                closest: (sel) => (sel === '.btn-resolve-dispute' ? openBtn : null),
+            },
+        });
+
+        const submitHandler = elements.resolveDisputeForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(modalHidden, false);
+        assert.strictEqual(
+            elements.resolveDisputeErrorAlert.textContent,
+            'Booking dispute has already been resolved.'
+        );
+        assert.strictEqual(
+            elements.resolveDisputeErrorAlert.classList.contains('d-none'),
+            false
+        );
     });
 });

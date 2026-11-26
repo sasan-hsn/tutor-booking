@@ -177,6 +177,7 @@ class Booking(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
         DISPUTING = "disputing", "Disputing"
+        RESOLVED = "resolved", "Resolved"
         EXPIRED = "expired", "Expired"
 
     class PaymentStatus(models.TextChoices):
@@ -252,6 +253,7 @@ class Booking(models.Model):
         null=True,
     )
     dispute_opened_at = models.DateTimeField(null=True, blank=True)
+    dispute_reason = models.TextField(blank=True, default="")
     dispute_resolved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

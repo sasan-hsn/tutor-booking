@@ -1,11 +1,15 @@
+import csv
 import hashlib
 import hmac
+import io
 import logging
+import re
 import secrets
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -907,3 +911,123 @@ def release_payout(
     )
 
     return entry
+
+
+FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_MANUAL_PREFIX_RE = re.compile(r"^tenant_\d+:manual_")
+_MANUAL_TOPUP_DESC_RE = re.compile(r"^Manual top-up:\s*tenant_\d+:manual_")
+
+
+def get_user_display_name(user) -> str:
+    """Return full name if present, otherwise username."""
+    return user.get_full_name() or user.username
+
+
+def to_viewer_local(dt: Optional[datetime], viewer_tz: ZoneInfo) -> Optional[datetime]:
+    """Convert an aware datetime to naive local time in viewer_tz for template/CSV display."""
+    if dt is None:
+        return None
+    return timezone.localtime(dt, viewer_tz).replace(tzinfo=None)
+
+
+def strip_manual_prefix(reference_id: str) -> str:
+    return _MANUAL_PREFIX_RE.sub("", reference_id or "")
+
+
+def attach_ledger_display_fields(
+    entries: list[LedgerEntry], tenant: "Tenant", viewer_tz: ZoneInfo
+) -> None:
+    """Attach localized timestamps, student names, stripped references, and manual notes."""
+    manual_refs = [
+        e.reference_id for e in entries if _MANUAL_PREFIX_RE.match(e.reference_id or "")
+    ]
+    notes_by_external_id: dict[str, str] = {}
+    if manual_refs:
+        for payment in Payment.objects.filter(
+            tenant=tenant,
+            external_id__in=manual_refs,
+        ).only("external_id", "raw_metadata"):
+            note = ((payment.raw_metadata or {}).get("notes") or "").strip()
+            if note:
+                notes_by_external_id[payment.external_id] = note
+
+    for entry in entries:
+        entry.local_created_at = to_viewer_local(entry.created_at, viewer_tz)
+        entry.student_display_name = get_user_display_name(entry.wallet.user)
+        entry.display_reference = strip_manual_prefix(entry.reference_id)
+
+        custom_note = notes_by_external_id.get(entry.reference_id)
+        if custom_note:
+            entry.display_description = custom_note
+        elif _MANUAL_TOPUP_DESC_RE.match(entry.description or ""):
+            entry.display_description = "Manual top-up"
+        else:
+            entry.display_description = entry.description
+
+
+def sanitize_csv_cell(value: object) -> str:
+    """
+    Sanitize a CSV cell value against spreadsheet formula injection by prepending a
+    single quote to any value beginning with '=', '+', '-', '@', '\\t', or '\\r'.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if text.startswith(FORMULA_INJECTION_PREFIXES):
+        return f"'{text}"
+    return text
+
+
+def build_tenant_ledger_csv(tenant: "Tenant", viewer_tz: ZoneInfo) -> str:
+    """
+    Export all immutable ledger entries for a tenant as a formula-sanitized CSV string.
+    """
+    entries = list(
+        LedgerEntry.objects.filter(tenant=tenant)
+        .select_related("wallet", "wallet__user")
+        .order_by("-created_at", "-id")
+    )
+    attach_ledger_display_fields(entries, tenant, viewer_tz)
+
+    headers = [
+        "Entry ID",
+        "Timestamp",
+        "Student",
+        "Student Email",
+        "Entry Type",
+        "Currency",
+        "Amount",
+        "Settled Balance After",
+        "Reserved Balance After",
+        "Reference",
+        "Description",
+        "Idempotency Key",
+    ]
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([sanitize_csv_cell(h) for h in headers])
+
+    for entry in entries:
+        timestamp_str = (
+            entry.local_created_at.strftime("%Y-%m-%d %H:%M:%S")
+            if entry.local_created_at
+            else ""
+        )
+        row = [
+            entry.id,
+            timestamp_str,
+            entry.student_display_name,
+            entry.wallet.user.email or "",
+            entry.entry_type,
+            entry.wallet.currency,
+            f"{entry.amount:.2f}",
+            f"{entry.settled_after:.2f}",
+            f"{entry.reserved_after:.2f}",
+            entry.display_reference,
+            entry.display_description,
+            entry.idempotency_key,
+        ]
+        writer.writerow([sanitize_csv_cell(cell) for cell in row])
+
+    return buffer.getvalue()

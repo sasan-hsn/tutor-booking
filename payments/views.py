@@ -1,38 +1,44 @@
 import re
-from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from accounts.decorators import teacher_required
 from accounts.models import Tenant
 from booking.models import Booking
+from booking.services import DisputeConflictError, resolve_dispute
 from payments.exceptions import PayoutConflictError, PayoutInsufficientBalanceError
 from payments.forms import (
     DUPLICATE_REFERENCE_ERROR,
     CompletePayoutForm,
     ManualTopUpForm,
     RejectPayoutForm,
-    get_user_display_name,
+    ResolveDisputeForm,
 )
 from payments.models import Order, Payment, Payout
 from payments.services import (
     DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
+    attach_ledger_display_fields,
     build_manual_external_id,
+    build_tenant_ledger_csv,
+    get_user_display_name,
     has_duplicate_payout_external_ref,
     mark_payout_processing,
     process_manual_topup,
     release_payout,
     settle_payout,
+    to_viewer_local,
 )
 from wallet.models import LedgerEntry, Wallet
 
@@ -47,50 +53,6 @@ def _get_tenant_for_teacher(teacher) -> Tenant:
         },
     )
     return tenant
-
-
-def _to_viewer_local(dt: datetime | None, viewer_tz: ZoneInfo) -> datetime | None:
-    if dt is None:
-        return None
-    return timezone.localtime(dt, viewer_tz).replace(tzinfo=None)
-
-
-_MANUAL_PREFIX_RE = re.compile(r"^tenant_\d+:manual_")
-_MANUAL_TOPUP_DESC_RE = re.compile(r"^Manual top-up:\s*tenant_\d+:manual_")
-
-
-def _strip_manual_prefix(reference_id: str) -> str:
-    return _MANUAL_PREFIX_RE.sub("", reference_id or "")
-
-
-def _attach_ledger_display_fields(
-    entries: list[LedgerEntry], tenant: Tenant, viewer_tz: ZoneInfo
-) -> None:
-    manual_refs = [
-        e.reference_id for e in entries if _MANUAL_PREFIX_RE.match(e.reference_id or "")
-    ]
-    notes_by_external_id: dict[str, str] = {}
-    if manual_refs:
-        for payment in Payment.objects.filter(
-            tenant=tenant,
-            external_id__in=manual_refs,
-        ).only("external_id", "raw_metadata"):
-            note = ((payment.raw_metadata or {}).get("notes") or "").strip()
-            if note:
-                notes_by_external_id[payment.external_id] = note
-
-    for entry in entries:
-        entry.local_created_at = _to_viewer_local(entry.created_at, viewer_tz)
-        entry.student_display_name = get_user_display_name(entry.wallet.user)
-        entry.display_reference = _strip_manual_prefix(entry.reference_id)
-
-        custom_note = notes_by_external_id.get(entry.reference_id)
-        if custom_note:
-            entry.display_description = custom_note
-        elif _MANUAL_TOPUP_DESC_RE.match(entry.description or ""):
-            entry.display_description = "Manual top-up"
-        else:
-            entry.display_description = entry.description
 
 
 _REJECT_DESC_RE = re.compile(r"^Payout rejected \((.+)\): payout #\d+$")
@@ -125,11 +87,47 @@ def _attach_payout_display_fields(
 
     for payout in payouts:
         payout.student_display_name = get_user_display_name(payout.student)
-        payout.local_requested_at = _to_viewer_local(
+        payout.local_requested_at = to_viewer_local(
             payout.confirmation_used_at or payout.created_at, viewer_tz
         )
-        payout.local_processed_at = _to_viewer_local(payout.processed_at, viewer_tz)
+        payout.local_processed_at = to_viewer_local(payout.processed_at, viewer_tz)
         payout.rejection_reason = reasons_by_payout_ref.get(f"payout_{payout.id}", "")
+
+
+def _format_dispute_countdown(deadline_at, now) -> str:
+    if deadline_at is None:
+        return "—"
+    remaining_seconds = int((deadline_at - now).total_seconds())
+    if remaining_seconds <= 0:
+        return "Auto-expiring"
+    days, rem = divmod(remaining_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days > 0:
+        return f"{days}d {hours}h left"
+    if hours > 0:
+        return f"{hours}h {minutes}m left"
+    return f"{max(minutes, 1)}m left"
+
+
+def _attach_dispute_display_fields(
+    disputes: list[Booking], viewer_tz: ZoneInfo
+) -> None:
+    now = timezone.now()
+    dispute_window_days = getattr(settings, "DISPUTE_WINDOW_DAYS", 7)
+    for booking in disputes:
+        booking.local_start_at = to_viewer_local(booking.start_at, viewer_tz)
+        booking.local_end_at = to_viewer_local(booking.end_at, viewer_tz)
+        booking.local_dispute_opened_at = to_viewer_local(
+            booking.dispute_opened_at, viewer_tz
+        )
+        deadline = (
+            booking.dispute_opened_at + timedelta(days=dispute_window_days)
+            if booking.dispute_opened_at
+            else None
+        )
+        booking.dispute_deadline_iso = deadline.isoformat() if deadline else ""
+        booking.dispute_countdown_label = _format_dispute_countdown(deadline, now)
 
 
 def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict:
@@ -159,7 +157,7 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         .select_related("wallet", "wallet__user")
         .order_by("-created_at", "-id")[:25]
     )
-    _attach_ledger_display_fields(recent_ledger_entries, tenant, viewer_tz)
+    attach_ledger_display_fields(recent_ledger_entries, tenant, viewer_tz)
 
     claims_queue = list(
         Order.objects.filter(
@@ -171,7 +169,7 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         .order_by("-claimed_paid_at", "-created_at")
     )
     for claim in claims_queue:
-        claim.local_claimed_paid_at = _to_viewer_local(claim.claimed_paid_at, viewer_tz)
+        claim.local_claimed_paid_at = to_viewer_local(claim.claimed_paid_at, viewer_tz)
         claim.student_display_name = get_user_display_name(claim.student)
         claim.prefill_notes = f"Top-up claim for Order #{claim.id}"
 
@@ -197,6 +195,16 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         payouts_history, tenant, viewer_tz, include_rejection_reasons=True
     )
 
+    disputes_queue = list(
+        Booking.objects.filter(
+            teacher=teacher,
+            status=Booking.Status.DISPUTING,
+        )
+        .select_related("student")
+        .order_by("dispute_opened_at", "id")
+    )
+    _attach_dispute_display_fields(disputes_queue, viewer_tz)
+
     return {
         "teacher": teacher,
         "tenant": tenant,
@@ -211,6 +219,8 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         "payouts_queue": payouts_queue,
         "payouts_queue_count": len(payouts_queue),
         "payouts_history": payouts_history,
+        "disputes_queue": disputes_queue,
+        "disputes_queue_count": len(disputes_queue),
     }
 
 
@@ -232,6 +242,7 @@ def teacher_finance_dashboard(request):
     context["form"] = ManualTopUpForm(tenant=tenant)
     context["complete_payout_form"] = CompletePayoutForm()
     context["reject_payout_form"] = RejectPayoutForm()
+    context["resolve_dispute_form"] = ResolveDisputeForm()
     return render(request, "payments/teacher_finance.html", context)
 
 
@@ -493,3 +504,94 @@ def payout_reject(request, payout_id: int):
             f"to {get_user_display_name(payout.student)}."
         ),
     )
+
+
+@teacher_required
+@require_POST
+def dispute_resolve(request, booking_id: int):
+    teacher = request.user.teacher_profile
+    tenant = _get_tenant_for_teacher(teacher)
+    booking = get_object_or_404(
+        Booking.objects.select_related("student", "teacher__user"),
+        pk=booking_id,
+        teacher=teacher,
+    )
+
+    form = ResolveDisputeForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": _first_form_error(form),
+                "errors": form.errors,
+            },
+            status=400,
+        )
+
+    resolution = form.cleaned_data["resolution"]
+    try:
+        resolved_booking = resolve_dispute(
+            tenant=tenant,
+            booking=booking,
+            teacher_user=request.user,
+            resolution=resolution,
+        )
+    except DisputeConflictError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=409)
+    except ValidationError as exc:
+        msg = _validation_error_message(exc)
+        return JsonResponse(
+            {"success": False, "error": msg, "errors": {"__all__": [msg]}},
+            status=400,
+        )
+
+    viewer_tz = ZoneInfo(request.user.timezone)
+    context = _build_finance_context(tenant, teacher, viewer_tz)
+    student_name = get_user_display_name(resolved_booking.student)
+    if resolution == Booking.DisputeResolution.STUDENT_FAVOR:
+        message = (
+            f"Resolved dispute for Booking #{resolved_booking.id} in student favor; "
+            f"released ${resolved_booking.held_amount:.2f} {tenant.default_currency} "
+            f"to {student_name}."
+        )
+    else:
+        message = (
+            f"Resolved dispute for Booking #{resolved_booking.id} in teacher favor; "
+            f"settled ${resolved_booking.held_amount:.2f} {tenant.default_currency}."
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": message,
+            "booking_id": resolved_booking.id,
+            "booking_status": resolved_booking.status,
+            "dispute_resolution": resolved_booking.dispute_resolution,
+            "overview_html": render_to_string(
+                "payments/partials/_finance_overview.html", context, request=request
+            ),
+            "disputes_html": render_to_string(
+                "payments/partials/_finance_disputes_queue.html",
+                context,
+                request=request,
+            ),
+            "ledger_html": render_to_string(
+                "payments/partials/_finance_ledger_table.html", context, request=request
+            ),
+        }
+    )
+
+
+@teacher_required
+@require_GET
+def export_ledger_csv(request):
+    teacher = request.user.teacher_profile
+    tenant = _get_tenant_for_teacher(teacher)
+    viewer_tz = ZoneInfo(request.user.timezone)
+    csv_content = build_tenant_ledger_csv(tenant, viewer_tz)
+    local_date = timezone.localtime(timezone.now(), viewer_tz).date().isoformat()
+    response = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="ledger-export-{local_date}.csv"'
+    )
+    return response

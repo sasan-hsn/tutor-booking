@@ -236,7 +236,14 @@
     </div>
     {% elif booking.status == 'disputing' %}
     <div class="lesson-detail-notice">
-        A dispute has been opened for this lesson and is pending teacher review.
+        <div>A dispute has been opened for this lesson and is pending teacher review.</div>
+        {% if booking.dispute_reason %}
+        <div class="small mt-1"><strong>Reason:</strong> {{ booking.dispute_reason }}</div>
+        {% endif %}
+    </div>
+    {% elif booking.status == 'resolved' %}
+    <div class="lesson-detail-notice">
+        This dispute was resolved in the student's favor and held funds were released back to the student's wallet.
     </div>
     {% elif booking.cancellation_requested %}
     <div class="lesson-detail-notice">
@@ -251,6 +258,9 @@
         </button>
         <div class="alert alert-warning mt-2 d-none" id="openDisputeConfirm" role="alert">
             <p class="small mb-2">Opening a dispute freezes lesson settlement for up to 7 days while your teacher reviews the issue.</p>
+            <label for="disputeReasonInput" class="form-label small fw-semibold mb-1">Dispute Reason</label>
+            <textarea class="form-control form-control-sm mb-2" id="disputeReasonInput" rows="2" maxlength="1000" placeholder="Briefly describe the issue with this lesson..." required></textarea>
+            <div id="openDisputeError" class="text-danger small mb-2 d-none"></div>
             <div class="d-flex justify-content-end gap-2">
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="abortOpenDisputeBtn">Cancel</button>
                 <button type="button" class="btn btn-sm btn-danger" id="confirmOpenDisputeBtn"

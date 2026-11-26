@@ -1041,6 +1041,28 @@ h1, h2, h3, h4, h5, h6,
     border-radius: var(--radius-full);
 }
 
+.badge-dispute-open {
+    display: inline-block;
+    width: fit-content;
+    background-color: #fee2e2;
+    color: #991b1b;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--radius-full);
+}
+
+.badge-dispute-resolved {
+    display: inline-block;
+    width: fit-content;
+    background-color: #dbeafe;
+    color: #1e40af;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--radius-full);
+}
+
 .badge-live {
     display: inline-flex;
     align-items: center;
@@ -1682,6 +1704,7 @@ h1, h2, h3, h4, h5, h6,
 .lesson-detail-status-dot[data-status="completed"] { background-color: #6B7280; }
 .lesson-detail-status-dot[data-status="cancelled"] { background-color: #B0B7C3; }
 .lesson-detail-status-dot[data-status="disputing"] { background-color: #E4463C; }
+.lesson-detail-status-dot[data-status="resolved"]  { background-color: var(--primary-blue); }
 .lesson-detail-status-dot[data-status="expired"]   { background-color: var(--accent-terracotta); }
 
 .lesson-detail-actions {
@@ -2309,6 +2332,7 @@ h1, h2, h3, h4, h5, h6,
 .calendar-booking-row[data-status="completed"] { border-left-color: #6B7280; color: #6B7280; }
 .calendar-booking-row[data-status="cancelled"] { border-left-color: #B0B7C3; color: #B0B7C3; text-decoration: line-through; }
 .calendar-booking-row[data-status="disputing"] { border-left-color: #E4463C; color: #E4463C; }
+.calendar-booking-row[data-status="resolved"]  { border-left-color: var(--primary-blue); color: var(--primary-blue); }
 .calendar-booking-row[data-status="expired"]   { border-left-color: var(--accent-terracotta); color: var(--accent-terracotta); }
 
 /* Status Filter */
@@ -2383,6 +2407,7 @@ h1, h2, h3, h4, h5, h6,
 .status-dot[data-status="completed"] { background-color: #6B7280; }
 .status-dot[data-status="cancelled"] { background-color: #B0B7C3; }
 .status-dot[data-status="disputing"] { background-color: #E4463C; }
+.status-dot[data-status="resolved"]  { background-color: var(--primary-blue); }
 .status-dot[data-status="expired"]   { background-color: var(--accent-terracotta); }
 
 /* Student Filter */
@@ -2790,4 +2815,88 @@ h1, h2, h3, h4, h5, h6,
     background-color: #fef2f2;
     color: #991b1b;
     border-color: #f87171;
+}
+
+.finance-dispute-countdown {
+    background-color: #fef3c7;
+    color: #92400e;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3em 0.65em;
+    border-radius: 999px;
+}
+
+.finance-dispute-row td {
+    border-bottom: none;
+    padding-bottom: 0.5rem;
+}
+
+.finance-dispute-reason-row td {
+    padding-top: 0;
+    padding-bottom: 0.85rem;
+}
+
+.finance-dispute-reason-callout {
+    background-color: #f8fafc;
+    border-left: 3px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.45;
+}
+
+.finance-dispute-reason-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 0.35rem;
+}
+
+.finance-dispute-reason {
+    color: var(--text-main);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.finance-dispute-actions-col {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.finance-dispute-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    width: 198px;
+}
+
+.finance-dispute-actions .btn-resolve-dispute {
+    width: 100%;
+}
+
+.finance-dispute-btn-student {
+    background-color: transparent;
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+
+.finance-dispute-btn-student:hover,
+.finance-dispute-btn-student:focus-visible {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border-color: #f87171;
+}
+
+.finance-dispute-btn-teacher {
+    background-color: var(--primary-blue);
+    color: #ffffff;
+    border-color: var(--primary-blue);
+}
+
+.finance-dispute-btn-teacher:hover,
+.finance-dispute-btn-teacher:focus-visible {
+    background-color: var(--primary-blue-hover);
+    color: #ffffff;
+    border-color: var(--primary-blue-hover);
 }

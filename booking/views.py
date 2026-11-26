@@ -116,7 +116,13 @@ def _get_student_past_queryset(student, now):
     return (
         Booking.objects.filter(student=student)
         .filter(
-            Q(status=Booking.Status.COMPLETED)
+            Q(
+                status__in=[
+                    Booking.Status.COMPLETED,
+                    Booking.Status.DISPUTING,
+                    Booking.Status.RESOLVED,
+                ]
+            )
             | Q(status=Booking.Status.CONFIRMED, end_at__lt=grace_cutoff)
         )
         .select_related("teacher", "teacher__user", "review")
@@ -1335,8 +1341,14 @@ def open_dispute(request, booking_id):
         pk=booking_id,
         student=request.user,
     )
+    reason = (request.POST.get("reason") or "").strip()
+    if not reason:
+        return JsonResponse(
+            {"error": "Please provide a reason for opening this dispute."},
+            status=400,
+        )
     try:
-        open_dispute_service(booking=booking, student=request.user)
+        open_dispute_service(booking=booking, student=request.user, reason=reason)
     except ValidationError as exc:
         error_message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
         return JsonResponse({"error": error_message}, status=400)

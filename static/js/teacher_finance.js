@@ -163,6 +163,31 @@
         return true;
     }
 
+    function formatDisputeCountdown(deadlineIso, nowMs) {
+        if (!deadlineIso) return '—';
+        const deadlineMs = Date.parse(deadlineIso);
+        if (Number.isNaN(deadlineMs)) return '—';
+        const currentMs = typeof nowMs === 'number' ? nowMs : Date.now();
+        const remainingSeconds = Math.floor((deadlineMs - currentMs) / 1000);
+        if (remainingSeconds <= 0) return 'Auto-expiring';
+        const days = Math.floor(remainingSeconds / 86400);
+        const hours = Math.floor((remainingSeconds % 86400) / 3600);
+        const minutes = Math.floor((remainingSeconds % 3600) / 60);
+        if (days > 0) return `${days}d ${hours}h left`;
+        if (hours > 0) return `${hours}h ${minutes}m left`;
+        return `${Math.max(minutes, 1)}m left`;
+    }
+
+    function updateDisputeCountdowns(containerEl, nowMs) {
+        if (!containerEl || typeof containerEl.querySelectorAll !== 'function') return;
+        const badges = containerEl.querySelectorAll('[data-dispute-deadline]');
+        for (let i = 0; i < badges.length; i++) {
+            const badge = badges[i];
+            const deadlineIso = badge.dataset ? badge.dataset.disputeDeadline : '';
+            badge.textContent = formatDisputeCountdown(deadlineIso, nowMs);
+        }
+    }
+
     function applyFinanceHtmlUpdates(elements, data) {
         if (!data) return;
         if (elements.financeOverviewContainer && typeof data.overview_html === 'string') {
@@ -173,6 +198,10 @@
         }
         if (elements.financePayoutsContainer && typeof data.payouts_html === 'string') {
             elements.financePayoutsContainer.innerHTML = data.payouts_html;
+        }
+        if (elements.financeDisputesContainer && typeof data.disputes_html === 'string') {
+            elements.financeDisputesContainer.innerHTML = data.disputes_html;
+            updateDisputeCountdowns(elements.financeDisputesContainer);
         }
         if (elements.financeLedgerContainer && typeof data.ledger_html === 'string') {
             elements.financeLedgerContainer.innerHTML = data.ledger_html;
@@ -314,12 +343,31 @@
             rejectPayoutReason: documentRef.getElementById('rejectPayoutReason'),
             rejectPayoutErrorAlert: documentRef.getElementById('rejectPayoutErrorAlert'),
             rejectPayoutSubmitBtn: documentRef.getElementById('rejectPayoutSubmitBtn'),
+            resolveDisputeModal: documentRef.getElementById('resolveDisputeModal'),
+            resolveDisputeForm: documentRef.getElementById('resolveDisputeForm'),
+            resolveDisputeSummary: documentRef.getElementById('resolveDisputeSummary'),
+            resolveDisputeConsequence: documentRef.getElementById('resolveDisputeConsequence'),
+            resolveDisputeResolution: documentRef.getElementById('resolveDisputeResolution'),
+            resolveDisputeErrorAlert: documentRef.getElementById('resolveDisputeErrorAlert'),
+            resolveDisputeSubmitBtn: documentRef.getElementById('resolveDisputeSubmitBtn'),
             financeOverviewContainer: documentRef.getElementById('financeOverviewContainer'),
             financeClaimsContainer: documentRef.getElementById('financeClaimsContainer'),
             financePayoutsContainer: documentRef.getElementById('financePayoutsContainer'),
+            financeDisputesContainer: documentRef.getElementById('financeDisputesContainer'),
             financeLedgerContainer: documentRef.getElementById('financeLedgerContainer'),
             notificationToastContainer: documentRef.getElementById('notificationToastContainer'),
         };
+
+        updateDisputeCountdowns(elements.financeDisputesContainer);
+        if (
+            elements.financeDisputesContainer
+            && typeof elements.financeDisputesContainer.querySelectorAll === 'function'
+            && elements.financeDisputesContainer.querySelectorAll('[data-dispute-deadline]').length > 0
+        ) {
+            setInterval(function () {
+                updateDisputeCountdowns(elements.financeDisputesContainer);
+            }, 60000);
+        }
 
         if (elements.openManualTopupBtn) {
             elements.openManualTopupBtn.addEventListener('click', function () {
@@ -420,6 +468,48 @@
             });
         }
 
+        if (elements.financeDisputesContainer) {
+            elements.financeDisputesContainer.addEventListener('click', function (e) {
+                const target = e.target && typeof e.target.closest === 'function' ? e.target : null;
+                if (!target) return;
+
+                const resolveBtn = target.closest('.btn-resolve-dispute');
+                if (!resolveBtn || !elements.resolveDisputeForm) return;
+
+                const resolution = resolveBtn.dataset.resolution || '';
+                const studentName = resolveBtn.dataset.studentName || 'Student';
+                const amount = resolveBtn.dataset.amount || '0.00';
+                const bookingId = resolveBtn.dataset.bookingId || '';
+                const isStudentFavor = resolution === 'STUDENT_FAVOR';
+
+                elements.resolveDisputeForm.action = resolveBtn.dataset.actionUrl || '';
+                if (elements.resolveDisputeResolution) {
+                    elements.resolveDisputeResolution.value = resolution;
+                }
+                if (elements.resolveDisputeSummary) {
+                    const favorLabel = isStudentFavor ? 'Student Favor' : 'Teacher Favor';
+                    elements.resolveDisputeSummary.textContent = (
+                        `Resolve dispute for Booking #${bookingId} (${studentName}, $${amount}) in ${favorLabel}?`
+                    );
+                }
+                if (elements.resolveDisputeConsequence) {
+                    elements.resolveDisputeConsequence.textContent = isStudentFavor
+                        ? `Held funds ($${amount}) will be released back to ${studentName}'s available wallet balance.`
+                        : `Held funds ($${amount}) will be consumed as completed lesson revenue.`;
+                }
+                if (elements.resolveDisputeSubmitBtn) {
+                    elements.resolveDisputeSubmitBtn.className = isStudentFavor
+                        ? 'btn btn-danger'
+                        : 'btn btn-primary';
+                    elements.resolveDisputeSubmitBtn.textContent = isStudentFavor
+                        ? 'Confirm Student Favor'
+                        : 'Confirm Teacher Favor';
+                }
+                clearErrorAlert(elements.resolveDisputeErrorAlert);
+                toggleModal(elements.resolveDisputeModal, 'show');
+            });
+        }
+
         if (typeof documentRef.addEventListener === 'function') {
             documentRef.addEventListener('click', function (e) {
                 const copyBtn = e.target && typeof e.target.closest === 'function'
@@ -479,6 +569,18 @@
                 if (elements.rejectPayoutReason) elements.rejectPayoutReason.value = '';
             },
         });
+
+        bindModalFormSubmit({
+            form: elements.resolveDisputeForm,
+            modal: elements.resolveDisputeModal,
+            errorAlert: elements.resolveDisputeErrorAlert,
+            submitBtn: elements.resolveDisputeSubmitBtn,
+            defaultLabel: 'Confirm Resolution',
+            fallbackError: 'Unable to resolve this dispute. Please try again.',
+            defaultSuccessMessage: 'Dispute resolved successfully.',
+            elements: elements,
+            documentRef: documentRef,
+        });
     }
 
     return {
@@ -487,6 +589,7 @@
         resetManualTopupForm: resetManualTopupForm,
         showFinanceToast: showFinanceToast,
         copyTextToClipboard: copyTextToClipboard,
+        formatDisputeCountdown: formatDisputeCountdown,
         initTeacherFinance: initTeacherFinance,
     };
 }));

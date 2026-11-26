@@ -3,6 +3,7 @@ from datetime import timezone as dt_timezone
 from urllib.parse import urlparse
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.mail import EmailMultiAlternatives, send_mail
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -799,3 +800,91 @@ def send_dispute_warning_teacher_email(
         booking.id,
     )
     return True
+
+
+def send_dispute_resolved_emails(booking, *, resolution: str) -> int:
+    """Send deduplicated dispute resolution notification emails to both student and teacher."""
+    from .models import Booking
+
+    site_url = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+    amount_display = f"${booking.held_amount:.2f}"
+    is_student_favor = resolution == Booking.DisputeResolution.STUDENT_FAVOR
+
+    if is_student_favor:
+        outcome_label = "Resolved in Student Favor"
+        student_detail = (
+            f"The held amount of {amount_display} has been released back to your "
+            f"available wallet balance."
+        )
+        teacher_detail = (
+            f"You resolved the dispute in the student's favor. The held amount of "
+            f"{amount_display} has been released back to {booking.student_display_name}'s "
+            f"available wallet balance."
+        )
+    else:
+        outcome_label = "Resolved in Teacher Favor"
+        student_detail = (
+            f"The dispute was resolved in the teacher's favor. The held amount of "
+            f"{amount_display} has been settled for the completed lesson."
+        )
+        teacher_detail = (
+            f"You resolved the dispute in your favor. The held amount of "
+            f"{amount_display} has been settled as completed lesson revenue."
+        )
+
+    recipients = [
+        (
+            "student",
+            (getattr(booking.student, "email", "") or "").strip(),
+            booking.student_display_name,
+            (
+                f"Your dispute for Booking #{booking.id} with "
+                f"{booking.teacher_display_name} has been resolved ({outcome_label})."
+            ),
+            student_detail,
+            f"View your dashboard: {site_url}{reverse('booking:student_dashboard')}",
+        ),
+        (
+            "teacher",
+            (
+                getattr(booking.teacher.user, "email", "")
+                or booking.teacher.contact_email
+                or ""
+            ).strip(),
+            booking.teacher_display_name,
+            (
+                f"The dispute for Booking #{booking.id} with "
+                f"{booking.student_display_name} has been marked as {outcome_label}."
+            ),
+            teacher_detail,
+            f"View Finance dashboard: {site_url}{reverse('payments:teacher_finance')}",
+        ),
+    ]
+
+    subject = f"Dispute Resolved ({outcome_label}) – Booking #{booking.id}"
+    sent_count = 0
+    for role, email_addr, display_name, intro, detail, cta in recipients:
+        if not email_addr:
+            continue
+        dedup_key = f"dispute_resolved_email:{booking.id}:{resolution}:{role}"
+        if not cache.add(dedup_key, True, timeout=86400):
+            continue
+        try:
+            send_mail(
+                subject=subject,
+                message=f"Hello {display_name},\n\n{intro}\n\n{detail}\n\n{cta}\n",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email_addr],
+                fail_silently=False,
+            )
+            sent_count += 1
+        except Exception:
+            cache.delete(dedup_key)
+            logger.exception(
+                "Failed to send dispute resolved email to %s (%s) for booking #%s.",
+                role,
+                email_addr,
+                booking.id,
+            )
+
+    return sent_count

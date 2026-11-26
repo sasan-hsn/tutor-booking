@@ -41,6 +41,10 @@
         <span class="lesson-card-teacher">{{ booking.teacher_display_name }}</span>
         {% if booking.is_awaiting_resolution %}
         <span class="badge-awaiting-resolution">Awaiting Resolution</span>
+        {% elif booking.status == 'disputing' %}
+        <span class="badge-dispute-open">Dispute Open</span>
+        {% elif booking.status == 'resolved' %}
+        <span class="badge-dispute-resolved">Dispute Resolved</span>
         {% elif booking.review %}
         <span class="review-stars">
             {% for i in "12345" %}

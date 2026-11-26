@@ -13,12 +13,18 @@ from django.utils import timezone
 
 from accounts.models import Tenant, User
 from booking.models import Booking, RegularAvailability
-from booking.services import create_booking_with_hold, open_dispute
+from booking.services import (
+    DisputeConflictError,
+    create_booking_with_hold,
+    open_dispute,
+    resolve_dispute,
+)
 from booking.tasks import (
     auto_complete_lessons_task,
     dispute_warning_task,
     expire_disputes_task,
 )
+from notifications.models import Notification
 from wallet.models import LedgerEntry
 from wallet.services import credit_wallet, get_or_create_wallet
 
@@ -271,13 +277,17 @@ class OpenDisputeViewTests(DisputeLifecycleBaseTestCase):
         self.assertContains(detail_resp, 'id="openDisputeBtn"')
         self.assertContains(detail_resp, f'data-dispute-url="{dispute_url}"')
 
-        resp = self.student_client.post(dispute_url)
+        resp = self.student_client.post(
+            dispute_url,
+            {"reason": "Teacher did not join the video call."},
+        )
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["success"])
 
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.DISPUTING)
         self.assertIsNotNone(booking.dispute_opened_at)
+        self.assertEqual(booking.dispute_reason, "Teacher did not join the video call.")
         self.assertEqual(booking.payment_status, Booking.PaymentStatus.RESERVED)
 
         # Modal now shows disputing notice instead of openDisputeBtn
@@ -303,7 +313,8 @@ class OpenDisputeViewTests(DisputeLifecycleBaseTestCase):
         self.assertNotContains(detail_resp, 'id="openDisputeBtn"')
 
         resp = self.student_client.post(
-            reverse("booking:open_dispute", kwargs={"booking_id": booking.id})
+            reverse("booking:open_dispute", kwargs={"booking_id": booking.id}),
+            {"reason": "Audio cut out completely."},
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Lesson completion is final", resp.json()["error"])
@@ -314,7 +325,8 @@ class OpenDisputeViewTests(DisputeLifecycleBaseTestCase):
             end_at=timezone.now() + timedelta(hours=2),
         )
         resp_early = self.student_client.post(
-            reverse("booking:open_dispute", kwargs={"booking_id": future_booking.id})
+            reverse("booking:open_dispute", kwargs={"booking_id": future_booking.id}),
+            {"reason": "Too early"},
         )
         self.assertEqual(resp_early.status_code, 400)
 
@@ -331,9 +343,27 @@ class OpenDisputeViewTests(DisputeLifecycleBaseTestCase):
         self.assertNotContains(detail_expired, 'id="openDisputeBtn"')
 
         resp_late = self.student_client.post(
-            reverse("booking:open_dispute", kwargs={"booking_id": expired_booking.id})
+            reverse("booking:open_dispute", kwargs={"booking_id": expired_booking.id}),
+            {"reason": "Too late"},
         )
         self.assertEqual(resp_late.status_code, 400)
+
+    def test_open_dispute_requires_non_empty_reason_in_view_and_modal(self):
+        booking = self._create_booking(
+            status=Booking.Status.CONFIRMED,
+            end_at=timezone.now() - timedelta(hours=2),
+        )
+        detail_resp = self.student_client.get(
+            reverse("booking:lesson_detail_student", kwargs={"booking_id": booking.id})
+        )
+        self.assertContains(detail_resp, 'id="disputeReasonInput"')
+
+        dispute_url = reverse("booking:open_dispute", kwargs={"booking_id": booking.id})
+        resp = self.student_client.post(dispute_url, {"reason": "   "})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("reason", resp.json()["error"].lower())
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
 
     def test_dispute_endpoint_access_control(self):
         booking = self._create_booking(
@@ -344,6 +374,151 @@ class OpenDisputeViewTests(DisputeLifecycleBaseTestCase):
 
         self.assertEqual(self.teacher_client.post(dispute_url).status_code, 403)
         self.assertEqual(self.other_student_client.post(dispute_url).status_code, 404)
+
+
+class ResolveDisputeServiceTests(DisputeLifecycleBaseTestCase):
+    def test_resolve_dispute_student_favor_releases_hold_sets_resolved_and_notifies(
+        self,
+    ):
+        end_at = timezone.now() - timedelta(hours=3)
+        booking = self._create_booking(status=Booking.Status.CONFIRMED, end_at=end_at)
+        open_dispute(
+            booking=booking,
+            student=self.student_user,
+            reason="Connection dropped 5 minutes into class.",
+            now=end_at + timedelta(hours=1),
+        )
+        mail.outbox.clear()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            resolved = resolve_dispute(
+                tenant=self.tenant,
+                booking=booking,
+                teacher_user=self.teacher_user,
+                resolution=Booking.DisputeResolution.STUDENT_FAVOR,
+            )
+
+        resolved.refresh_from_db()
+        self.assertEqual(resolved.status, Booking.Status.RESOLVED)
+        self.assertEqual(resolved.payment_status, Booking.PaymentStatus.RELEASED)
+        self.assertEqual(
+            resolved.settlement_reason, Booking.SettlementReason.DISPUTE_STUDENT_FAVOR
+        )
+        self.assertEqual(
+            resolved.dispute_resolution, Booking.DisputeResolution.STUDENT_FAVOR
+        )
+        self.assertEqual(resolved.dispute_resolved_by, self.teacher_user)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("100.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("100.00"))
+
+        settle_entry = LedgerEntry.objects.get(
+            idempotency_key=f"tenant:{self.tenant.id}:booking:{booking.id}:settle"
+        )
+        self.assertEqual(settle_entry.entry_type, LedgerEntry.EntryType.RELEASE)
+
+        self.assertEqual(len(mail.outbox), 2)
+        recipients = {tuple(m.to) for m in mail.outbox}
+        self.assertEqual(
+            recipients,
+            {(self.student_user.email,), (self.teacher_user.email,)},
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                event_type=Notification.EventType.DISPUTE_RESOLVED,
+                metadata__booking_id=booking.id,
+            ).count(),
+            2,
+        )
+
+    def test_resolve_dispute_teacher_favor_consumes_hold_sets_completed_and_notifies(
+        self,
+    ):
+        end_at = timezone.now() - timedelta(hours=3)
+        booking = self._create_booking(status=Booking.Status.CONFIRMED, end_at=end_at)
+        open_dispute(
+            booking=booking,
+            student=self.student_user,
+            reason="Disagreed on lesson duration.",
+            now=end_at + timedelta(hours=1),
+        )
+        mail.outbox.clear()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            resolved = resolve_dispute(
+                tenant=self.tenant,
+                booking=booking,
+                teacher_user=self.teacher_user,
+                resolution=Booking.DisputeResolution.TEACHER_FAVOR,
+            )
+
+        resolved.refresh_from_db()
+        self.assertEqual(resolved.status, Booking.Status.COMPLETED)
+        self.assertEqual(resolved.payment_status, Booking.PaymentStatus.CONSUMED)
+        self.assertEqual(
+            resolved.settlement_reason, Booking.SettlementReason.DISPUTE_TEACHER_FAVOR
+        )
+        self.assertEqual(
+            resolved.dispute_resolution, Booking.DisputeResolution.TEACHER_FAVOR
+        )
+        self.assertEqual(resolved.dispute_resolved_by, self.teacher_user)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.settled_balance, Decimal("75.00"))
+        self.assertEqual(self.wallet.reserved_balance, Decimal("0.00"))
+        self.assertEqual(self.wallet.available_balance, Decimal("75.00"))
+
+        settle_entry = LedgerEntry.objects.get(
+            idempotency_key=f"tenant:{self.tenant.id}:booking:{booking.id}:settle"
+        )
+        self.assertEqual(settle_entry.entry_type, LedgerEntry.EntryType.CONSUME)
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(
+            Notification.objects.filter(
+                event_type=Notification.EventType.DISPUTE_RESOLVED,
+                metadata__booking_id=booking.id,
+            ).count(),
+            2,
+        )
+
+    def test_resolve_dispute_validation_and_conflict_guards(self):
+        end_at = timezone.now() - timedelta(hours=2)
+        confirmed_booking = self._create_booking(
+            status=Booking.Status.CONFIRMED, end_at=end_at
+        )
+
+        with self.assertRaises(ValidationError):
+            resolve_dispute(
+                tenant=self.tenant,
+                booking=confirmed_booking,
+                teacher_user=self.teacher_user,
+                resolution="EXPIRED_AUTO_STUDENT",
+            )
+
+        with self.assertRaises(DisputeConflictError):
+            resolve_dispute(
+                tenant=self.tenant,
+                booking=confirmed_booking,
+                teacher_user=self.teacher_user,
+                resolution=Booking.DisputeResolution.STUDENT_FAVOR,
+            )
+
+        open_dispute(
+            booking=confirmed_booking,
+            student=self.student_user,
+            reason="Test issue",
+            now=end_at + timedelta(minutes=30),
+        )
+        with self.assertRaises(ValidationError):
+            resolve_dispute(
+                tenant=self.tenant,
+                booking=confirmed_booking,
+                teacher_user=self.student_user,
+                resolution=Booking.DisputeResolution.STUDENT_FAVOR,
+            )
 
 
 class AutoCompleteLessonsTaskTests(DisputeLifecycleBaseTestCase):

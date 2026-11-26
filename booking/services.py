@@ -2,6 +2,7 @@ import calendar
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -11,12 +12,13 @@ from django.utils import timezone
 
 from accounts.models import Tenant
 from portfolio.models import TeacherProfile
-from wallet.exceptions import CurrencyMismatchError
+from wallet.exceptions import CurrencyMismatchError, TenantMismatchError
 from wallet.models import Wallet
 from wallet.services import get_or_create_wallet, reserve_funds, settle_booking
 
+from . import emails as booking_emails
 from .models import Booking, RegularAvailability, WeeklyOverride
-from .notifications import notify_booking_expired
+from .notifications import notify_booking_expired, notify_dispute_resolved
 
 INSTANT_TUTORING_BUFFER = timedelta(hours=1)
 
@@ -25,6 +27,12 @@ class SlotUnavailableError(Exception):
     """Raised when a requested booking slot is no longer available."""
 
     pass
+
+
+class DisputeConflictError(Exception):
+    """Raised when resolving a dispute conflicts with the booking's current status (HTTP 409)."""
+
+    status_code: int = 409
 
 
 def expire_stale_bookings(teacher=None, student=None, now=None):
@@ -604,7 +612,7 @@ def can_open_dispute(booking: Booking, *, now=None) -> bool:
     )
 
 
-def open_dispute(*, booking: Booking, student, now=None) -> Booking:
+def open_dispute(*, booking: Booking, student, reason: str = "", now=None) -> Booking:
     """
     Student-only dispute initiation under TeacherProfile -> Booking row locks.
     Transitions CONFIRMED booking within [end_at, end_at + DISPUTE_WINDOW_HOURS] to DISPUTING
@@ -614,6 +622,7 @@ def open_dispute(*, booking: Booking, student, now=None) -> Booking:
         now = timezone.now()
 
     window_hours = getattr(settings, "DISPUTE_WINDOW_HOURS", 48)
+    clean_reason = (reason or "").strip()
 
     with transaction.atomic():
         TeacherProfile.objects.select_for_update().get(pk=booking.teacher_id)
@@ -641,5 +650,114 @@ def open_dispute(*, booking: Booking, student, now=None) -> Booking:
 
         locked_booking.status = Booking.Status.DISPUTING
         locked_booking.dispute_opened_at = now
-        locked_booking.save(update_fields=["status", "dispute_opened_at", "updated_at"])
+        locked_booking.dispute_reason = clean_reason
+        locked_booking.save(
+            update_fields=[
+                "status",
+                "dispute_opened_at",
+                "dispute_reason",
+                "updated_at",
+            ]
+        )
+        return locked_booking
+
+
+class _DisputeResolutionOutcome(NamedTuple):
+    action: str
+    settlement_reason: str
+    target_status: str
+
+
+_DISPUTE_RESOLUTION_MAP = {
+    Booking.DisputeResolution.STUDENT_FAVOR: _DisputeResolutionOutcome(
+        action="release",
+        settlement_reason=Booking.SettlementReason.DISPUTE_STUDENT_FAVOR,
+        target_status=Booking.Status.RESOLVED,
+    ),
+    Booking.DisputeResolution.TEACHER_FAVOR: _DisputeResolutionOutcome(
+        action="consume",
+        settlement_reason=Booking.SettlementReason.DISPUTE_TEACHER_FAVOR,
+        target_status=Booking.Status.COMPLETED,
+    ),
+}
+
+
+def _dispatch_dispute_resolved_notifications(booking_id: int, resolution: str) -> None:
+    booking = Booking.objects.select_related("student", "teacher__user").get(
+        pk=booking_id
+    )
+    notify_dispute_resolved(booking, resolution=resolution)
+    booking_emails.send_dispute_resolved_emails(booking, resolution=resolution)
+
+
+def resolve_dispute(
+    *,
+    tenant: Tenant,
+    booking: Booking,
+    teacher_user,
+    resolution: str,
+) -> Booking:
+    """
+    Resolve an active DISPUTING booking under TeacherProfile -> Booking -> Wallet locks.
+    Executes settle_booking for STUDENT_FAVOR (release -> RESOLVED) or TEACHER_FAVOR
+    (consume -> COMPLETED), records dispute_resolved_by/dispute_resolution, and dispatches
+    email + in-app notifications to both parties on commit.
+    """
+    if resolution not in _DISPUTE_RESOLUTION_MAP:
+        raise ValidationError("Resolution must be 'STUDENT_FAVOR' or 'TEACHER_FAVOR'.")
+
+    outcome = _DISPUTE_RESOLUTION_MAP[resolution]
+
+    with transaction.atomic():
+        locked_teacher = TeacherProfile.objects.select_for_update().get(
+            pk=booking.teacher_id
+        )
+        if tenant.teacher_profile_id != locked_teacher.pk:
+            raise TenantMismatchError(
+                f"Booking {booking.pk} does not belong to tenant {tenant.pk}."
+            )
+        if teacher_user is None or locked_teacher.user_id != getattr(
+            teacher_user, "id", None
+        ):
+            raise ValidationError(
+                "Only the booking's teacher can resolve this dispute."
+            )
+
+        locked_booking = Booking.objects.select_for_update().get(pk=booking.pk)
+        if locked_booking.status != Booking.Status.DISPUTING:
+            raise DisputeConflictError(
+                f"Cannot resolve dispute: booking status is '{locked_booking.status}', expected 'disputing'."
+            )
+
+        settle_booking(
+            tenant=tenant,
+            booking=locked_booking,
+            action=outcome.action,
+            actor=teacher_user,
+            reason=outcome.settlement_reason,
+        )
+
+        locked_booking.status = outcome.target_status
+        locked_booking.dispute_resolved_by = teacher_user
+        locked_booking.dispute_resolution = resolution
+        locked_booking.save(
+            update_fields=[
+                "status",
+                "dispute_resolved_by",
+                "dispute_resolution",
+                "updated_at",
+            ]
+        )
+
+        booking_id = locked_booking.id
+        transaction.on_commit(
+            lambda: _dispatch_dispute_resolved_notifications(booking_id, resolution)
+        )
+
+        booking.status = locked_booking.status
+        booking.payment_status = locked_booking.payment_status
+        booking.settlement_reason = locked_booking.settlement_reason
+        booking.dispute_resolved_by = locked_booking.dispute_resolved_by
+        booking.dispute_resolution = locked_booking.dispute_resolution
+        booking.updated_at = locked_booking.updated_at
         return locked_booking
