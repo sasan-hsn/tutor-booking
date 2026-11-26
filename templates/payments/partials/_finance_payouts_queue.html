@@ -56,31 +56,31 @@
                         </span>
                     </td>
                     <td>
-                        <div class="d-flex flex-wrap gap-2">
+                        <div class="finance-payout-actions">
                             {% if payout.status == "REQUESTED" %}
                             <button type="button"
-                                class="btn btn-sm btn-outline-primary btn-mark-payout-processing"
+                                class="btn finance-payout-action-btn finance-payout-btn-process btn-mark-payout-processing"
                                 data-action-url="{% url 'payments:payout_mark_processing' payout.id %}"
                                 data-payout-id="{{ payout.id }}">
-                                <i class="bi bi-hourglass-split me-1"></i>Mark Processing
+                                <i class="bi bi-hourglass-split"></i>Mark Processing
                             </button>
                             {% elif payout.status == "PROCESSING" %}
                             <button type="button"
-                                class="btn btn-sm btn-primary btn-complete-payout"
+                                class="btn finance-payout-action-btn finance-payout-btn-complete btn-complete-payout"
                                 data-action-url="{% url 'payments:payout_complete' payout.id %}"
                                 data-payout-id="{{ payout.id }}"
                                 data-student-name="{{ payout.student_display_name }}"
                                 data-amount="{{ payout.amount_net|floatformat:2 }}">
-                                <i class="bi bi-check2-circle me-1"></i>Complete Payout
+                                <i class="bi bi-check2-circle"></i>Complete Payout
                             </button>
                             {% endif %}
                             <button type="button"
-                                class="btn btn-sm btn-outline-danger btn-reject-payout"
+                                class="btn finance-payout-action-btn finance-payout-btn-reject btn-reject-payout"
                                 data-action-url="{% url 'payments:payout_reject' payout.id %}"
                                 data-payout-id="{{ payout.id }}"
                                 data-student-name="{{ payout.student_display_name }}"
                                 data-amount="{{ payout.amount_gross|floatformat:2 }}">
-                                <i class="bi bi-x-circle me-1"></i>Reject Payout
+                                <i class="bi bi-x-circle"></i>Reject Payout
                             </button>
                         </div>
                     </td>
