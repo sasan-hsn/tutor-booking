@@ -32,4 +32,9 @@ urlpatterns = [
         views.export_ledger_csv,
         name="export_ledger_csv",
     ),
+    path(
+        "receiving-address/",
+        views.receiving_address_update,
+        name="receiving_address_update",
+    ),
 ]

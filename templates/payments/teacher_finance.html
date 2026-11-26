@@ -45,6 +45,55 @@
     </div>
 </section>
 
+<section class="mb-4" aria-label="Receiving Address &amp; Payout Destination">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="mb-1">Receiving Address &amp; Payout Destination</h4>
+            <p class="text-muted small mb-0">
+                Configure the BNB Smart Chain (BEP-20) USDT wallet address where student deposits are directed.
+            </p>
+        </div>
+        <span class="badge bg-secondary-subtle text-dark">BNB Smart Chain (BEP-20)</span>
+    </div>
+
+    <div class="finance-address-card">
+        <div id="financeReceivingAddressContainer">
+            {% include "payments/partials/_finance_receiving_address.html" %}
+        </div>
+
+        <form id="receivingAddressForm" action="{% url 'payments:receiving_address_update' %}" method="post" class="pt-3 border-top">
+            {% csrf_token %}
+            <div class="alert alert-danger d-none" id="receivingAddressErrorAlert" role="alert"></div>
+
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-6">
+                    <label for="{{ receiving_address_form.address.id_for_label }}" class="form-label fw-semibold">
+                        {{ receiving_address_form.address.label }}
+                    </label>
+                    {{ receiving_address_form.address }}
+                    <div class="form-text">
+                        Must be a valid 42-character BEP-20 address with a matching EIP-55 checksum.
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <label for="{{ receiving_address_form.current_password.id_for_label }}" class="form-label fw-semibold">
+                        {{ receiving_address_form.current_password.label }}
+                    </label>
+                    {{ receiving_address_form.current_password }}
+                    <div class="form-text">
+                        Password re-authentication is required. Changes after setup take 24 hours to activate.
+                    </div>
+                </div>
+                <div class="col-lg-2 d-grid">
+                    <button type="submit" class="btn btn-primary" id="receivingAddressSubmitBtn">
+                        Save Address
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</section>
+
 <section aria-label="Recent Ledger Entries">
     <div class="d-flex align-items-center justify-content-between mb-3">
         <h4 class="mb-0">Recent Ledger Entries</h4>

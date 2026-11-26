@@ -17,6 +17,7 @@ from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from payments.eip55 import validate_bep20_address
 from payments.exceptions import (
     PayoutConflictError,
     PayoutInsufficientBalanceError,
@@ -1031,3 +1032,163 @@ def build_tenant_ledger_csv(tenant: "Tenant", viewer_tz: ZoneInfo) -> str:
         writer.writerow([sanitize_csv_cell(cell) for cell in row])
 
     return buffer.getvalue()
+
+
+RECEIVING_ADDRESS_COOLDOWN_HOURS = 24
+DEFAULT_RECEIVING_ADDRESS_PROVIDER = "crypto_usdt"
+
+
+def lock_tenant_payment_addresses(
+    *,
+    tenant_id: int,
+    provider: str = DEFAULT_RECEIVING_ADDRESS_PROVIDER,
+) -> list[PaymentAddress]:
+    """
+    Acquire consistent row locks in Tenant -> PaymentAddress(id) order inside
+    an active transaction.atomic() block.
+    """
+    from accounts.models import Tenant as TenantModel
+
+    TenantModel.objects.select_for_update().get(pk=tenant_id)
+    return list(
+        PaymentAddress.objects.select_for_update()
+        .filter(tenant_id=tenant_id, provider=provider)
+        .order_by("id")
+    )
+
+
+def update_receiving_address(
+    *,
+    tenant: "Tenant",
+    user: "User",
+    raw_address: str,
+    current_password: str,
+    provider: str = DEFAULT_RECEIVING_ADDRESS_PROVIDER,
+) -> PaymentAddress:
+    """
+    Configure or update a tenant's BEP-20 USDT receiving address.
+
+    Enforces:
+    1. Password re-authentication (`PermissionDenied` on mismatch or unauthorized user).
+    2. Strict EIP-55 format and checksum validation (normalizes all-lower/upper to EIP-55).
+    3. Global uniqueness across tenants and rejection of duplicate active/pending addresses.
+    4. First-address rule: zero existing addresses for (tenant, provider) -> immediate ACTIVE.
+    5. Subsequent updates: single PENDING_ACTIVATION invariant (retires any superseded pending
+       address), reactivates retired rows with a fresh 24h cooldown, and dispatches a security
+       alert email asynchronously via transaction.on_commit.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        raise PermissionDenied("Authentication is required.")
+
+    teacher_profile = getattr(tenant, "teacher_profile", None)
+    if teacher_profile is None or user.id != teacher_profile.user_id:
+        raise PermissionDenied("Only the storefront teacher can update this address.")
+
+    if not current_password or not user.check_password(current_password):
+        raise PermissionDenied(
+            "Incorrect password. Please enter your current password to confirm this change."
+        )
+
+    canonical_address = validate_bep20_address(raw_address)
+    cooldown_hours = getattr(
+        settings, "RECEIVING_ADDRESS_COOLDOWN_HOURS", RECEIVING_ADDRESS_COOLDOWN_HOURS
+    )
+
+    with transaction.atomic():
+        existing_rows = lock_tenant_payment_addresses(
+            tenant_id=tenant.pk,
+            provider=provider,
+        )
+
+        if (
+            PaymentAddress.objects.filter(provider=provider, address=canonical_address)
+            .exclude(tenant=tenant)
+            .exists()
+        ):
+            raise ValidationError(
+                "This wallet address is already registered to another account."
+            )
+
+        active_row = next(
+            (r for r in existing_rows if r.status == PaymentAddress.Status.ACTIVE),
+            None,
+        )
+        if active_row is not None and active_row.address == canonical_address:
+            raise ValidationError(
+                "This address is already your active receiving address."
+            )
+
+        pending_rows = [
+            r
+            for r in existing_rows
+            if r.status == PaymentAddress.Status.PENDING_ACTIVATION
+        ]
+        if any(r.address == canonical_address for r in pending_rows):
+            raise ValidationError(
+                "This address is already pending activation under the 24-hour cooldown."
+            )
+
+        now = timezone.now()
+
+        # First-address provisioning rule: immediate activation with zero delay.
+        if not existing_rows:
+            address_obj = PaymentAddress.objects.create(
+                tenant=tenant,
+                provider=provider,
+                address=canonical_address,
+                status=PaymentAddress.Status.ACTIVE,
+                activates_at=now,
+            )
+            logger.info(
+                "Initial receiving address activated immediately: tenant_id=%s address_id=%s",
+                tenant.id,
+                address_obj.id,
+            )
+            return address_obj
+
+        # Single pending change invariant: retire any prior pending change before staging the new one.
+        for superseded in pending_rows:
+            superseded.status = PaymentAddress.Status.RETIRED
+            superseded.retired_at = now
+            superseded.save(update_fields=["status", "retired_at"])
+
+        activates_at = now + timedelta(hours=cooldown_hours)
+        retired_match = next(
+            (
+                r
+                for r in existing_rows
+                if r.status == PaymentAddress.Status.RETIRED
+                and r.address == canonical_address
+            ),
+            None,
+        )
+        if retired_match is not None:
+            retired_match.status = PaymentAddress.Status.PENDING_ACTIVATION
+            retired_match.activates_at = activates_at
+            retired_match.retired_at = None
+            retired_match.save(update_fields=["status", "activates_at", "retired_at"])
+            target = retired_match
+        else:
+            target = PaymentAddress.objects.create(
+                tenant=tenant,
+                provider=provider,
+                address=canonical_address,
+                status=PaymentAddress.Status.PENDING_ACTIVATION,
+                activates_at=activates_at,
+            )
+
+        import payments.tasks as payment_tasks
+
+        transaction.on_commit(
+            lambda addr_id=target.id: payment_tasks.safe_send_receiving_address_change_alert(
+                addr_id
+            )
+        )
+
+        logger.info(
+            "Scheduled receiving address change with %sh cooldown: tenant_id=%s address_id=%s",
+            cooldown_hours,
+            tenant.id,
+            target.id,
+        )
+        return target

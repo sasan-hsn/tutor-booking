@@ -1,0 +1,61 @@
+{% if pending_receiving_address %}
+<div class="alert alert-warning finance-address-banner mb-3" id="pendingReceivingAddressBanner" role="alert">
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+        <div>
+            <div class="fw-semibold d-flex align-items-center gap-2 mb-1">
+                <i class="bi bi-shield-exclamation"></i>
+                Pending Address Change (24-Hour Security Cooldown)
+            </div>
+            <div class="small mb-1">
+                New address:
+                <code class="finance-address-code">{{ pending_receiving_address.address }}</code>
+                <button type="button"
+                    class="btn btn-link btn-sm p-0 ms-1 text-muted finance-copy-btn"
+                    data-copy-text="{{ pending_receiving_address.address }}"
+                    title="Copy pending address"
+                    aria-label="Copy pending address">
+                    <i class="bi bi-clipboard"></i>
+                </button>
+            </div>
+            <div class="small text-muted">
+                Scheduled activation: {{ pending_receiving_address.local_activates_at|date:"M d, Y H:i" }}.
+                Your current active address remains in use until this window expires.
+            </div>
+        </div>
+        <span class="badge finance-address-countdown"
+            data-address-activates-at="{{ pending_receiving_address.activates_at_iso }}">
+            {{ pending_receiving_address.activation_countdown_label }}
+        </span>
+    </div>
+</div>
+{% endif %}
+
+{% if active_receiving_address %}
+<div class="finance-address-active-box mb-3" id="activeReceivingAddressCard">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-success-subtle text-success-emphasis">ACTIVE</span>
+            <span class="small fw-semibold text-muted">BNB Smart Chain (BEP-20)</span>
+        </div>
+        <span class="small text-muted">
+            Activated: {{ active_receiving_address.local_activates_at|date:"M d, Y H:i" }}
+        </span>
+    </div>
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <code class="finance-address-code fs-6" id="activeReceivingAddressValue">{{ active_receiving_address.address }}</code>
+        <button type="button"
+            class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 finance-copy-btn"
+            data-copy-text="{{ active_receiving_address.address }}"
+            aria-label="Copy active receiving address">
+            <i class="bi bi-clipboard"></i> Copy
+        </button>
+    </div>
+</div>
+{% else %}
+<div class="empty-state mb-3" id="activeReceivingAddressEmptyState">
+    <p class="mb-1 fw-medium">No receiving address configured yet.</p>
+    <p class="small text-muted mb-0">
+        Network: BNB Smart Chain (BEP-20). Your first address activates immediately with zero cooldown.
+    </p>
+</div>
+{% endif %}

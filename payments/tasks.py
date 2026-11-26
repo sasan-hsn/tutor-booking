@@ -1,15 +1,80 @@
 import logging
+import smtplib
 from datetime import timedelta
 
+import requests
+from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
-from payments.models import Order, Payout
+from payments import emails
+from payments.models import Order, PaymentAddress, Payout
 
 logger = logging.getLogger(__name__)
+
+TRANSIENT_EMAIL_ERRORS = (
+    smtplib.SMTPException,
+    ConnectionError,
+    TimeoutError,
+    OSError,
+    requests.exceptions.RequestException,
+    AnymailAPIError,
+)
+
+
+def is_transient_email_error(exc: Exception) -> bool:
+    """Determine whether an email error is temporary and safe to retry."""
+    if isinstance(exc, AnymailAPIError):
+        return getattr(exc, "status_code", None) in (429, 500, 502, 503, 504)
+    if isinstance(exc, TRANSIENT_EMAIL_ERRORS):
+        return True
+    return False
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_receiving_address_change_alert_task",
+)
+def send_receiving_address_change_alert_task(self, payment_address_id: int) -> bool:
+    """Async task to dispatch security alert email when a receiving address change is scheduled."""
+    try:
+        payment_address = PaymentAddress.objects.select_related(
+            "tenant__teacher_profile__user"
+        ).get(pk=payment_address_id)
+    except PaymentAddress.DoesNotExist:
+        logger.warning(
+            "PaymentAddress #%s not found; skipping security alert email.",
+            payment_address_id,
+        )
+        return False
+
+    try:
+        return emails.send_receiving_address_change_alert_email(payment_address)
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
+        logger.exception(
+            "Transient error sending receiving address security alert for #%s. Retrying...",
+            payment_address_id,
+        )
+        raise self.retry(exc=exc)
+
+
+def safe_send_receiving_address_change_alert(payment_address_id: int) -> None:
+    """Safely enqueue receiving address security alert email without blocking HTTP responses."""
+    try:
+        send_receiving_address_change_alert_task.delay(payment_address_id)
+    except Exception:
+        logger.exception(
+            "Failed to enqueue receiving address security alert task for #%s",
+            payment_address_id,
+        )
 
 
 @shared_task(name="payments.tasks.expire_payout_tokens_task")
@@ -134,3 +199,72 @@ def payout_reminder_task() -> int:
         reminded_count,
     )
     return reminded_count
+
+
+@shared_task(name="payments.tasks.activate_pending_tenant_accounts_task")
+def activate_pending_tenant_accounts_task() -> int:
+    """
+    Hourly Celery Beat periodic task that promotes matured PENDING_ACTIVATION
+    receiving addresses (activates_at <= now()) to ACTIVE.
+    Retires any prior ACTIVE address for that (tenant, provider) *before*
+    promoting the pending address inside transaction.atomic() with row locks
+    to satisfy the unique_active_tenant_provider_address constraint.
+    """
+    from payments.services import lock_tenant_payment_addresses
+
+    now = timezone.now()
+    logger.info("Starting hourly pending receiving address activation sweep.")
+
+    candidates = list(
+        PaymentAddress.objects.filter(
+            status=PaymentAddress.Status.PENDING_ACTIVATION,
+            activates_at__lte=now,
+        )
+        .values_list("id", "tenant_id", "provider")
+        .order_by("id")
+    )
+
+    activated_count = 0
+    for pending_id, tenant_id, provider in candidates:
+        with transaction.atomic():
+            scoped_addresses = lock_tenant_payment_addresses(
+                tenant_id=tenant_id,
+                provider=provider,
+            )
+            pending_addr = next(
+                (addr for addr in scoped_addresses if addr.id == pending_id),
+                None,
+            )
+            if (
+                pending_addr is None
+                or pending_addr.status != PaymentAddress.Status.PENDING_ACTIVATION
+                or (pending_addr.activates_at and pending_addr.activates_at > now)
+            ):
+                continue
+
+            # Retire any existing ACTIVE address BEFORE promoting the pending one.
+            for active_addr in scoped_addresses:
+                if (
+                    active_addr.id != pending_addr.id
+                    and active_addr.status == PaymentAddress.Status.ACTIVE
+                ):
+                    active_addr.status = PaymentAddress.Status.RETIRED
+                    active_addr.retired_at = now
+                    active_addr.save(update_fields=["status", "retired_at"])
+
+            pending_addr.status = PaymentAddress.Status.ACTIVE
+            pending_addr.save(update_fields=["status"])
+            activated_count += 1
+
+            logger.info(
+                "Activated receiving address: address_id=%s tenant_id=%s provider=%s",
+                pending_addr.id,
+                tenant_id,
+                provider,
+            )
+
+    logger.info(
+        "Pending receiving address activation sweep completed: %d addresses activated.",
+        activated_count,
+    )
+    return activated_count

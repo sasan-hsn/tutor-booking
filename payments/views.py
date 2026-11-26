@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, Sum
 from django.http import HttpResponse, JsonResponse
@@ -23,11 +23,13 @@ from payments.forms import (
     DUPLICATE_REFERENCE_ERROR,
     CompletePayoutForm,
     ManualTopUpForm,
+    ReceivingAddressForm,
     RejectPayoutForm,
     ResolveDisputeForm,
 )
-from payments.models import Order, Payment, Payout
+from payments.models import Order, Payment, PaymentAddress, Payout
 from payments.services import (
+    DEFAULT_RECEIVING_ADDRESS_PROVIDER,
     DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
     attach_ledger_display_fields,
     build_manual_external_id,
@@ -39,6 +41,7 @@ from payments.services import (
     release_payout,
     settle_payout,
     to_viewer_local,
+    update_receiving_address,
 )
 from wallet.models import LedgerEntry, Wallet
 
@@ -94,12 +97,14 @@ def _attach_payout_display_fields(
         payout.rejection_reason = reasons_by_payout_ref.get(f"payout_{payout.id}", "")
 
 
-def _format_dispute_countdown(deadline_at, now) -> str:
+def _format_remaining_countdown(
+    deadline_at, now, *, expired_label: str = "Auto-expiring"
+) -> str:
     if deadline_at is None:
         return "—"
     remaining_seconds = int((deadline_at - now).total_seconds())
     if remaining_seconds <= 0:
-        return "Auto-expiring"
+        return expired_label
     days, rem = divmod(remaining_seconds, 86400)
     hours, rem = divmod(rem, 3600)
     minutes = rem // 60
@@ -127,7 +132,50 @@ def _attach_dispute_display_fields(
             else None
         )
         booking.dispute_deadline_iso = deadline.isoformat() if deadline else ""
-        booking.dispute_countdown_label = _format_dispute_countdown(deadline, now)
+        booking.dispute_countdown_label = _format_remaining_countdown(deadline, now)
+
+
+def _attach_receiving_address_display_fields(
+    tenant: Tenant, viewer_tz: ZoneInfo
+) -> tuple[PaymentAddress | None, PaymentAddress | None]:
+    now = timezone.now()
+    addresses = list(
+        PaymentAddress.objects.filter(
+            tenant=tenant,
+            provider=DEFAULT_RECEIVING_ADDRESS_PROVIDER,
+            status__in=[
+                PaymentAddress.Status.ACTIVE,
+                PaymentAddress.Status.PENDING_ACTIVATION,
+            ],
+        ).order_by("-created_at", "-id")
+    )
+    active_addr = next(
+        (a for a in addresses if a.status == PaymentAddress.Status.ACTIVE),
+        None,
+    )
+    if active_addr is not None:
+        active_addr.local_activates_at = to_viewer_local(
+            active_addr.activates_at or active_addr.created_at, viewer_tz
+        )
+
+    pending_addr = next(
+        (a for a in addresses if a.status == PaymentAddress.Status.PENDING_ACTIVATION),
+        None,
+    )
+    if pending_addr is not None:
+        pending_addr.local_activates_at = to_viewer_local(
+            pending_addr.activates_at, viewer_tz
+        )
+        pending_addr.activates_at_iso = (
+            pending_addr.activates_at.isoformat() if pending_addr.activates_at else ""
+        )
+        pending_addr.activation_countdown_label = _format_remaining_countdown(
+            pending_addr.activates_at,
+            now,
+            expired_label="Activating soon",
+        )
+
+    return active_addr, pending_addr
 
 
 def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict:
@@ -205,6 +253,10 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
     )
     _attach_dispute_display_fields(disputes_queue, viewer_tz)
 
+    active_receiving_address, pending_receiving_address = (
+        _attach_receiving_address_display_fields(tenant, viewer_tz)
+    )
+
     return {
         "teacher": teacher,
         "tenant": tenant,
@@ -221,6 +273,8 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         "payouts_history": payouts_history,
         "disputes_queue": disputes_queue,
         "disputes_queue_count": len(disputes_queue),
+        "active_receiving_address": active_receiving_address,
+        "pending_receiving_address": pending_receiving_address,
     }
 
 
@@ -243,6 +297,7 @@ def teacher_finance_dashboard(request):
     context["complete_payout_form"] = CompletePayoutForm()
     context["reject_payout_form"] = RejectPayoutForm()
     context["resolve_dispute_form"] = ResolveDisputeForm()
+    context["receiving_address_form"] = ReceivingAddressForm()
     return render(request, "payments/teacher_finance.html", context)
 
 
@@ -595,3 +650,89 @@ def export_ledger_csv(request):
         f'attachment; filename="ledger-export-{local_date}.csv"'
     )
     return response
+
+
+@teacher_required
+@require_POST
+def receiving_address_update(request):
+    teacher = request.user.teacher_profile
+    tenant = _get_tenant_for_teacher(teacher)
+    form = ReceivingAddressForm(request.POST)
+
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": _first_form_error(form),
+                "errors": form.errors,
+            },
+            status=400,
+        )
+
+    cleaned = form.cleaned_data
+    try:
+        address_obj = update_receiving_address(
+            tenant=tenant,
+            user=request.user,
+            raw_address=cleaned["address"],
+            current_password=cleaned["current_password"],
+        )
+    except PermissionDenied as exc:
+        msg = str(exc) or "Incorrect password."
+        return JsonResponse(
+            {
+                "success": False,
+                "error": msg,
+                "errors": {"current_password": [msg]},
+            },
+            status=403,
+        )
+    except ValidationError as exc:
+        msg = _validation_error_message(exc)
+        return JsonResponse(
+            {
+                "success": False,
+                "error": msg,
+                "errors": {"address": [msg]},
+            },
+            status=400,
+        )
+    except IntegrityError:
+        msg = "This wallet address cannot be registered because it conflicts with an existing address."
+        return JsonResponse(
+            {
+                "success": False,
+                "error": msg,
+                "errors": {"address": [msg]},
+            },
+            status=400,
+        )
+
+    viewer_tz = ZoneInfo(request.user.timezone)
+    context = _build_finance_context(tenant, teacher, viewer_tz)
+    if address_obj.status == PaymentAddress.Status.ACTIVE:
+        message = (
+            "Receiving address activated immediately for BNB Smart Chain (BEP-20)."
+        )
+    else:
+        message = (
+            "Receiving address change scheduled. It will activate after the 24-hour "
+            "security cooling-off window."
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": message,
+            "address": address_obj.address,
+            "address_status": address_obj.status,
+            "activates_at_iso": (
+                address_obj.activates_at.isoformat() if address_obj.activates_at else ""
+            ),
+            "receiving_address_html": render_to_string(
+                "payments/partials/_finance_receiving_address.html",
+                context,
+                request=request,
+            ),
+        }
+    )

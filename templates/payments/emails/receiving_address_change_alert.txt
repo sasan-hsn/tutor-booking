@@ -1,0 +1,14 @@
+Hello {{ teacher_name }},
+
+A new BNB Smart Chain (BEP-20) USDT receiving address has been submitted on your Teacher Finance dashboard.
+
+Pending Address: {{ pending_address }}
+Network: {{ network }}
+Scheduled Activation: {{ activates_at_str }} (24-hour security cooling-off window)
+
+Your previous receiving address remains active until the 24-hour cooling-off window completes.
+
+IMPORTANT: If you did not authorize this change, please contact support immediately and secure your account password.
+
+Review your Finance settings: {{ finance_url }}
+Site: {{ site_domain }}

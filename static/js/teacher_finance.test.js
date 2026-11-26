@@ -6,6 +6,7 @@ const {
     prefillManualTopupForm,
     resetManualTopupForm,
     formatDisputeCountdown,
+    formatAddressCountdown,
     initTeacherFinance,
 } = require('./teacher_finance.js');
 
@@ -626,5 +627,96 @@ describe('Teacher Finance JS Controller', () => {
             elements.resolveDisputeErrorAlert.classList.contains('d-none'),
             false
         );
+    });
+
+    test('formatAddressCountdown renders remaining hours/minutes or Activating soon', () => {
+        const now = Date.UTC(2026, 10, 26, 12, 0, 0);
+        const futureIso = new Date(now + (23 * 3600 + 45 * 60) * 1000).toISOString();
+        assert.strictEqual(formatAddressCountdown(futureIso, now), '23h 45m left');
+
+        const pastIso = new Date(now - 60000).toISOString();
+        assert.strictEqual(formatAddressCountdown(pastIso, now), 'Activating soon');
+    });
+
+    test('Receiving Address form submits POST, updates container, clears inputs, and shows toast', async () => {
+        elements.financeReceivingAddressContainer = new MockEl('DIV', 'financeReceivingAddressContainer');
+        elements.receivingAddressForm = new MockEl('FORM', 'receivingAddressForm');
+        elements.receivingAddressForm.action = '/dashboard/finance/receiving-address/';
+        elements.receivingAddressInput = new MockEl('INPUT', 'receivingAddressInput');
+        elements.receivingAddressPassword = new MockEl('INPUT', 'receivingAddressPassword');
+        elements.receivingAddressErrorAlert = new MockEl('DIV', 'receivingAddressErrorAlert');
+        elements.receivingAddressErrorAlert.classList.add('d-none');
+        elements.receivingAddressSubmitBtn = new MockEl('BUTTON', 'receivingAddressSubmitBtn');
+
+        elements.receivingAddressInput.value = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+        elements.receivingAddressPassword.value = 'password123';
+
+        let fetchedUrl = null;
+        global.FormData = function () { return {}; };
+        global.fetch = async (url) => {
+            fetchedUrl = url;
+            return {
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    message: 'Receiving address change scheduled.',
+                    receiving_address_html: '<div id="pendingReceivingAddressBanner">Pending</div>',
+                }),
+            };
+        };
+
+        initTeacherFinance(mockDoc);
+        const submitHandler = elements.receivingAddressForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(fetchedUrl, '/dashboard/finance/receiving-address/');
+        assert.strictEqual(
+            elements.financeReceivingAddressContainer.innerHTML,
+            '<div id="pendingReceivingAddressBanner">Pending</div>'
+        );
+        assert.strictEqual(elements.receivingAddressInput.value, '');
+        assert.strictEqual(elements.receivingAddressPassword.value, '');
+        assert.strictEqual(elements.notificationToastContainer.children.length, 1);
+    });
+
+    test('Receiving Address form displays inline error on 403/400 without clearing address input', async () => {
+        elements.financeReceivingAddressContainer = new MockEl('DIV', 'financeReceivingAddressContainer');
+        elements.receivingAddressForm = new MockEl('FORM', 'receivingAddressForm');
+        elements.receivingAddressForm.action = '/dashboard/finance/receiving-address/';
+        elements.receivingAddressInput = new MockEl('INPUT', 'receivingAddressInput');
+        elements.receivingAddressPassword = new MockEl('INPUT', 'receivingAddressPassword');
+        elements.receivingAddressErrorAlert = new MockEl('DIV', 'receivingAddressErrorAlert');
+        elements.receivingAddressErrorAlert.classList.add('d-none');
+        elements.receivingAddressSubmitBtn = new MockEl('BUTTON', 'receivingAddressSubmitBtn');
+
+        elements.receivingAddressInput.value = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+        elements.receivingAddressPassword.value = 'wrong-pass';
+
+        global.FormData = function () { return {}; };
+        global.fetch = async () => ({
+            ok: false,
+            json: async () => ({
+                success: false,
+                error: 'Incorrect password. Please enter your current password to confirm this change.',
+            }),
+        });
+
+        initTeacherFinance(mockDoc);
+        const submitHandler = elements.receivingAddressForm.listeners.submit[0];
+        await submitHandler({ preventDefault: () => {} });
+
+        assert.strictEqual(
+            elements.receivingAddressErrorAlert.textContent,
+            'Incorrect password. Please enter your current password to confirm this change.'
+        );
+        assert.strictEqual(
+            elements.receivingAddressErrorAlert.classList.contains('d-none'),
+            false
+        );
+        assert.strictEqual(
+            elements.receivingAddressInput.value,
+            '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359'
+        );
+        assert.strictEqual(elements.receivingAddressPassword.value, '');
     });
 });

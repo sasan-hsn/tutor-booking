@@ -163,13 +163,13 @@
         return true;
     }
 
-    function formatDisputeCountdown(deadlineIso, nowMs) {
+    function formatRemainingCountdown(deadlineIso, nowMs, expiredLabel) {
         if (!deadlineIso) return '—';
         const deadlineMs = Date.parse(deadlineIso);
         if (Number.isNaN(deadlineMs)) return '—';
         const currentMs = typeof nowMs === 'number' ? nowMs : Date.now();
         const remainingSeconds = Math.floor((deadlineMs - currentMs) / 1000);
-        if (remainingSeconds <= 0) return 'Auto-expiring';
+        if (remainingSeconds <= 0) return expiredLabel;
         const days = Math.floor(remainingSeconds / 86400);
         const hours = Math.floor((remainingSeconds % 86400) / 3600);
         const minutes = Math.floor((remainingSeconds % 3600) / 60);
@@ -178,14 +178,42 @@
         return `${Math.max(minutes, 1)}m left`;
     }
 
-    function updateDisputeCountdowns(containerEl, nowMs) {
+    function formatDisputeCountdown(deadlineIso, nowMs) {
+        return formatRemainingCountdown(deadlineIso, nowMs, 'Auto-expiring');
+    }
+
+    function formatAddressCountdown(activatesAtIso, nowMs) {
+        return formatRemainingCountdown(activatesAtIso, nowMs, 'Activating soon');
+    }
+
+    function updateCountdownBadges(containerEl, selector, dataKey, formatterFn, nowMs) {
         if (!containerEl || typeof containerEl.querySelectorAll !== 'function') return;
-        const badges = containerEl.querySelectorAll('[data-dispute-deadline]');
+        const badges = containerEl.querySelectorAll(selector);
         for (let i = 0; i < badges.length; i++) {
             const badge = badges[i];
-            const deadlineIso = badge.dataset ? badge.dataset.disputeDeadline : '';
-            badge.textContent = formatDisputeCountdown(deadlineIso, nowMs);
+            const isoValue = badge.dataset ? badge.dataset[dataKey] : '';
+            badge.textContent = formatterFn(isoValue, nowMs);
         }
+    }
+
+    function updateDisputeCountdowns(containerEl, nowMs) {
+        updateCountdownBadges(
+            containerEl,
+            '[data-dispute-deadline]',
+            'disputeDeadline',
+            formatDisputeCountdown,
+            nowMs
+        );
+    }
+
+    function updateAddressCountdowns(containerEl, nowMs) {
+        updateCountdownBadges(
+            containerEl,
+            '[data-address-activates-at]',
+            'addressActivatesAt',
+            formatAddressCountdown,
+            nowMs
+        );
     }
 
     function applyFinanceHtmlUpdates(elements, data) {
@@ -205,6 +233,13 @@
         }
         if (elements.financeLedgerContainer && typeof data.ledger_html === 'string') {
             elements.financeLedgerContainer.innerHTML = data.ledger_html;
+        }
+        if (
+            elements.financeReceivingAddressContainer
+            && typeof data.receiving_address_html === 'string'
+        ) {
+            elements.financeReceivingAddressContainer.innerHTML = data.receiving_address_html;
+            updateAddressCountdowns(elements.financeReceivingAddressContainer);
         }
     }
 
@@ -229,7 +264,7 @@
         return { ok: response.ok && Boolean(data && data.success), data: data };
     }
 
-    function bindModalFormSubmit(options) {
+    function bindFinanceFormSubmit(options) {
         const {
             form,
             modal,
@@ -241,6 +276,7 @@
             elements,
             documentRef,
             onSuccess,
+            onError,
         } = options;
         if (!form) return;
 
@@ -266,6 +302,9 @@
                 if (!result.ok) {
                     const errMsg = (result.data && result.data.error) ? result.data.error : fallbackError;
                     showErrorAlert(errorAlert, errMsg);
+                    if (typeof onError === 'function') {
+                        onError(result.data);
+                    }
                     return;
                 }
 
@@ -355,17 +394,32 @@
             financePayoutsContainer: documentRef.getElementById('financePayoutsContainer'),
             financeDisputesContainer: documentRef.getElementById('financeDisputesContainer'),
             financeLedgerContainer: documentRef.getElementById('financeLedgerContainer'),
+            financeReceivingAddressContainer: documentRef.getElementById('financeReceivingAddressContainer'),
+            receivingAddressForm: documentRef.getElementById('receivingAddressForm'),
+            receivingAddressInput: documentRef.getElementById('receivingAddressInput'),
+            receivingAddressPassword: documentRef.getElementById('receivingAddressPassword'),
+            receivingAddressErrorAlert: documentRef.getElementById('receivingAddressErrorAlert'),
+            receivingAddressSubmitBtn: documentRef.getElementById('receivingAddressSubmitBtn'),
             notificationToastContainer: documentRef.getElementById('notificationToastContainer'),
         };
 
         updateDisputeCountdowns(elements.financeDisputesContainer);
+        updateAddressCountdowns(elements.financeReceivingAddressContainer);
         if (
-            elements.financeDisputesContainer
-            && typeof elements.financeDisputesContainer.querySelectorAll === 'function'
-            && elements.financeDisputesContainer.querySelectorAll('[data-dispute-deadline]').length > 0
+            (
+                elements.financeDisputesContainer
+                && typeof elements.financeDisputesContainer.querySelectorAll === 'function'
+                && elements.financeDisputesContainer.querySelectorAll('[data-dispute-deadline]').length > 0
+            )
+            || (
+                elements.financeReceivingAddressContainer
+                && typeof elements.financeReceivingAddressContainer.querySelectorAll === 'function'
+                && elements.financeReceivingAddressContainer.querySelectorAll('[data-address-activates-at]').length > 0
+            )
         ) {
             setInterval(function () {
                 updateDisputeCountdowns(elements.financeDisputesContainer);
+                updateAddressCountdowns(elements.financeReceivingAddressContainer);
             }, 60000);
         }
 
@@ -520,7 +574,7 @@
             });
         }
 
-        bindModalFormSubmit({
+        bindFinanceFormSubmit({
             form: elements.manualTopupForm,
             modal: elements.manualTopupModal,
             errorAlert: elements.manualTopupErrorAlert,
@@ -540,7 +594,7 @@
             },
         });
 
-        bindModalFormSubmit({
+        bindFinanceFormSubmit({
             form: elements.completePayoutForm,
             modal: elements.completePayoutModal,
             errorAlert: elements.completePayoutErrorAlert,
@@ -555,7 +609,7 @@
             },
         });
 
-        bindModalFormSubmit({
+        bindFinanceFormSubmit({
             form: elements.rejectPayoutForm,
             modal: elements.rejectPayoutModal,
             errorAlert: elements.rejectPayoutErrorAlert,
@@ -570,7 +624,7 @@
             },
         });
 
-        bindModalFormSubmit({
+        bindFinanceFormSubmit({
             form: elements.resolveDisputeForm,
             modal: elements.resolveDisputeModal,
             errorAlert: elements.resolveDisputeErrorAlert,
@@ -581,6 +635,25 @@
             elements: elements,
             documentRef: documentRef,
         });
+
+        bindFinanceFormSubmit({
+            form: elements.receivingAddressForm,
+            modal: null,
+            errorAlert: elements.receivingAddressErrorAlert,
+            submitBtn: elements.receivingAddressSubmitBtn,
+            defaultLabel: 'Save Address',
+            fallbackError: 'Unable to update receiving address. Please check your inputs.',
+            defaultSuccessMessage: 'Receiving address updated.',
+            elements: elements,
+            documentRef: documentRef,
+            onSuccess: function () {
+                if (elements.receivingAddressInput) elements.receivingAddressInput.value = '';
+                if (elements.receivingAddressPassword) elements.receivingAddressPassword.value = '';
+            },
+            onError: function () {
+                if (elements.receivingAddressPassword) elements.receivingAddressPassword.value = '';
+            },
+        });
     }
 
     return {
@@ -590,6 +663,7 @@
         showFinanceToast: showFinanceToast,
         copyTextToClipboard: copyTextToClipboard,
         formatDisputeCountdown: formatDisputeCountdown,
+        formatAddressCountdown: formatAddressCountdown,
         initTeacherFinance: initTeacherFinance,
     };
 }));
