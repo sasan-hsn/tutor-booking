@@ -1,0 +1,128 @@
+{% extends "dashboard_base.html" %}
+
+{% block title %}
+{% if mode == 'confirmed' %}Refund Request Confirmed{% elif mode == 'preview' %}Confirm Refund Request{% else %}Refund Confirmation{% endif %} – {{ site_name }}
+{% endblock %}
+
+{% block page_content %}
+<div class="container py-5" style="max-width: 560px;">
+    <div class="card border shadow-sm">
+        <div class="card-body p-4 text-center">
+            {% if mode == 'preview' %}
+            <div class="mb-3">
+                <span class="badge bg-warning text-dark px-3 py-2 text-uppercase">Confirmation Required</span>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Confirm Your Refund Request</h1>
+            <p class="text-muted small mb-4">
+                Confirming this request will reserve the requested amount from your available balance and place it in the teacher's payout review queue.
+            </p>
+
+            <div class="border rounded bg-light p-3 text-start mb-4 small">
+                <div class="d-flex justify-content-between py-1">
+                    <span class="text-muted">Requested Amount</span>
+                    <span class="fw-semibold">${{ payout.amount_gross|floatformat:2 }} {{ currency }}</span>
+                </div>
+                <div class="d-flex justify-content-between py-1 gap-3">
+                    <span class="text-muted">Destination</span>
+                    <code class="text-break text-end">{{ payout.destination }}</code>
+                </div>
+                {% if payout.notes %}
+                <div class="d-flex justify-content-between py-1 gap-3">
+                    <span class="text-muted">Notes</span>
+                    <span class="text-end">{{ payout.notes }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <form method="post" action="{% url 'wallet:student_payout_confirm' raw_token=raw_token %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary w-100 py-2 mb-2 fw-semibold" id="confirmPayoutSubmitBtn">
+                    Confirm Refund Request
+                </button>
+            </form>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-outline-secondary w-100">
+                Back to My Wallet
+            </a>
+
+            {% elif mode == 'confirmed' %}
+            <div class="mb-3 text-success">
+                <i class="bi bi-check-circle-fill fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Refund Request Confirmed</h1>
+            <p class="text-muted small mb-4">
+                Your refund request for <strong>${{ payout.amount_gross|floatformat:2 }} {{ currency }}</strong> has been verified and placed under review by your teacher.
+                A hold has been placed on your wallet balance until the transfer is processed.
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+
+            {% elif mode == 'already_confirmed' %}
+            <div class="mb-3 text-info">
+                <i class="bi bi-info-circle-fill fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Refund Already Confirmed</h1>
+            <p class="text-muted small mb-4">
+                This refund request (#{{ payout.id }}) has already been confirmed and is currently <strong>{{ payout.get_status_display }}</strong>.
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+
+            {% elif mode == 'expired' %}
+            <div class="mb-3 text-warning">
+                <i class="bi bi-clock-history fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Confirmation Link Expired</h1>
+            <p class="text-muted small mb-4">
+                This refund confirmation link has expired after the {{ confirmation_hours }}-hour window. No funds were held from your wallet. You can submit a new refund request from your wallet page.
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+
+            {% elif mode == 'insufficient_balance' %}
+            <div class="mb-3 text-danger">
+                <i class="bi bi-exclamation-circle-fill fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Insufficient Available Balance</h1>
+            <p class="text-muted small mb-4">
+                Your available wallet balance dropped below the requested refund amount of <strong>${{ payout.amount_gross|floatformat:2 }} {{ currency }}</strong> before confirmation.
+                No hold was placed, and this request has been cancelled.
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+
+            {% elif mode == 'frozen' %}
+            <div class="mb-3 text-warning">
+                <i class="bi bi-shield-lock-fill fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Wallet Currently Frozen</h1>
+            <p class="text-muted small mb-4">
+                Your wallet is currently frozen, so this refund request cannot be confirmed right now. Please contact support or your teacher for assistance.
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+
+            {% else %}
+            <div class="mb-3 text-danger">
+                <i class="bi bi-x-circle-fill fs-1"></i>
+            </div>
+            <h1 class="h4 fw-bold mb-2">Invalid or Unavailable Link</h1>
+            <p class="text-muted small mb-4">
+                {% if mode == 'cancelled' %}
+                This refund request has been cancelled or rejected and can no longer be confirmed.
+                {% else %}
+                This refund confirmation link is invalid or no longer active.
+                {% endif %}
+            </p>
+            <a href="{% url 'wallet:student_wallet' %}" class="btn btn-primary w-100">
+                Return to My Wallet
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,20 +1,21 @@
-import re
 from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, Sum
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from accounts.decorators import (
+    _is_ajax_or_json_request,
     student_required,
     teacher_required,
     terms_accepted_required,
@@ -35,6 +36,7 @@ from payments.forms import (
     ReceivingAddressForm,
     RejectPayoutForm,
     ResolveDisputeForm,
+    StudentRefundRequestForm,
     StudentTopUpClaimForm,
     StudentTopUpInitiateForm,
 )
@@ -43,14 +45,20 @@ from payments.services import (
     DEFAULT_RECEIVING_ADDRESS_PROVIDER,
     DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR,
     attach_ledger_display_fields,
+    attach_payout_display_fields,
     build_manual_external_id,
     build_tenant_ledger_csv,
     build_topup_order_payload,
     cancel_pending_topup_order,
+    cancel_student_payout_request,
+    create_payout_request,
     create_topup_order,
     get_active_pending_order,
+    get_payout_by_raw_token,
+    get_student_payouts_for_display,
     get_user_display_name,
     has_duplicate_payout_external_ref,
+    inspect_payout_confirmation_state,
     mark_payout_processing,
     process_manual_topup,
     release_payout,
@@ -58,8 +66,11 @@ from payments.services import (
     submit_topup_claim,
     to_viewer_local,
     update_receiving_address,
+    verify_and_reserve_payout,
 )
+from wallet.exceptions import WalletFrozenError
 from wallet.models import LedgerEntry, Wallet
+from wallet.services import get_student_wallet_snapshot
 
 User = get_user_model()
 
@@ -72,45 +83,6 @@ def _get_tenant_for_teacher(teacher) -> Tenant:
         },
     )
     return tenant
-
-
-_REJECT_DESC_RE = re.compile(r"^Payout rejected \((.+)\): payout #\d+$")
-
-
-def _extract_rejection_reason(description: str) -> str:
-    match = _REJECT_DESC_RE.match(description or "")
-    return match.group(1) if match else ""
-
-
-def _attach_payout_display_fields(
-    payouts: list[Payout],
-    tenant: Tenant,
-    viewer_tz: ZoneInfo,
-    *,
-    include_rejection_reasons: bool = False,
-) -> None:
-    reasons_by_payout_ref: dict[str, str] = {}
-    if include_rejection_reasons:
-        rejected_refs = [
-            f"payout_{p.id}" for p in payouts if p.status == Payout.Status.REJECTED
-        ]
-        if rejected_refs:
-            for entry in LedgerEntry.objects.filter(
-                tenant=tenant,
-                entry_type=LedgerEntry.EntryType.PAYOUT_RELEASE,
-                reference_id__in=rejected_refs,
-            ).only("reference_id", "description"):
-                reason = _extract_rejection_reason(entry.description)
-                if reason:
-                    reasons_by_payout_ref[entry.reference_id] = reason
-
-    for payout in payouts:
-        payout.student_display_name = get_user_display_name(payout.student)
-        payout.local_requested_at = to_viewer_local(
-            payout.confirmation_used_at or payout.created_at, viewer_tz
-        )
-        payout.local_processed_at = to_viewer_local(payout.processed_at, viewer_tz)
-        payout.rejection_reason = reasons_by_payout_ref.get(f"payout_{payout.id}", "")
 
 
 def _format_remaining_countdown(
@@ -245,7 +217,7 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         .select_related("student")
         .order_by("created_at", "id")
     )
-    _attach_payout_display_fields(payouts_queue, tenant, viewer_tz)
+    attach_payout_display_fields(payouts_queue, tenant, viewer_tz)
 
     payouts_history = list(
         Payout.objects.filter(
@@ -255,7 +227,7 @@ def _build_finance_context(tenant: Tenant, teacher, viewer_tz: ZoneInfo) -> dict
         .select_related("student")
         .order_by("-processed_at", "-created_at", "-id")[:25]
     )
-    _attach_payout_display_fields(
+    attach_payout_display_fields(
         payouts_history, tenant, viewer_tz, include_rejection_reasons=True
     )
 
@@ -897,3 +869,296 @@ def student_topup_cancel(request, order_id: int):
         )
 
     return _run_student_order_action(request, order_id, perform_cancel)
+
+
+def _render_student_payouts_html(request, tenant: Tenant, user) -> str:
+    viewer_tz = ZoneInfo(getattr(user, "timezone", "UTC") or "UTC")
+    student_payouts = get_student_payouts_for_display(tenant, user, viewer_tz)
+    return render_to_string(
+        "wallet/partials/_student_payouts_list.html",
+        {"student_payouts": student_payouts},
+        request=request,
+    )
+
+
+@student_required
+@require_POST
+def student_payout_request(request):
+    """Stage 1: Validate student refund request, create PENDING_CONFIRMATION payout, and send confirmation email."""
+    tenant = get_default_tenant()
+    if tenant is None:
+        return JsonResponse(
+            {"success": False, "error": "No active storefront tenant configured."},
+            status=400,
+        )
+
+    snapshot = get_student_wallet_snapshot(request.user, request=request)
+    if snapshot.is_frozen:
+        msg = "Your wallet is currently frozen. New refund requests are paused."
+        return JsonResponse(
+            {"success": False, "error": msg, "errors": {"__all__": [msg]}},
+            status=400,
+        )
+
+    form = StudentRefundRequestForm(
+        request.POST,
+        available_balance=snapshot.available_balance,
+    )
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": _first_form_error(form),
+                "errors": form.errors,
+            },
+            status=400,
+        )
+
+    cleaned = form.cleaned_data
+    try:
+        payout = create_payout_request(
+            tenant=tenant,
+            student=request.user,
+            amount_gross=cleaned["amount"],
+            destination=cleaned["destination"],
+            notes=cleaned["notes"],
+        )
+    except (PayoutInsufficientBalanceError, WalletFrozenError, ValidationError) as exc:
+        msg = _validation_error_message(exc)
+        return JsonResponse(
+            {"success": False, "error": msg, "errors": {"__all__": [msg]}},
+            status=400,
+        )
+
+    confirmation_hours = getattr(settings, "PAYOUT_CONFIRMATION_HOURS", 24)
+    notice = (
+        f"We have sent a confirmation link to your email. "
+        f"You must confirm this request within {confirmation_hours} hours."
+    )
+    return JsonResponse(
+        {
+            "success": True,
+            "payout_id": payout.id,
+            "status": payout.status,
+            "amount_gross": f"{payout.amount_gross:.2f}",
+            "currency": tenant.default_currency,
+            "message": notice,
+            "payouts_html": _render_student_payouts_html(request, tenant, request.user),
+        }
+    )
+
+
+def _render_payout_confirm_result(
+    request,
+    mode: str,
+    *,
+    payout: Payout | None = None,
+    currency: str = "USD",
+    raw_token: str = "",
+    error_message: str = "",
+    status: int = 200,
+):
+    return render(
+        request,
+        "wallet/payout_confirm_result.html",
+        {
+            "mode": mode,
+            "payout": payout,
+            "currency": currency,
+            "raw_token": raw_token,
+            "error_message": error_message,
+            "confirmation_hours": getattr(settings, "PAYOUT_CONFIRMATION_HOURS", 24),
+        },
+        status=status,
+    )
+
+
+@student_required
+def student_payout_confirm(request, raw_token: str):
+    """
+    Stage 2 confirmation landing view:
+    - GET: Safe preview without mutating state (protects against email link scanners).
+    - POST: Verifies token, locks Wallet -> Payout, places PAYOUT_HOLD, and queues for teacher review.
+    """
+    if request.method not in ("GET", "POST"):
+        return HttpResponseNotAllowed(["GET", "POST"])
+
+    tenant = get_default_tenant()
+    if tenant is None:
+        return _render_payout_confirm_result(
+            request,
+            "invalid",
+            error_message="No active storefront tenant configured.",
+            status=400,
+        )
+
+    payout = get_payout_by_raw_token(tenant=tenant, raw_token=raw_token)
+    inspection = inspect_payout_confirmation_state(
+        tenant=tenant,
+        payout=payout,
+        user=request.user,
+    )
+    state = inspection["state"]
+    currency = tenant.default_currency
+
+    if request.method == "GET":
+        if state == "ready":
+            return _render_payout_confirm_result(
+                request,
+                "preview",
+                payout=payout,
+                currency=currency,
+                raw_token=raw_token,
+            )
+        if state == "already_confirmed":
+            return _render_payout_confirm_result(
+                request,
+                "already_confirmed",
+                payout=payout,
+                currency=currency,
+            )
+        return _render_payout_confirm_result(
+            request,
+            state,
+            payout=payout,
+            currency=currency,
+            status=400,
+        )
+
+    # POST: execute state mutation under row locks
+    if payout is None:
+        return _render_payout_confirm_result(
+            request, "invalid", currency=currency, status=400
+        )
+
+    if state == "already_confirmed":
+        return _render_payout_confirm_result(
+            request, "already_confirmed", payout=payout, currency=currency
+        )
+
+    try:
+        verify_and_reserve_payout(
+            tenant=tenant,
+            payout=payout,
+            raw_token=raw_token,
+        )
+    except WalletFrozenError as exc:
+        return _render_payout_confirm_result(
+            request,
+            "frozen",
+            payout=payout,
+            currency=currency,
+            error_message=str(exc),
+            status=400,
+        )
+    except PayoutInsufficientBalanceError as exc:
+        return _render_payout_confirm_result(
+            request,
+            "insufficient_balance",
+            payout=payout,
+            currency=currency,
+            error_message=str(exc),
+            status=400,
+        )
+    except ValidationError as exc:
+        payout.refresh_from_db()
+        if payout.status in (
+            Payout.Status.REQUESTED,
+            Payout.Status.PROCESSING,
+            Payout.Status.COMPLETED,
+        ):
+            return _render_payout_confirm_result(
+                request, "already_confirmed", payout=payout, currency=currency
+            )
+
+        msg = _validation_error_message(exc)
+        is_expired = payout.status == Payout.Status.EXPIRED or (
+            payout.confirmation_expires_at is not None
+            and timezone.now() > payout.confirmation_expires_at
+        )
+        mode = (
+            "expired"
+            if is_expired
+            else (
+                "cancelled"
+                if payout.status in (Payout.Status.CANCELLED, Payout.Status.REJECTED)
+                else "invalid"
+            )
+        )
+        return _render_payout_confirm_result(
+            request,
+            mode,
+            payout=payout,
+            currency=currency,
+            error_message=msg,
+            status=400,
+        )
+
+    return _render_payout_confirm_result(
+        request, "confirmed", payout=payout, currency=currency
+    )
+
+
+@student_required
+@require_POST
+def student_payout_cancel(request, payout_id: int):
+    """Allow an authenticated student to cancel their own PENDING_CONFIRMATION or REQUESTED payout."""
+    tenant = get_default_tenant()
+    if tenant is None:
+        return JsonResponse(
+            {"success": False, "error": "No active storefront tenant configured."},
+            status=400,
+        )
+
+    payout = get_object_or_404(
+        Payout.objects.select_related("student", "tenant"),
+        pk=payout_id,
+        tenant=tenant,
+    )
+
+    try:
+        cancelled_payout = cancel_student_payout_request(
+            tenant=tenant,
+            payout=payout,
+            user=request.user,
+        )
+    except PermissionDenied as exc:
+        if _is_ajax_or_json_request(request):
+            return JsonResponse(
+                {"success": False, "error": str(exc) or "Permission denied."},
+                status=403,
+            )
+        raise
+    except PayoutConflictError as exc:
+        return JsonResponse(
+            {"success": False, "error": str(exc)},
+            status=409,
+        )
+
+    if getattr(cancelled_payout, "released_hold", False):
+        message = (
+            f"Refund request #{cancelled_payout.id} cancelled and "
+            f"${cancelled_payout.amount_gross:.2f} {tenant.default_currency} "
+            f"released back to your available balance."
+        )
+    else:
+        message = f"Refund request #{cancelled_payout.id} cancelled."
+
+    if not _is_ajax_or_json_request(request):
+        messages.success(request, message)
+        return redirect("wallet:student_wallet")
+
+    request._student_wallet_snapshot = None
+    snapshot = get_student_wallet_snapshot(request.user, request=request)
+    return JsonResponse(
+        {
+            "success": True,
+            "payout_id": cancelled_payout.id,
+            "status": cancelled_payout.status,
+            "message": message,
+            "available_balance": f"{snapshot.available_balance:.2f}",
+            "reserved_balance": f"{snapshot.reserved_balance:.2f}",
+            "settled_balance": f"{snapshot.settled_balance:.2f}",
+            "payouts_html": _render_student_payouts_html(request, tenant, request.user),
+        }
+    )

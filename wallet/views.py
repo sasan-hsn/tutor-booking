@@ -15,6 +15,7 @@ from payments.services import (
     build_topup_order_payload,
     get_active_crypto_receiving_address,
     get_active_pending_order,
+    get_student_payouts_for_display,
 )
 from wallet.models import LedgerEntry
 from wallet.services import (
@@ -82,6 +83,11 @@ def student_wallet(request):
         if snapshot.tenant is not None
         else settings.MIN_TOPUP_AMOUNT
     )
+    student_payouts = get_student_payouts_for_display(
+        snapshot.tenant,
+        request.user,
+        viewer_tz,
+    )
 
     context = {
         "wallet_snapshot": snapshot,
@@ -97,5 +103,7 @@ def student_wallet(request):
         "topup_min_amount": topup_min_amount,
         "topup_expiry_hours": getattr(settings, "ORDER_EXPIRY_HOURS", 24),
         "topup_active_order_data": topup_active_order_data,
+        "student_payouts": student_payouts,
+        "payout_confirmation_hours": getattr(settings, "PAYOUT_CONFIRMATION_HOURS", 24),
     }
     return render(request, "wallet/student_wallet.html", context)

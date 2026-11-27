@@ -341,3 +341,77 @@ class StudentTopUpClaimForm(forms.Form):
             raise ValidationError("Transfer timestamp cannot be in the future.")
 
         return parsed
+
+
+class StudentRefundRequestForm(forms.Form):
+    """Validates student refund (payout) request form inputs."""
+
+    amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=True,
+        label="Refund Amount",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-control",
+                "id": "refundAmountInput",
+                "step": "0.01",
+                "min": "0.01",
+                "placeholder": "0.00",
+                "required": True,
+            }
+        ),
+    )
+    destination = forms.CharField(
+        max_length=128,
+        required=True,
+        label="Destination Payment Details",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "id": "refundDestinationInput",
+                "maxlength": 128,
+                "placeholder": "BEP-20 USDT wallet address or bank account details",
+                "required": True,
+            }
+        ),
+    )
+    notes = forms.CharField(
+        max_length=500,
+        required=False,
+        label="Notes (Optional)",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "id": "refundNotesInput",
+                "rows": 2,
+                "maxlength": 500,
+                "placeholder": "Optional notes for your teacher",
+            }
+        ),
+    )
+
+    def __init__(self, *args, available_balance: Decimal | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.available_balance = available_balance
+        if available_balance is not None and available_balance > Decimal("0.00"):
+            self.fields["amount"].widget.attrs["max"] = f"{available_balance:.2f}"
+
+    def clean_amount(self) -> Decimal:
+        amount = self.cleaned_data["amount"]
+        if amount <= Decimal("0.00"):
+            raise ValidationError("Refund amount must be greater than $0.00.")
+        if self.available_balance is not None and amount > self.available_balance:
+            raise ValidationError(
+                f"Refund amount cannot exceed your available balance (${self.available_balance:.2f})."
+            )
+        return amount
+
+    def clean_destination(self) -> str:
+        destination = (self.cleaned_data.get("destination") or "").strip()
+        if not destination:
+            raise ValidationError("Destination payment details are required.")
+        return destination
+
+    def clean_notes(self) -> str:
+        return (self.cleaned_data.get("notes") or "").strip()

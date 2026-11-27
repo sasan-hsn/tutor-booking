@@ -48,6 +48,11 @@
                             </button>
                         </div>
                         <div class="small text-muted">{{ payout.provider }}</div>
+                        {% if payout.notes %}
+                        <div class="small text-muted mt-1" title="{{ payout.notes }}">
+                            <i class="bi bi-chat-left-text me-1"></i>{{ payout.notes|truncatechars:80 }}
+                        </div>
+                        {% endif %}
                     </td>
                     <td class="text-nowrap small">{{ payout.local_requested_at|date:"M d, Y H:i" }}</td>
                     <td>

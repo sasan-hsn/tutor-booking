@@ -1,0 +1,80 @@
+{% if student_payouts %}
+<div class="card border shadow-sm">
+    <div class="card-header bg-white py-2 px-3 d-flex align-items-center justify-content-between">
+        <h5 class="mb-0 fs-6 fw-semibold">Refund Requests</h5>
+        <span class="badge bg-secondary-subtle text-dark">{{ student_payouts|length }}</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>Requested</th>
+                    <th>Amount</th>
+                    <th>Destination</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                    <th class="text-end">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payout in student_payouts %}
+                <tr data-student-payout-id="{{ payout.id }}">
+                    <td class="text-nowrap text-muted">
+                        {{ payout.local_created_at|date:"M d, Y H:i" }}
+                    </td>
+                    <td class="text-nowrap fw-semibold">
+                        ${{ payout.amount_gross|floatformat:2 }} {{ payout.tenant.default_currency }}
+                    </td>
+                    <td>
+                        <code class="small d-inline-block text-truncate" style="max-width: 180px;" title="{{ payout.destination }}">
+                            {{ payout.destination }}
+                        </code>
+                        {% if payout.notes %}
+                        <div class="text-muted small text-truncate" style="max-width: 220px;" title="{{ payout.notes }}">
+                            {{ payout.notes }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge {% if payout.status == 'COMPLETED' %}bg-success{% elif payout.status == 'REJECTED' or payout.status == 'CANCELLED' or payout.status == 'EXPIRED' %}bg-secondary{% elif payout.status == 'PROCESSING' %}bg-info text-dark{% elif payout.status == 'REQUESTED' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+                            {{ payout.get_status_display }}
+                        </span>
+                    </td>
+                    <td class="small text-muted">
+                        {% if payout.status == 'PENDING_CONFIRMATION' %}
+                        Awaiting email confirmation
+                        {% elif payout.status == 'REQUESTED' %}
+                        Hold placed &middot; Pending teacher review
+                        {% elif payout.status == 'PROCESSING' %}
+                        Processing transfer
+                        {% elif payout.external_ref %}
+                        Ref: <code class="small">{{ payout.external_ref }}</code>
+                        {% elif payout.rejection_reason %}
+                        {{ payout.rejection_reason }}
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap">
+                        {% if payout.status == 'PENDING_CONFIRMATION' or payout.status == 'REQUESTED' %}
+                        <form method="post"
+                            action="{% url 'wallet:student_payout_cancel' payout.id %}"
+                            class="student-payout-cancel-form d-inline"
+                            data-payout-id="{{ payout.id }}"
+                            data-payout-status="{{ payout.status }}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger cancel-payout-btn">
+                                Cancel
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
