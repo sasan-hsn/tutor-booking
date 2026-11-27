@@ -28,14 +28,61 @@
         return '';
     }
 
-    function setAlert(alertEl, message) {
+    function setAlert(alertEl, message, variantClass) {
         if (!alertEl) return;
         alertEl.textContent = message || '';
+        if (variantClass && alertEl.classList) {
+            alertEl.classList.remove('alert-danger', 'alert-success', 'alert-warning', 'alert-info');
+            alertEl.classList.add(variantClass);
+        }
         if (message) {
             alertEl.classList.remove('d-none');
         } else {
             alertEl.classList.add('d-none');
         }
+    }
+
+    async function postWalletForm(doc, url, body, buttonEl, busyLabel, defaultLabel, alertEl) {
+        setAlert(alertEl, '');
+        if (buttonEl) {
+            buttonEl.disabled = true;
+            buttonEl.textContent = busyLabel;
+        }
+
+        let response;
+        let data = null;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': getCsrfToken(doc),
+                },
+                body: body,
+            });
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = null;
+            }
+        } catch (_) {
+            setAlert(alertEl, 'Network error. Please try again.', 'alert-danger');
+            return { networkError: true, ok: false, status: 0, data: null };
+        } finally {
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.textContent = defaultLabel;
+            }
+        }
+
+        return {
+            networkError: false,
+            ok: response.ok && Boolean(data && data.success),
+            status: response.status,
+            data: data,
+        };
     }
 
     function toggleModal(modalEl, win, action) {
@@ -261,47 +308,16 @@
             });
         }
 
-        async function postTopupForm(url, body, buttonEl, busyLabel, defaultLabel) {
-            setAlert(elements.errorAlert, '');
-            if (buttonEl) {
-                buttonEl.disabled = true;
-                buttonEl.textContent = busyLabel;
-            }
-
-            let response;
-            let data = null;
-            try {
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRFToken': getCsrfToken(documentRef),
-                    },
-                    body: body,
-                });
-                try {
-                    data = await response.json();
-                } catch (_) {
-                    data = null;
-                }
-            } catch (_) {
-                setAlert(elements.errorAlert, 'Network error. Please try again.');
-                return { networkError: true, ok: false, status: 0, data: null };
-            } finally {
-                if (buttonEl) {
-                    buttonEl.disabled = false;
-                    buttonEl.textContent = defaultLabel;
-                }
-            }
-
-            return {
-                networkError: false,
-                ok: response.ok && Boolean(data && data.success),
-                status: response.status,
-                data: data,
-            };
+        function postTopupForm(url, body, buttonEl, busyLabel, defaultLabel) {
+            return postWalletForm(
+                documentRef,
+                url,
+                body,
+                buttonEl,
+                busyLabel,
+                defaultLabel,
+                elements.errorAlert
+            );
         }
 
         async function submitInitiateOrder() {
@@ -635,10 +651,205 @@
             openTopupOrTermsModal();
         }
 
+        const refundController = initRefundControls(documentRef);
+
         return {
             syncBep20Gate: syncBep20Gate,
             submitInitiateOrder: submitInitiateOrder,
             submitPaymentClaim: submitPaymentClaim,
+            submitRefundRequest: refundController ? refundController.submitRefundRequest : null,
+            submitPayoutCancelForm: refundController ? refundController.submitPayoutCancelForm : null,
+        };
+    }
+
+    function initRefundControls(documentRef) {
+        const refundModal = documentRef.getElementById('refundModal');
+        const payoutsContainer = documentRef.getElementById('studentPayoutsContainer');
+        if (!refundModal && !payoutsContainer) return null;
+
+        const refundErrorAlert = documentRef.getElementById('refundErrorAlert');
+        const refundStepForm = documentRef.getElementById('refundStepForm');
+        const refundStepSubmitted = documentRef.getElementById('refundStepSubmitted');
+        const refundRequestForm = documentRef.getElementById('refundRequestForm');
+        const refundAmountInput = documentRef.getElementById('refundAmountInput');
+        const refundDestinationInput = documentRef.getElementById('refundDestinationInput');
+        const refundNotesInput = documentRef.getElementById('refundNotesInput');
+        const submitRefundRequestBtn = documentRef.getElementById('submitRefundRequestBtn');
+        const refundConfirmationNotice = documentRef.getElementById('refundConfirmationNotice');
+        const refundSubmittedMeta = documentRef.getElementById('refundSubmittedMeta');
+        const payoutsAlert = documentRef.getElementById('studentPayoutsAlert');
+        const availValueEl = documentRef.getElementById('walletAvailableBalanceValue');
+        const reservedValueEl = documentRef.getElementById('walletReservedBalanceValue');
+        const settledValueEl = documentRef.getElementById('walletSettledBalanceValue');
+
+        function showRefundStep(stepName) {
+            if (refundStepForm) {
+                refundStepForm.classList.toggle('d-none', stepName !== 'form');
+            }
+            if (refundStepSubmitted) {
+                refundStepSubmitted.classList.toggle('d-none', stepName !== 'submitted');
+            }
+        }
+
+        async function submitRefundRequest() {
+            if (!refundModal || !refundRequestForm) return;
+            if (refundModal.dataset.isFrozen === 'true') {
+                setAlert(
+                    refundErrorAlert,
+                    'Your wallet is currently frozen. New refund requests are paused.',
+                    'alert-danger'
+                );
+                return;
+            }
+
+            const rawAmount = refundAmountInput ? refundAmountInput.value.trim() : '';
+            const parsedAmount = Number.parseFloat(rawAmount);
+            const available = Number.parseFloat(refundModal.dataset.availableBalance || '0.00');
+
+            if (!rawAmount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+                setAlert(refundErrorAlert, 'Refund amount must be greater than $0.00.', 'alert-danger');
+                return;
+            }
+            if (parsedAmount > available) {
+                setAlert(
+                    refundErrorAlert,
+                    `Refund amount cannot exceed your available balance ($${available.toFixed(2)}).`,
+                    'alert-danger'
+                );
+                return;
+            }
+
+            const destination = refundDestinationInput ? refundDestinationInput.value.trim() : '';
+            if (!destination) {
+                setAlert(refundErrorAlert, 'Destination payment details are required.', 'alert-danger');
+                return;
+            }
+
+            const notes = refundNotesInput ? refundNotesInput.value.trim() : '';
+            const requestUrl = refundModal.dataset.requestUrl || refundRequestForm.getAttribute('action') || '';
+            if (!requestUrl) return;
+
+            const body =
+                `amount=${encodeURIComponent(rawAmount)}`
+                + `&destination=${encodeURIComponent(destination)}`
+                + `&notes=${encodeURIComponent(notes)}`;
+
+            const result = await postWalletForm(
+                documentRef,
+                requestUrl,
+                body,
+                submitRefundRequestBtn,
+                'Sending...',
+                'Send Confirmation Email',
+                refundErrorAlert
+            );
+            if (result.networkError) return;
+
+            if (!result.ok) {
+                const msg = (result.data && result.data.error)
+                    ? result.data.error
+                    : 'Unable to submit your refund request. Please try again.';
+                setAlert(refundErrorAlert, msg, 'alert-danger');
+                return;
+            }
+
+            setAlert(refundErrorAlert, '');
+            if (refundConfirmationNotice && result.data.message) {
+                refundConfirmationNotice.textContent = result.data.message;
+            }
+            if (refundSubmittedMeta) {
+                refundSubmittedMeta.textContent =
+                    `Request #${result.data.payout_id} · $${result.data.amount_gross} ${result.data.currency || 'USD'}`;
+            }
+            if (payoutsContainer && typeof result.data.payouts_html === 'string') {
+                payoutsContainer.innerHTML = result.data.payouts_html;
+            }
+            if (refundAmountInput) refundAmountInput.value = '';
+            if (refundNotesInput) refundNotesInput.value = '';
+            showRefundStep('submitted');
+        }
+
+        async function submitPayoutCancelForm(formEl) {
+            if (!formEl) return;
+            const actionUrl = (typeof formEl.getAttribute === 'function' ? formEl.getAttribute('action') : '') || formEl.action || '';
+            if (!actionUrl) return;
+            const submitBtn = typeof formEl.querySelector === 'function'
+                ? formEl.querySelector('button[type="submit"]')
+                : null;
+
+            const result = await postWalletForm(
+                documentRef,
+                actionUrl,
+                '',
+                submitBtn,
+                'Cancelling...',
+                'Cancel',
+                payoutsAlert
+            );
+            if (result.networkError) return;
+
+            if (!result.ok) {
+                const msg = (result.data && result.data.error)
+                    ? result.data.error
+                    : 'Unable to cancel this refund request.';
+                setAlert(payoutsAlert, msg, 'alert-danger');
+                return;
+            }
+
+            setAlert(payoutsAlert, result.data.message || 'Refund request cancelled.', 'alert-success');
+            if (payoutsContainer && typeof result.data.payouts_html === 'string') {
+                payoutsContainer.innerHTML = result.data.payouts_html;
+            }
+            if (availValueEl && result.data.available_balance !== undefined) {
+                availValueEl.textContent = `$${result.data.available_balance}`;
+            }
+            if (reservedValueEl && result.data.reserved_balance !== undefined) {
+                reservedValueEl.textContent = `$${result.data.reserved_balance}`;
+            }
+            if (settledValueEl && result.data.settled_balance !== undefined) {
+                settledValueEl.textContent = `$${result.data.settled_balance}`;
+            }
+            if (refundModal && result.data.available_balance !== undefined) {
+                refundModal.dataset.availableBalance = result.data.available_balance;
+            }
+        }
+
+        if (refundModal && refundModal.dataset.refundModalBound !== 'true') {
+            refundModal.dataset.refundModalBound = 'true';
+            refundModal.addEventListener('show.bs.modal', function () {
+                setAlert(refundErrorAlert, '');
+                showRefundStep('form');
+            });
+            if (refundRequestForm) {
+                refundRequestForm.addEventListener('submit', async function (e) {
+                    if (e && typeof e.preventDefault === 'function') {
+                        e.preventDefault();
+                    }
+                    await submitRefundRequest();
+                });
+            }
+        }
+
+        if (payoutsContainer && payoutsContainer.dataset.payoutCancelBound !== 'true') {
+            payoutsContainer.dataset.payoutCancelBound = 'true';
+            payoutsContainer.addEventListener('submit', async function (e) {
+                const target = e && e.target;
+                if (
+                    target
+                    && target.classList
+                    && target.classList.contains('student-payout-cancel-form')
+                ) {
+                    if (typeof e.preventDefault === 'function') {
+                        e.preventDefault();
+                    }
+                    await submitPayoutCancelForm(target);
+                }
+            });
+        }
+
+        return {
+            submitRefundRequest: submitRefundRequest,
+            submitPayoutCancelForm: submitPayoutCancelForm,
         };
     }
 

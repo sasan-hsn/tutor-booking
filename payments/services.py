@@ -503,12 +503,13 @@ def create_payout_request(
     amount_gross: Decimal,
     destination: str,
     provider: str = "crypto_usdt",
+    notes: str = "",
 ) -> Payout:
     """
     Creates a new Payout request for a student with status PENDING_CONFIRMATION.
-    Validates amount > 0 and available_balance >= amount_gross.
+    Validates amount > 0, non-frozen wallet, and available_balance >= amount_gross.
     Generates a 32-byte cryptographic token, stores its SHA-256 hash in confirmation_token_hash,
-    sets confirmation_expires_at, and dispatches a basic transactional confirmation email.
+    sets confirmation_expires_at, and dispatches a transactional confirmation link email.
     Places NO hold on the student's wallet balance at this stage.
     """
     if not isinstance(amount_gross, Decimal) or amount_gross <= Decimal("0.00"):
@@ -518,12 +519,21 @@ def create_payout_request(
         raise ValidationError("Destination address cannot be empty.")
 
     clean_destination = destination.strip()
+    if len(clean_destination) > 128:
+        raise ValidationError("Destination details must be 128 characters or fewer.")
+
+    clean_notes = (notes or "").strip()[:500]
 
     wallet = get_or_create_wallet(
         tenant=tenant,
         user=student,
         currency=tenant.default_currency,
     )
+
+    if wallet.is_frozen:
+        raise WalletFrozenError(
+            f"Wallet {wallet.pk} is frozen; cannot submit refund requests."
+        )
 
     if wallet.available_balance < amount_gross:
         raise PayoutInsufficientBalanceError(
@@ -537,39 +547,31 @@ def create_payout_request(
     now = timezone.now()
     expires_at = now + timedelta(hours=confirmation_hours)
 
-    payout = Payout.objects.create(
-        tenant=tenant,
-        student=student,
-        provider=provider,
-        destination=clean_destination,
-        amount_gross=amount_gross,
-        fee_deducted=Decimal("0.00"),
-        amount_net=amount_gross,
-        confirmation_token_hash=token_hash,
-        confirmation_expires_at=expires_at,
-        status=Payout.Status.PENDING_CONFIRMATION,
-    )
+    from payments.emails import send_payout_confirmation_email
 
-    # Attach raw token to in-memory instance for caller convenience
-    payout.raw_token = raw_token
+    with transaction.atomic():
+        payout = Payout.objects.create(
+            tenant=tenant,
+            student=student,
+            provider=provider,
+            destination=clean_destination,
+            notes=clean_notes,
+            amount_gross=amount_gross,
+            fee_deducted=Decimal("0.00"),
+            amount_net=amount_gross,
+            confirmation_token_hash=token_hash,
+            confirmation_expires_at=expires_at,
+            status=Payout.Status.PENDING_CONFIRMATION,
+        )
 
-    # Dispatch basic confirmation email
-    subject = "Confirm Your Payout Request"
-    message = (
-        f"Hello {student.first_name or student.username},\n\n"
-        f"You requested a payout of {amount_gross} {tenant.default_currency} to {clean_destination}.\n\n"
-        f"Please verify and confirm your payout request using the following confirmation token:\n"
-        f"{raw_token}\n\n"
-        f"This confirmation token will expire in {confirmation_hours} hours."
-    )
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=from_email,
-        recipient_list=[student.email],
-        fail_silently=False,
-    )
+        # Attach raw token to in-memory instance for caller convenience
+        payout.raw_token = raw_token
+
+        send_payout_confirmation_email(
+            payout,
+            raw_token,
+            confirmation_hours=confirmation_hours,
+        )
 
     logger.info(
         "Payout request created: payout_id=%s tenant_id=%s student_id=%s amount=%s expires_at=%s",
@@ -581,6 +583,138 @@ def create_payout_request(
     )
 
     return payout
+
+
+def get_payout_by_raw_token(
+    *,
+    tenant: "Tenant",
+    raw_token: str,
+) -> Optional[Payout]:
+    """Look up a tenant-scoped Payout by SHA-256 digest of the confirmation token."""
+    if not raw_token:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    payout = (
+        Payout.objects.select_related("student", "tenant")
+        .filter(tenant=tenant, confirmation_token_hash=token_hash)
+        .first()
+    )
+    if payout is None or not payout.confirmation_token_hash:
+        return None
+    if not hmac.compare_digest(token_hash, payout.confirmation_token_hash):
+        return None
+    return payout
+
+
+def inspect_payout_confirmation_state(
+    *,
+    tenant: "Tenant",
+    payout: Optional[Payout],
+    user: "User",
+) -> dict:
+    """
+    Read-only inspection of a payout confirmation token for the GET preview page.
+    Enforces student ownership when a matching payout exists and performs zero mutations.
+    """
+    if payout is None or payout.tenant_id != tenant.id:
+        return {"state": "invalid", "payout": None}
+
+    if payout.student_id != user.id:
+        raise PermissionDenied(
+            "You do not have permission to confirm this refund request."
+        )
+
+    if payout.status == Payout.Status.PENDING_CONFIRMATION:
+        now = timezone.now()
+        if payout.confirmation_expires_at and now > payout.confirmation_expires_at:
+            return {"state": "expired", "payout": payout}
+
+        wallet = Wallet.objects.filter(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        ).first()
+        if wallet is not None and wallet.is_frozen:
+            return {"state": "frozen", "payout": payout}
+
+        available = wallet.available_balance if wallet is not None else Decimal("0.00")
+        if available < payout.amount_gross:
+            return {
+                "state": "insufficient_balance",
+                "payout": payout,
+                "available_balance": available,
+            }
+
+        return {
+            "state": "ready",
+            "payout": payout,
+            "available_balance": available,
+        }
+
+    if payout.status in (
+        Payout.Status.REQUESTED,
+        Payout.Status.PROCESSING,
+        Payout.Status.COMPLETED,
+    ):
+        return {"state": "already_confirmed", "payout": payout}
+
+    if payout.status == Payout.Status.EXPIRED:
+        return {"state": "expired", "payout": payout}
+
+    return {"state": "cancelled", "payout": payout}
+
+
+def _notify_teacher_payout_requested(
+    *,
+    tenant_id: int,
+    payout_id: int,
+    student_id: int,
+    amount_gross: Decimal,
+    currency: str,
+) -> None:
+    """Create and broadcast an in-platform notification to the tenant's teacher."""
+    from django.contrib.auth import get_user_model
+
+    from accounts.models import Tenant as TenantModel
+
+    tenant_obj = (
+        TenantModel.objects.select_related("teacher_profile__user")
+        .filter(pk=tenant_id)
+        .first()
+    )
+    if tenant_obj is None:
+        return
+    teacher_profile = getattr(tenant_obj, "teacher_profile", None)
+    teacher_user = getattr(teacher_profile, "user", None) if teacher_profile else None
+    if teacher_user is None:
+        return
+
+    UserModel = get_user_model()
+    student_user = UserModel.objects.filter(pk=student_id).first()
+    student_name = (
+        get_user_display_name(student_user)
+        if student_user
+        else f"Student #{student_id}"
+    )
+
+    create_and_send_notification(
+        recipient=teacher_user,
+        actor=student_user,
+        event_type=Notification.EventType.PAYOUT_REQUESTED,
+        level=Notification.Level.INFO,
+        title="New Refund Request Ready for Review",
+        message=(
+            f"{student_name} confirmed a refund request of "
+            f"${amount_gross:.2f} {currency} (Payout #{payout_id})."
+        ),
+        action_url=reverse("payments:teacher_finance"),
+        metadata={
+            "payout_id": payout_id,
+            "student_id": student_id,
+            "amount": f"{amount_gross:.2f}",
+            "currency": currency,
+        },
+    )
 
 
 def verify_and_reserve_payout(
@@ -598,8 +732,8 @@ def verify_and_reserve_payout(
     Re-checks that wallet is not frozen and available_balance >= payout.amount_gross.
     If available balance has dropped, commits CANCELLED status to the DB before raising
     PayoutInsufficientBalanceError.
-    On success, transitions payout to REQUESTED, sets confirmation_used_at, and appends a PAYOUT_HOLD
-    ledger entry.
+    On success, transitions payout to REQUESTED, sets confirmation_used_at, appends a PAYOUT_HOLD
+    ledger entry, and schedules a teacher review queue notification on commit.
     """
     if payout.tenant_id != tenant.id:
         raise TenantMismatchError(
@@ -643,6 +777,12 @@ def verify_and_reserve_payout(
                 f"Payout {locked_payout.pk} is in status '{locked_payout.status}'; expected PENDING_CONFIRMATION."
             )
 
+        if (
+            locked_payout.confirmation_expires_at
+            and timezone.now() > locked_payout.confirmation_expires_at
+        ):
+            raise ValidationError("Payout confirmation token has expired.")
+
         if locked_wallet.is_frozen:
             raise WalletFrozenError(
                 f"Wallet {locked_wallet.pk} is frozen; cannot reserve payout funds."
@@ -673,6 +813,16 @@ def verify_and_reserve_payout(
                 idempotency_key=idempotency_key,
                 reference_id=f"payout_{locked_payout.id}",
                 description=f"Payout hold: payout #{locked_payout.id}",
+            )
+
+            transaction.on_commit(
+                lambda tid=tenant.id, pid=locked_payout.id, sid=locked_payout.student_id, amt=locked_payout.amount_gross, cur=tenant.default_currency: _notify_teacher_payout_requested(
+                    tenant_id=tid,
+                    payout_id=pid,
+                    student_id=sid,
+                    amount_gross=amt,
+                    currency=cur,
+                )
             )
 
     # Sync memory instance
@@ -800,6 +950,68 @@ def cancel_payout_request(
     )
 
     return entry
+
+
+def cancel_student_payout_request(
+    *,
+    tenant: "Tenant",
+    payout: Payout,
+    user: "User",
+) -> Payout:
+    """
+    Allows the owning student to cancel their own payout request while in
+    PENDING_CONFIRMATION (transitions directly to CANCELLED with no ledger entry)
+    or REQUESTED (releases PAYOUT_HOLD via _execute_payout_hold_release and transitions to CANCELLED).
+    Raises PermissionDenied for non-owners and PayoutConflictError (HTTP 409) once PROCESSING or later.
+    """
+    if payout.tenant_id != tenant.id:
+        raise TenantMismatchError(
+            f"Payout {payout.pk} does not belong to tenant {tenant.pk}."
+        )
+
+    if payout.student_id != user.id:
+        raise PermissionDenied("Only the requesting student can cancel this payout.")
+
+    with transaction.atomic():
+        wallet = get_or_create_wallet(
+            tenant=tenant,
+            user=payout.student,
+            currency=tenant.default_currency,
+        )
+        # Consistent lock order: Wallet -> Payout
+        locked_wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+        locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
+
+        if locked_payout.status == Payout.Status.PENDING_CONFIRMATION:
+            locked_payout.status = Payout.Status.CANCELLED
+            locked_payout.save(update_fields=["status"])
+            released_hold = False
+        elif locked_payout.status == Payout.Status.REQUESTED:
+            _execute_payout_hold_release(
+                tenant=tenant,
+                locked_wallet=locked_wallet,
+                locked_payout=locked_payout,
+                target_status=Payout.Status.CANCELLED,
+                description=f"Payout release via cancellation: payout #{locked_payout.id}",
+            )
+            released_hold = True
+        else:
+            raise PayoutConflictError(
+                f"Cannot cancel payout in '{locked_payout.status}' status. "
+                "Cancellation is not allowed once processing has begun."
+            )
+
+    payout.status = locked_payout.status
+    locked_payout.released_hold = released_hold
+    wallet.reserved_balance = locked_wallet.reserved_balance
+
+    logger.info(
+        "Student cancelled payout request: payout_id=%s tenant_id=%s student_id=%s",
+        payout.id,
+        tenant.id,
+        payout.student_id,
+    )
+    return locked_payout
 
 
 DUPLICATE_PAYOUT_EXTERNAL_REF_ERROR = (
@@ -1122,6 +1334,69 @@ def release_payout(
 FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _MANUAL_PREFIX_RE = re.compile(r"^tenant_\d+:manual_")
 _MANUAL_TOPUP_DESC_RE = re.compile(r"^Manual top-up:\s*tenant_\d+:manual_")
+_REJECT_DESC_RE = re.compile(r"^Payout rejected \((.+)\): payout #\d+$")
+
+
+def extract_payout_rejection_reason(description: str) -> str:
+    match = _REJECT_DESC_RE.match(description or "")
+    return match.group(1) if match else ""
+
+
+def attach_payout_display_fields(
+    payouts: list[Payout],
+    tenant: "Tenant",
+    viewer_tz: ZoneInfo,
+    *,
+    include_rejection_reasons: bool = False,
+) -> None:
+    """Attach student display name, localized timestamps, and optional rejection reasons."""
+    reasons_by_payout_ref: dict[str, str] = {}
+    if include_rejection_reasons:
+        rejected_refs = [
+            f"payout_{p.id}" for p in payouts if p.status == Payout.Status.REJECTED
+        ]
+        if rejected_refs:
+            for entry in LedgerEntry.objects.filter(
+                tenant=tenant,
+                entry_type=LedgerEntry.EntryType.PAYOUT_RELEASE,
+                reference_id__in=rejected_refs,
+            ).only("reference_id", "description"):
+                reason = extract_payout_rejection_reason(entry.description)
+                if reason:
+                    reasons_by_payout_ref[entry.reference_id] = reason
+
+    for payout in payouts:
+        payout.student_display_name = get_user_display_name(payout.student)
+        payout.local_requested_at = to_viewer_local(
+            payout.confirmation_used_at or payout.created_at, viewer_tz
+        )
+        payout.local_created_at = to_viewer_local(payout.created_at, viewer_tz)
+        payout.local_processed_at = to_viewer_local(payout.processed_at, viewer_tz)
+        payout.rejection_reason = reasons_by_payout_ref.get(f"payout_{payout.id}", "")
+
+
+def get_student_payouts_for_display(
+    tenant: Optional["Tenant"],
+    student: "User",
+    viewer_tz: ZoneInfo,
+    *,
+    limit: int = 20,
+) -> list[Payout]:
+    """Return recent Payout records for a student with display timestamps and rejection reasons."""
+    if tenant is None:
+        return []
+    payouts = list(
+        Payout.objects.filter(tenant=tenant, student=student)
+        .select_related("student", "tenant")
+        .order_by("-created_at", "-id")[:limit]
+    )
+    attach_payout_display_fields(
+        payouts,
+        tenant,
+        viewer_tz,
+        include_rejection_reasons=True,
+    )
+    return payouts
 
 
 def get_user_display_name(user) -> str:

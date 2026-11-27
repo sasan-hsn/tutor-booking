@@ -1,0 +1,12 @@
+Hello {{ student_name }},
+
+You requested a refund of ${{ amount_gross|floatformat:2 }} {{ currency }} to {{ destination }}.
+{% if notes %}
+Notes: {{ notes }}
+{% endif %}
+Please confirm your refund request by visiting the following link within {{ confirmation_hours }} hours:
+{{ confirmation_url }}
+
+No funds have been held yet. Your refund will only enter the teacher review queue after you confirm this request. Transfer or network fees may be deducted from the requested amount when processed.
+
+If you did not request this refund, you can ignore this email or cancel the request from your wallet page.

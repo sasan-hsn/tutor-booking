@@ -576,4 +576,151 @@ describe('Student Wallet Top-Up Modal Controller', () => {
         assert.strictEqual(elements.topupOrderAmountDisplay.textContent, '$50.00 USD');
         assert.strictEqual(elements.topupOrderLabel.textContent, '#67');
     });
+
+    test('refund modal validates over-withdrawal client-side and submits valid Stage 1 request', async () => {
+        buildEnv();
+        const refundModal = new MockEl('DIV', 'refundModal');
+        refundModal.dataset.requestUrl = '/wallet/payouts/request/';
+        refundModal.dataset.availableBalance = '50.00';
+        refundModal.dataset.currency = 'USD';
+        refundModal.dataset.isFrozen = 'false';
+
+        const refundErrorAlert = new MockEl('DIV', 'refundErrorAlert');
+        refundErrorAlert.classList.add('d-none');
+        const refundStepForm = new MockEl('DIV', 'refundStepForm');
+        const refundStepSubmitted = new MockEl('DIV', 'refundStepSubmitted');
+        refundStepSubmitted.classList.add('d-none');
+        const refundRequestForm = new MockEl('FORM', 'refundRequestForm');
+        const refundAmountInput = new MockEl('INPUT', 'refundAmountInput');
+        const refundDestinationInput = new MockEl('INPUT', 'refundDestinationInput');
+        const refundNotesInput = new MockEl('INPUT', 'refundNotesInput');
+        const submitRefundRequestBtn = new MockEl('BUTTON', 'submitRefundRequestBtn');
+        const refundConfirmationNotice = new MockEl('P', 'refundConfirmationNotice');
+        const refundSubmittedMeta = new MockEl('DIV', 'refundSubmittedMeta');
+        const studentPayoutsContainer = new MockEl('SECTION', 'studentPayoutsContainer');
+
+        Object.assign(elements, {
+            refundModal,
+            refundErrorAlert,
+            refundStepForm,
+            refundStepSubmitted,
+            refundRequestForm,
+            refundAmountInput,
+            refundDestinationInput,
+            refundNotesInput,
+            submitRefundRequestBtn,
+            refundConfirmationNotice,
+            refundSubmittedMeta,
+            studentPayoutsContainer,
+        });
+
+        global.fetch = async (url, opts) => {
+            fetchCalls.push({ url, opts });
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    success: true,
+                    payout_id: 91,
+                    status: 'PENDING_CONFIRMATION',
+                    amount_gross: '25.00',
+                    currency: 'USD',
+                    message: 'We have sent a confirmation link to your email. You must confirm this request within 24 hours.',
+                    payouts_html: '<div id="payout-91">Pending</div>',
+                }),
+            };
+        };
+
+        studentWallet.initStudentWallet(global.document, global.window);
+
+        // Over-withdrawal blocked client-side without fetch
+        refundAmountInput.value = '75.00';
+        refundDestinationInput.value = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+        await refundRequestForm.dispatchEvent({ type: 'submit' });
+        assert.strictEqual(fetchCalls.length, 0);
+        assert.strictEqual(refundErrorAlert.classList.contains('d-none'), false);
+        assert.match(refundErrorAlert.textContent, /cannot exceed/i);
+
+        // Valid submission posts to Stage 1 endpoint and shows 24h notice
+        refundAmountInput.value = '25.00';
+        refundNotesInput.value = 'Returning unused credit';
+        await refundRequestForm.dispatchEvent({ type: 'submit' });
+
+        assert.strictEqual(fetchCalls.length, 1);
+        assert.strictEqual(fetchCalls[0].url, '/wallet/payouts/request/');
+        assert.strictEqual(refundStepForm.classList.contains('d-none'), true);
+        assert.strictEqual(refundStepSubmitted.classList.contains('d-none'), false);
+        assert.match(refundConfirmationNotice.textContent, /24 hours/);
+        assert.strictEqual(studentPayoutsContainer.innerHTML, '<div id="payout-91">Pending</div>');
+    });
+
+    test('payout cancellation updates balances and handles 409 conflict', async () => {
+        buildEnv();
+        const studentPayoutsContainer = new MockEl('SECTION', 'studentPayoutsContainer');
+        const studentPayoutsAlert = new MockEl('DIV', 'studentPayoutsAlert');
+        studentPayoutsAlert.classList.add('d-none');
+        const walletAvailableBalanceValue = new MockEl('DIV', 'walletAvailableBalanceValue');
+        walletAvailableBalanceValue.textContent = '$25.00';
+        const walletReservedBalanceValue = new MockEl('DIV', 'walletReservedBalanceValue');
+        walletReservedBalanceValue.textContent = '$25.00';
+        const walletSettledBalanceValue = new MockEl('DIV', 'walletSettledBalanceValue');
+        walletSettledBalanceValue.textContent = '$50.00';
+
+        Object.assign(elements, {
+            studentPayoutsContainer,
+            studentPayoutsAlert,
+            walletAvailableBalanceValue,
+            walletReservedBalanceValue,
+            walletSettledBalanceValue,
+        });
+
+        let shouldConflict = false;
+        global.fetch = async (url, opts) => {
+            fetchCalls.push({ url, opts });
+            if (shouldConflict) {
+                return {
+                    ok: false,
+                    status: 409,
+                    json: async () => ({
+                        success: false,
+                        error: "Cannot cancel payout in 'PROCESSING' status.",
+                    }),
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    success: true,
+                    payout_id: 91,
+                    status: 'CANCELLED',
+                    message: 'Refund request #91 cancelled and $25.00 USD released back to your available balance.',
+                    available_balance: '50.00',
+                    reserved_balance: '0.00',
+                    settled_balance: '50.00',
+                    payouts_html: '<div id="payout-91">Cancelled</div>',
+                }),
+            };
+        };
+
+        studentWallet.initStudentWallet(global.document, global.window);
+
+        const cancelForm = new MockEl('FORM', 'cancelForm91');
+        cancelForm.classList.add('student-payout-cancel-form');
+        cancelForm.setAttribute('action', '/wallet/payouts/91/cancel/');
+        const cancelBtn = new MockEl('BUTTON');
+        cancelForm.querySelector = () => cancelBtn;
+
+        await studentPayoutsContainer.dispatchEvent({ type: 'submit', target: cancelForm });
+        assert.strictEqual(fetchCalls.length, 1);
+        assert.strictEqual(fetchCalls[0].url, '/wallet/payouts/91/cancel/');
+        assert.strictEqual(walletAvailableBalanceValue.textContent, '$50.00');
+        assert.strictEqual(walletReservedBalanceValue.textContent, '$0.00');
+        assert.strictEqual(studentPayoutsAlert.classList.contains('alert-success'), true);
+
+        shouldConflict = true;
+        await studentPayoutsContainer.dispatchEvent({ type: 'submit', target: cancelForm });
+        assert.strictEqual(studentPayoutsAlert.classList.contains('alert-danger'), true);
+        assert.match(studentPayoutsAlert.textContent, /PROCESSING/);
+    });
 });

@@ -23,4 +23,19 @@ urlpatterns = [
         payment_views.student_topup_cancel,
         name="student_topup_cancel",
     ),
+    path(
+        "payouts/request/",
+        payment_views.student_payout_request,
+        name="student_payout_request",
+    ),
+    path(
+        "payouts/confirm/<str:raw_token>/",
+        payment_views.student_payout_confirm,
+        name="student_payout_confirm",
+    ),
+    path(
+        "payouts/<int:payout_id>/cancel/",
+        payment_views.student_payout_cancel,
+        name="student_payout_cancel",
+    ),
 ]

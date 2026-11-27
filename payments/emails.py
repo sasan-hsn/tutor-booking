@@ -12,6 +12,45 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+def _render_and_send_multipart_email(
+    *,
+    recipient_email: str,
+    subject: str,
+    text_template: str,
+    html_template: str,
+    extra_context: dict,
+    header_subtitle: str,
+    headers: dict | None = None,
+) -> None:
+    """Build shared site branding context, render multipart templates, and send email."""
+    site_url = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+    site_domain = urlparse(site_url).netloc or site_url
+    site_name = getattr(settings, "SITE_NAME", "Tutor Booking")
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
+
+    context = {
+        "header_title": site_name,
+        "header_subtitle": header_subtitle,
+        "footer_brand": site_name,
+        "site_name": site_name,
+        "site_url": site_url,
+        "site_domain": site_domain,
+        **extra_context,
+    }
+    text_content = render_to_string(text_template, context)
+    html_content = render_to_string(html_template, context)
+
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=text_content,
+        from_email=from_email,
+        to=[recipient_email],
+        headers=headers or {},
+    )
+    email.attach_alternative(html_content, "text/html")
+    email.send(fail_silently=False)
+
+
 def _send_dedup_teacher_email(
     *,
     teacher_user,
@@ -38,36 +77,22 @@ def _send_dedup_teacher_email(
         return False
 
     site_url = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
-    site_domain = urlparse(site_url).netloc or site_url
-    site_name = getattr(settings, "SITE_NAME", "Tutor Booking")
     finance_url = f"{site_url}{reverse('payments:teacher_finance')}"
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
-
-    context = {
-        "teacher_name": teacher_user.first_name or teacher_user.username,
-        "finance_url": finance_url,
-        "header_title": site_name,
-        "header_subtitle": header_subtitle,
-        "footer_brand": site_name,
-        "site_name": site_name,
-        "site_url": site_url,
-        "site_domain": site_domain,
-        **extra_context,
-    }
-    text_content = render_to_string(text_template, context)
-    html_content = render_to_string(html_template, context)
-
-    email = EmailMultiAlternatives(
-        subject=subject,
-        body=text_content,
-        from_email=from_email,
-        to=[recipient_email],
-        headers=headers or {},
-    )
-    email.attach_alternative(html_content, "text/html")
 
     try:
-        email.send(fail_silently=False)
+        _render_and_send_multipart_email(
+            recipient_email=recipient_email,
+            subject=subject,
+            text_template=text_template,
+            html_template=html_template,
+            header_subtitle=header_subtitle,
+            headers=headers,
+            extra_context={
+                "teacher_name": teacher_user.first_name or teacher_user.username,
+                "finance_url": finance_url,
+                **extra_context,
+            },
+        )
     except Exception:
         cache.delete(dedup_key)
         raise
@@ -145,3 +170,56 @@ def send_topup_claim_alert_email(order) -> bool:
             ),
         },
     )
+
+
+def send_payout_confirmation_email(
+    payout,
+    raw_token: str,
+    confirmation_hours: int = 24,
+) -> bool:
+    """
+    Send the Stage 1 payout confirmation link email to the requesting student.
+    Uses an absolute URL built from settings.SITE_URL so the link works across email clients.
+    """
+    student = payout.student
+    recipient_email = (getattr(student, "email", "") or "").strip()
+    if not recipient_email:
+        logger.info(
+            "Student %s has no email address; skipping payout confirmation email for Payout #%s.",
+            student.id,
+            payout.id,
+        )
+        return False
+
+    site_url = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+    site_name = getattr(settings, "SITE_NAME", "Tutor Booking")
+    confirm_path = reverse(
+        "wallet:student_payout_confirm",
+        kwargs={"raw_token": raw_token},
+    )
+    confirmation_url = f"{site_url}{confirm_path}"
+
+    _render_and_send_multipart_email(
+        recipient_email=recipient_email,
+        subject=f"Confirm Your Refund Request – {site_name}",
+        text_template="payments/emails/payout_confirmation.txt",
+        html_template="payments/emails/payout_confirmation.html",
+        header_subtitle="Refund Request Confirmation",
+        extra_context={
+            "payout": payout,
+            "student_name": student.first_name or student.username,
+            "amount_gross": payout.amount_gross,
+            "currency": payout.tenant.default_currency,
+            "destination": payout.destination,
+            "notes": payout.notes,
+            "confirmation_url": confirmation_url,
+            "confirmation_hours": confirmation_hours,
+        },
+    )
+
+    logger.info(
+        "Sent payout confirmation email for Payout #%s to %s.",
+        payout.id,
+        recipient_email,
+    )
+    return True

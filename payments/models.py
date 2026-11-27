@@ -191,6 +191,7 @@ class Payout(models.Model):
     )
     provider = models.CharField(max_length=32, default="crypto_usdt")
     destination = models.CharField(max_length=128)
+    notes = models.TextField(max_length=500, blank=True, default="")
     external_ref = models.CharField(max_length=128, null=True, blank=True)
     amount_gross = models.DecimalField(max_digits=12, decimal_places=2)
     fee_deducted = models.DecimalField(
@@ -199,7 +200,9 @@ class Payout(models.Model):
         default=Decimal("0.00"),
     )
     amount_net = models.DecimalField(max_digits=12, decimal_places=2)
-    confirmation_token_hash = models.CharField(max_length=64, blank=True, null=True)
+    confirmation_token_hash = models.CharField(
+        max_length=64, blank=True, null=True, db_index=True
+    )
     confirmation_expires_at = models.DateTimeField(null=True, blank=True)
     confirmation_used_at = models.DateTimeField(null=True, blank=True)
     reminder_48h_sent_at = models.DateTimeField(null=True, blank=True)
