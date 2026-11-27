@@ -3017,3 +3017,32 @@ h1, h2, h3, h4, h5, h6,
     max-width: 320px;
 }
 
+.navbar-wallet-topup-btn {
+    background-color: var(--primary-blue);
+    color: #ffffff;
+    border: 1px solid var(--primary-blue);
+    font-size: 0.8rem;
+    font-weight: 700;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.navbar-wallet-topup-btn:hover,
+.navbar-wallet-topup-btn:focus {
+    background-color: var(--primary-blue-hover);
+    border-color: var(--primary-blue-hover);
+    color: #ffffff;
+}
+
+.topup-qr-image {
+    width: 180px;
+    height: 180px;
+    object-fit: contain;
+}
+
+.topup-bep20-gate {
+    background-color: #f8fafc;
+}
+

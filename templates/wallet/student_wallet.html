@@ -72,6 +72,19 @@
     {% include "wallet/partials/_student_ledger_table.html" %}
 </section>
 
-{% include "wallet/partials/_placeholder_modal.html" with modal_id="topUpModal" modal_title="Add Funds" modal_body="Self-service wallet top-up instructions are coming soon. Please contact your teacher to credit your prepaid balance." %}
+{% include "wallet/partials/_topup_modal.html" %}
 {% include "wallet/partials/_placeholder_modal.html" with modal_id="refundModal" modal_title="Request Refund" modal_body="Self-service refund requests are coming soon. Please message your teacher if you need assistance with a refund." %}
+{% include "partials/_terms_acceptance_modal.html" %}
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/student_wallet.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (window.StudentWallet && typeof window.StudentWallet.initStudentWallet === 'function') {
+        window.StudentWallet.initStudentWallet(document, window);
+    }
+});
+</script>
 {% endblock %}

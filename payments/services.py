@@ -15,12 +15,16 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
+from django.urls import reverse
 from django.utils import timezone
 
+from notifications.models import Notification
+from notifications.services import create_and_send_notification
 from payments.eip55 import validate_bep20_address
 from payments.exceptions import (
     PayoutConflictError,
     PayoutInsufficientBalanceError,
+    TopupOrderConflictError,
 )
 from payments.models import Order, Payment, PaymentAddress, Payout
 from wallet.exceptions import (
@@ -49,6 +53,74 @@ def _validate_topup_amount(
         )
 
 
+def get_active_crypto_receiving_address(
+    tenant: "Tenant",
+) -> Optional[PaymentAddress]:
+    """Return the tenant's active crypto_usdt receiving address, if configured."""
+    return (
+        PaymentAddress.objects.filter(
+            tenant=tenant,
+            provider=DEFAULT_RECEIVING_ADDRESS_PROVIDER,
+            status=PaymentAddress.Status.ACTIVE,
+        )
+        .order_by("id")
+        .first()
+    )
+
+
+def get_active_pending_order(
+    tenant: "Tenant",
+    student: "User",
+) -> Optional[Order]:
+    """Return the student's latest unexpired PENDING top-up order for the tenant."""
+    return (
+        Order.objects.filter(
+            tenant=tenant,
+            student=student,
+            status=Order.Status.PENDING,
+            expires_at__gt=timezone.now(),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def build_topup_order_payload(
+    order: Order,
+    tenant: "Tenant",
+    viewer_tz: ZoneInfo,
+    *,
+    include_instructions: bool = True,
+) -> dict:
+    """Serialize a top-up Order for student wallet templates and JSON responses."""
+    local_expires = to_viewer_local(order.expires_at, viewer_tz)
+    payload = {
+        "order_id": order.id,
+        "amount": f"{order.amount:.2f}",
+        "currency": order.currency,
+        "expires_at_iso": order.expires_at.isoformat(),
+        "expires_at_display": (
+            local_expires.strftime("%b %d, %Y %H:%M") if local_expires else ""
+        ),
+        "already_claimed": order.claimed_at is not None,
+        "claimed_txhash": order.claimed_txhash or "",
+        "claim_url": reverse(
+            "wallet:student_topup_claim", kwargs={"order_id": order.id}
+        ),
+    }
+    if include_instructions:
+        from payments.qr import render_qr_data_uri
+
+        snapshot = order.payment_instructions_snapshot or {}
+        address = snapshot.get("address") or snapshot.get("receiving_address") or ""
+        if not address:
+            active_addr = get_active_crypto_receiving_address(tenant)
+            address = active_addr.address if active_addr is not None else ""
+        payload["address"] = address
+        payload["qr_data_uri"] = render_qr_data_uri(address) if address else ""
+    return payload
+
+
 def create_topup_order(
     *,
     tenant: "Tenant",
@@ -64,29 +136,12 @@ def create_topup_order(
     _validate_topup_amount(tenant, amount, currency)
 
     now = timezone.now()
-    existing_order = (
-        Order.objects.filter(
-            tenant=tenant,
-            student=student,
-            status=Order.Status.PENDING,
-            expires_at__gt=now,
-        )
-        .order_by("-created_at")
-        .first()
-    )
+    existing_order = get_active_pending_order(tenant, student)
     if existing_order is not None:
         return existing_order
 
     # Prioritize crypto_usdt active address, fallback to any active address for the tenant
-    active_address = (
-        PaymentAddress.objects.filter(
-            tenant=tenant,
-            provider="crypto_usdt",
-            status=PaymentAddress.Status.ACTIVE,
-        )
-        .order_by("id")
-        .first()
-    )
+    active_address = get_active_crypto_receiving_address(tenant)
     if active_address is None:
         active_address = (
             PaymentAddress.objects.filter(
@@ -123,6 +178,103 @@ def create_topup_order(
         expires_at=expires_at,
     )
     return order
+
+
+def submit_topup_claim(
+    *,
+    tenant: "Tenant",
+    student: "User",
+    order: Order,
+    txhash: str = "",
+    paid_at: Optional[datetime] = None,
+) -> Order:
+    """
+    Record a student's "I Have Paid" claim on an unexpired PENDING top-up Order,
+    dispatch an in-platform notification to the teacher, and enqueue a teacher email
+    alert on transaction commit.
+    """
+    clean_txhash = (txhash or "").strip()
+    if len(clean_txhash) > 128:
+        raise ValidationError(
+            "Transaction hash / reference must be 128 characters or fewer."
+        )
+
+    if paid_at is not None and timezone.is_naive(paid_at):
+        raise ValidationError("Transfer timestamp must include timezone information.")
+
+    with transaction.atomic():
+        locked_order = Order.objects.select_for_update().get(pk=order.pk)
+
+        if locked_order.tenant_id != tenant.id:
+            raise PermissionDenied(
+                "This top-up order does not belong to this workspace."
+            )
+        if locked_order.student_id != student.id:
+            raise PermissionDenied(
+                "You do not have permission to claim this top-up order."
+            )
+
+        now = timezone.now()
+        if locked_order.status != Order.Status.PENDING:
+            raise TopupOrderConflictError("Only pending top-up orders can be claimed.")
+        if locked_order.expires_at <= now:
+            raise TopupOrderConflictError(
+                "This top-up order has expired. Please start a new top-up."
+            )
+        if locked_order.claimed_at is not None:
+            raise TopupOrderConflictError(
+                "A payment claim has already been submitted for this order."
+            )
+
+        effective_paid_at = paid_at if paid_at is not None else now
+        locked_order.claimed_at = now
+        locked_order.claimed_txhash = clean_txhash
+        locked_order.claimed_paid_at = effective_paid_at
+        locked_order.save(
+            update_fields=["claimed_at", "claimed_txhash", "claimed_paid_at"]
+        )
+
+        teacher_user = tenant.teacher_profile.user
+        student_name = get_user_display_name(student)
+        tx_suffix = f" (Ref: {clean_txhash})" if clean_txhash else ""
+        create_and_send_notification(
+            recipient=teacher_user,
+            actor=student,
+            event_type=Notification.EventType.TOPUP_CLAIM_SUBMITTED,
+            level=Notification.Level.INFO,
+            title="New Top-Up Payment Claim",
+            message=(
+                f"{student_name} claimed a ${locked_order.amount:.2f} "
+                f"{locked_order.currency} top-up deposit{tx_suffix}."
+            ),
+            action_url=reverse("payments:teacher_finance"),
+            metadata={
+                "order_id": locked_order.id,
+                "student_id": student.id,
+                "amount": f"{locked_order.amount:.2f}",
+                "currency": locked_order.currency,
+                "claimed_txhash": clean_txhash,
+            },
+        )
+
+        import payments.tasks as payment_tasks
+
+        transaction.on_commit(
+            lambda oid=locked_order.id: payment_tasks.safe_send_topup_claim_alert(oid)
+        )
+
+        order.claimed_at = locked_order.claimed_at
+        order.claimed_txhash = locked_order.claimed_txhash
+        order.claimed_paid_at = locked_order.claimed_paid_at
+
+        logger.info(
+            "Top-up claim submitted: order_id=%s tenant_id=%s student_id=%s txhash=%s",
+            locked_order.id,
+            tenant.id,
+            student.id,
+            clean_txhash or "<none>",
+        )
+        return locked_order
 
 
 def mark_payment_successful(

@@ -1,15 +1,24 @@
 {% if student_wallet_summary %}
-<a href="{% url 'wallet:student_wallet' %}"
-    id="navbarWalletBadge"
-    class="navbar-wallet-badge badge rounded-pill text-decoration-none d-inline-flex align-items-center gap-1"
-    data-bs-toggle="popover"
-    data-bs-trigger="hover focus"
-    data-bs-placement="bottom"
-    data-bs-html="true"
-    data-bs-title="Wallet Breakdown"
-    data-bs-content="<div class='small'><div>Available Balance: <strong>${{ student_wallet_summary.available_balance|floatformat:2 }}</strong></div><div>Reserved in Lesson Holds: <strong>${{ student_wallet_summary.reserved_balance|floatformat:2 }}</strong></div><div>Settled Account Total: <strong>${{ student_wallet_summary.settled_balance|floatformat:2 }}</strong></div></div>"
-    aria-label="Wallet balance ${{ student_wallet_summary.available_balance|floatformat:2 }}">
-    <i class="bi bi-wallet2" aria-hidden="true"></i>
-    <span id="navbarWalletAmount">${{ student_wallet_summary.available_balance|floatformat:2 }}</span>
-</a>
+<div class="d-inline-flex align-items-center gap-1">
+    <a href="{% url 'wallet:student_wallet' %}"
+        id="navbarWalletBadge"
+        class="navbar-wallet-badge badge rounded-pill text-decoration-none d-inline-flex align-items-center gap-1"
+        data-bs-toggle="popover"
+        data-bs-trigger="hover focus"
+        data-bs-placement="bottom"
+        data-bs-html="true"
+        data-bs-title="Wallet Breakdown"
+        data-bs-content="<div class='small'><div>Available Balance: <strong>${{ student_wallet_summary.available_balance|floatformat:2 }}</strong></div><div>Reserved in Lesson Holds: <strong>${{ student_wallet_summary.reserved_balance|floatformat:2 }}</strong></div><div>Settled Account Total: <strong>${{ student_wallet_summary.settled_balance|floatformat:2 }}</strong></div></div>"
+        aria-label="Wallet balance ${{ student_wallet_summary.available_balance|floatformat:2 }}">
+        <i class="bi bi-wallet2" aria-hidden="true"></i>
+        <span id="navbarWalletAmount">${{ student_wallet_summary.available_balance|floatformat:2 }}</span>
+    </a>
+    <a href="{% url 'wallet:student_wallet' %}?topup=1"
+        id="navbarWalletTopupBtn"
+        class="navbar-wallet-topup-btn badge rounded-pill text-decoration-none d-inline-flex align-items-center justify-content-center"
+        title="Add funds"
+        aria-label="Add funds to wallet">
+        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+    </a>
+</div>
 {% endif %}

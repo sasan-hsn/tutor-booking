@@ -1,8 +1,11 @@
+from datetime import datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from accounts.models import get_default_min_topup_amount
 from booking.models import Booking
@@ -23,6 +26,22 @@ DUPLICATE_REFERENCE_ERROR = (
 DUPLICATE_IDEMPOTENCY_ERROR = (
     "This submission token has already been used for another deposit."
 )
+
+
+def _resolve_min_topup_amount(tenant) -> Decimal:
+    if tenant is not None:
+        return tenant.min_topup_amount
+    return get_default_min_topup_amount()
+
+
+def _validate_min_topup_amount(amount: Decimal, tenant) -> Decimal:
+    min_amount = _resolve_min_topup_amount(tenant)
+    currency = tenant.default_currency if tenant is not None else "USD"
+    if amount <= Decimal("0.00"):
+        raise ValidationError("Amount must be greater than zero.")
+    if amount < min_amount:
+        raise ValidationError(f"Amount must be at least ${min_amount:.2f} {currency}.")
+    return amount
 
 
 class StudentChoiceField(forms.ModelChoiceField):
@@ -103,21 +122,10 @@ class ManualTopUpForm(forms.Form):
         self.fields["amount"].widget.attrs["min"] = f"{self._min_topup_amount():.2f}"
 
     def _min_topup_amount(self) -> Decimal:
-        if self.tenant is not None:
-            return self.tenant.min_topup_amount
-        return get_default_min_topup_amount()
+        return _resolve_min_topup_amount(self.tenant)
 
     def clean_amount(self) -> Decimal:
-        amount = self.cleaned_data["amount"]
-        min_amount = self._min_topup_amount()
-        currency = self.tenant.default_currency if self.tenant is not None else "USD"
-        if amount <= Decimal("0.00"):
-            raise ValidationError("Amount must be greater than zero.")
-        if amount < min_amount:
-            raise ValidationError(
-                f"Amount must be at least ${min_amount:.2f} {currency}."
-            )
-        return amount
+        return _validate_min_topup_amount(self.cleaned_data["amount"], self.tenant)
 
     def clean_reference_id(self) -> str:
         ref = (self.cleaned_data.get("reference_id") or "").strip()
@@ -269,3 +277,67 @@ class ReceivingAddressForm(forms.Form):
 
     def clean_address(self) -> str:
         return validate_bep20_address(self.cleaned_data.get("address", ""))
+
+
+class StudentTopUpInitiateForm(forms.Form):
+    """Validates student-submitted deposit amount against tenant.min_topup_amount."""
+
+    amount = forms.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=True,
+    )
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tenant = tenant
+
+    def clean_amount(self) -> Decimal:
+        return _validate_min_topup_amount(self.cleaned_data["amount"], self.tenant)
+
+
+class StudentTopUpClaimForm(forms.Form):
+    """Validates optional transaction reference and transfer timestamp for a top-up claim."""
+
+    txhash = forms.CharField(
+        max_length=128,
+        required=False,
+    )
+    paid_at = forms.CharField(
+        required=False,
+    )
+
+    def __init__(self, *args, viewer_tz: ZoneInfo | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.viewer_tz = viewer_tz or ZoneInfo("UTC")
+
+    def clean_txhash(self) -> str:
+        return (self.cleaned_data.get("txhash") or "").strip()
+
+    def clean_paid_at(self):
+        raw = (self.cleaned_data.get("paid_at") or "").strip()
+        if not raw:
+            return None
+
+        parsed: datetime | None = None
+        for fmt in (None, "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                parsed = (
+                    datetime.fromisoformat(raw)
+                    if fmt is None
+                    else datetime.strptime(raw, fmt)
+                )
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            raise ValidationError("Enter a valid transfer date and time.")
+
+        if timezone.is_naive(parsed):
+            parsed = parsed.replace(tzinfo=self.viewer_tz)
+
+        if parsed > timezone.now() + timezone.timedelta(minutes=5):
+            raise ValidationError("Transfer timestamp cannot be in the future.")
+
+        return parsed
