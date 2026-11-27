@@ -13,6 +13,7 @@ from wallet.services import (
     STUDENT_LEDGER_CATEGORIES,
     classify_student_ledger_entry,
     credit_wallet,
+    format_student_ledger_description,
     get_entry_types_for_student_category,
     get_or_create_wallet,
     reserve_funds,
@@ -75,6 +76,134 @@ class StudentLedgerClassificationTests(SimpleTestCase):
         self.assertIsNone(get_entry_types_for_student_category("INVALID_TYPE"))
         self.assertIsNone(get_entry_types_for_student_category(""))
         self.assertIsNone(get_entry_types_for_student_category(None))
+
+    def test_format_student_ledger_description_hides_internal_audit_tokens(self):
+        cases = [
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.RESERVE,
+                    reference_id="booking_150",
+                    description="Booking hold: booking #150",
+                ),
+                "Lesson Hold for Booking #150",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.RESERVE,
+                    reference_id="misc_ref",
+                    description="Booking hold",
+                ),
+                "Lesson Hold",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.RELEASE,
+                    reference_id="booking_147",
+                    description="Booking settlement (release: STUDENT_CANCELLED) by user:12 for booking #147",
+                ),
+                "Lesson Hold Released for Booking #147",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.RELEASE,
+                    reference_id="booking_148",
+                    description="Booking settlement (release: DISPUTE_STUDENT_FAVOR) by user:10 for booking #148",
+                ),
+                "Lesson Hold Released for Booking #148 (Dispute Resolved)",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.CONSUME,
+                    reference_id="booking_146",
+                    description="Booking settlement (consume: COMPLETED) by system for booking #146",
+                ),
+                "Lesson Settlement for Booking #146",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.CONSUME,
+                    reference_id="booking_145",
+                    description="Booking settlement (consume: DISPUTE_TEACHER_FAVOR) by user:10 for booking #145",
+                ),
+                "Lesson Settlement for Booking #145 (Dispute Resolved)",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.CREDIT,
+                    reference_id="tenant_1:manual_REF999",
+                    description="Manual top-up: tenant_1:manual_REF999",
+                ),
+                "Wallet Deposit Credit",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.CREDIT,
+                    reference_id="ref_custom",
+                    description="Manual Deposit Credit",
+                ),
+                "Manual Deposit Credit",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.WAIVER,
+                    reference_id="booking_149",
+                    description="Penalty waiver for booking #149: Goodwill fee waiver",
+                ),
+                "Penalty Waiver Credit for Booking #149",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.ADJUSTMENT_CREDIT,
+                    reference_id="admin_1",
+                    description="Administrative adjustment (credit): internal ops note",
+                ),
+                "Account Balance Adjustment",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.ADJUSTMENT_DEBIT,
+                    reference_id="admin_1",
+                    description="Administrative adjustment (debit): internal ops note",
+                ),
+                "Account Balance Adjustment",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.PAYOUT_HOLD,
+                    reference_id="payout_5",
+                    description="Payout hold: payout #5",
+                ),
+                "Refund Request Hold",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.PAYOUT_RELEASE,
+                    reference_id="payout_5",
+                    description="Payout rejected (Invalid address): payout #5",
+                ),
+                "Refund Hold Released",
+            ),
+            (
+                LedgerEntry(
+                    entry_type=LedgerEntry.EntryType.PAYOUT_SETTLE,
+                    reference_id="0xabc123",
+                    description="Payout settled: 0xabc123 for payout #5",
+                ),
+                "Refund Completed",
+            ),
+        ]
+
+        for entry, expected_desc in cases:
+            rendered = format_student_ledger_description(entry)
+            self.assertEqual(rendered, expected_desc, msg=entry.description)
+            for forbidden in (
+                "by user:",
+                "DISPUTE_",
+                "tenant_1:",
+                "(consume:",
+                "(release:",
+            ):
+                self.assertNotIn(forbidden, rendered)
 
 
 class NavbarWalletBadgeTests(RoleTestCase):
@@ -397,15 +526,15 @@ class StudentWalletLedgerTableTests(RoleTestCase):
             wallet=wallet,
             amount=Decimal("20.00"),
             idempotency_key="filter-reserve-20",
-            reference_id="booking_filter_20",
-            description="Filter Hold Entry",
+            reference_id="booking_20",
+            description="Booking hold: booking #20",
         )
 
         hold_resp = self.student_client.get(
             reverse("wallet:student_wallet"), {"type": "HOLD"}
         )
         self.assertEqual(hold_resp.status_code, 200)
-        self.assertContains(hold_resp, "Filter Hold Entry")
+        self.assertContains(hold_resp, "Lesson Hold for Booking #20")
         self.assertNotContains(hold_resp, "Filter Credit Entry")
         self.assertEqual(hold_resp.context["active_type_filter"], "HOLD")
 
@@ -413,7 +542,7 @@ class StudentWalletLedgerTableTests(RoleTestCase):
             reverse("wallet:student_wallet"), {"type": "BOGUS_TYPE"}
         )
         self.assertEqual(invalid_resp.status_code, 200)
-        self.assertContains(invalid_resp, "Filter Hold Entry")
+        self.assertContains(invalid_resp, "Lesson Hold for Booking #20")
         self.assertContains(invalid_resp, "Filter Credit Entry")
         self.assertEqual(invalid_resp.context["active_type_filter"], "")
 
@@ -456,3 +585,46 @@ class StudentWalletLedgerTableTests(RoleTestCase):
         self.assertNotContains(response, "99.00")
         self.assertNotContains(response, "Other Tenant Secret Entry")
         self.assertNotContains(response, "123.00")
+
+    def test_wallet_view_renders_humanized_descriptions_instead_of_raw_audit_strings(
+        self,
+    ):
+        wallet = get_or_create_wallet(self.tenant, self.student_user)
+        credit_wallet(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("60.00"),
+            idempotency_key="raw-desc-credit",
+            reference_id="tenant_1:manual_XYZ",
+            description="Manual top-up: tenant_1:manual_XYZ",
+        )
+        reserve_funds(
+            tenant=self.tenant,
+            wallet=wallet,
+            amount=Decimal("25.00"),
+            idempotency_key="raw-desc-reserve",
+            reference_id="booking_150",
+            description="Booking hold: booking #150",
+        )
+        LedgerEntry.objects.create(
+            tenant=self.tenant,
+            wallet=wallet,
+            entry_type=LedgerEntry.EntryType.CONSUME,
+            amount=Decimal("25.00"),
+            settled_after=Decimal("35.00"),
+            reserved_after=Decimal("0.00"),
+            idempotency_key="raw-desc-consume",
+            reference_id="booking_145",
+            description="Booking settlement (consume: DISPUTE_TEACHER_FAVOR) by user:10 for booking #145",
+        )
+
+        response = self.student_client.get(reverse("wallet:student_wallet"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Wallet Deposit Credit")
+        self.assertContains(response, "Lesson Hold for Booking #150")
+        self.assertContains(
+            response, "Lesson Settlement for Booking #145 (Dispute Resolved)"
+        )
+        self.assertNotContains(response, "DISPUTE_TEACHER_FAVOR")
+        self.assertNotContains(response, "by user:10")
+        self.assertNotContains(response, "tenant_1:manual_XYZ")

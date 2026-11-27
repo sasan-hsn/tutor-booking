@@ -175,6 +175,71 @@ def get_entry_types_for_student_category(
 
 
 _TENANT_MANUAL_PREFIX_RE = re.compile(r"tenant_\d+:manual_")
+_BOOKING_REF_RE = re.compile(r"^booking_(\d+)$")
+_BOOKING_DESC_RE = re.compile(r"booking\s*#(\d+)", re.IGNORECASE)
+_INTERNAL_AUDIT_TOKEN_RE = re.compile(
+    r"(tenant_\d+:manual_|manual top-up:|by (?:user:\d+|system)|\(\s*(?:consume|release):)",
+    re.IGNORECASE,
+)
+
+_BOOKING_DESCRIPTION_TEMPLATES: dict[str, str] = {
+    LedgerEntry.EntryType.RESERVE: "Lesson Hold",
+    LedgerEntry.EntryType.RELEASE: "Lesson Hold Released",
+    LedgerEntry.EntryType.CONSUME: "Lesson Settlement",
+    LedgerEntry.EntryType.WAIVER: "Penalty Waiver Credit",
+}
+
+_STATIC_STUDENT_DESCRIPTIONS: dict[str, str] = {
+    LedgerEntry.EntryType.ADJUSTMENT_CREDIT: "Account Balance Adjustment",
+    LedgerEntry.EntryType.ADJUSTMENT_DEBIT: "Account Balance Adjustment",
+    LedgerEntry.EntryType.PAYOUT_HOLD: "Refund Request Hold",
+    LedgerEntry.EntryType.PAYOUT_RELEASE: "Refund Hold Released",
+    LedgerEntry.EntryType.PAYOUT_SETTLE: "Refund Completed",
+}
+
+
+def _extract_booking_id(entry: LedgerEntry) -> str | None:
+    ref_match = _BOOKING_REF_RE.match((entry.reference_id or "").strip())
+    if ref_match:
+        return ref_match.group(1)
+    desc_match = _BOOKING_DESC_RE.search(entry.description or "")
+    if desc_match:
+        return desc_match.group(1)
+    return None
+
+
+def format_student_ledger_description(entry: LedgerEntry) -> str:
+    """
+    Return a student-safe, human-readable description for a LedgerEntry without
+    exposing internal audit tokens (actor IDs, settlement codes, or tenant prefixes).
+    """
+    entry_type = entry.entry_type
+    raw_desc = (entry.description or "").strip()
+
+    if entry_type in _STATIC_STUDENT_DESCRIPTIONS:
+        return _STATIC_STUDENT_DESCRIPTIONS[entry_type]
+
+    if entry_type in _BOOKING_DESCRIPTION_TEMPLATES:
+        base_label = _BOOKING_DESCRIPTION_TEMPLATES[entry_type]
+        booking_id = _extract_booking_id(entry)
+        label = f"{base_label} for Booking #{booking_id}" if booking_id else base_label
+        if (
+            entry_type
+            in (
+                LedgerEntry.EntryType.CONSUME,
+                LedgerEntry.EntryType.RELEASE,
+            )
+            and "DISPUTE_" in raw_desc
+        ):
+            return f"{label} (Dispute Resolved)"
+        return label
+
+    if entry_type == LedgerEntry.EntryType.CREDIT:
+        if not raw_desc or _INTERNAL_AUDIT_TOKEN_RE.search(raw_desc):
+            return "Wallet Deposit Credit"
+        return raw_desc
+
+    return _TENANT_MANUAL_PREFIX_RE.sub("", raw_desc) or "Wallet Transaction"
 
 
 def attach_student_ledger_display_fields(
@@ -199,9 +264,7 @@ def attach_student_ledger_display_fields(
         entry.available_after = (entry.settled_after - entry.reserved_after).quantize(
             Decimal("0.01")
         )
-        entry.student_description = _TENANT_MANUAL_PREFIX_RE.sub(
-            "", entry.description or ""
-        )
+        entry.student_description = format_student_ledger_description(entry)
 
 
 class StudentWalletSnapshot(NamedTuple):
