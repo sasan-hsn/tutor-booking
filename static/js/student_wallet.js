@@ -96,7 +96,8 @@
             orderExpiresDisplay: documentRef.getElementById('topupOrderExpiresDisplay'),
             orderReusedNote: documentRef.getElementById('topupOrderReusedNote'),
             bep20Checkbox: documentRef.getElementById('bep20AckCheckbox'),
-            lockedHint: documentRef.getElementById('topupDepositLockedHint'),
+            depositPreview: documentRef.getElementById('topupDepositPreview'),
+            depositLockOverlay: documentRef.getElementById('topupDepositLockOverlay'),
             depositDetails: documentRef.getElementById('topupDepositDetails'),
             qrImg: documentRef.getElementById('topupQrImg'),
             addressInput: documentRef.getElementById('topupDepositAddressText'),
@@ -133,20 +134,29 @@
             const hasOrder = Boolean(state.currentOrder && state.currentOrder.address);
             const unlocked = isChecked && hasOrder;
 
-            if (elements.depositDetails) {
-                elements.depositDetails.classList.toggle('d-none', !unlocked);
+            if (elements.depositPreview) {
+                elements.depositPreview.classList.toggle('topup-deposit-blurred', !unlocked);
+                if (typeof elements.depositPreview.setAttribute === 'function') {
+                    elements.depositPreview.setAttribute('aria-hidden', unlocked ? 'false' : 'true');
+                }
             }
-            if (elements.lockedHint) {
-                elements.lockedHint.classList.toggle('d-none', unlocked);
+            if (elements.depositLockOverlay) {
+                elements.depositLockOverlay.classList.toggle('d-none', unlocked);
             }
             if (elements.addressInput) {
-                elements.addressInput.value = unlocked ? state.currentOrder.address : '';
-            }
-            if (elements.qrImg) {
-                elements.qrImg.src = unlocked ? (state.currentOrder.qr_data_uri || '') : '';
+                elements.addressInput.tabIndex = unlocked ? 0 : -1;
             }
             if (elements.copyBtn) {
                 elements.copyBtn.disabled = !unlocked;
+            }
+            if (elements.showClaimFormBtn) {
+                elements.showClaimFormBtn.disabled = !unlocked;
+                if (!unlocked) {
+                    elements.showClaimFormBtn.classList.remove('d-none');
+                }
+            }
+            if (!unlocked && elements.claimForm) {
+                elements.claimForm.classList.add('d-none');
             }
         }
 
@@ -189,6 +199,12 @@
             }
             if (elements.amountInput && orderData.amount) {
                 elements.amountInput.value = orderData.amount;
+            }
+            if (elements.addressInput) {
+                elements.addressInput.value = orderData.address || '';
+            }
+            if (elements.qrImg) {
+                elements.qrImg.src = orderData.qr_data_uri || '';
             }
             if (elements.bep20Checkbox) {
                 elements.bep20Checkbox.checked = false;
@@ -349,7 +365,14 @@
         }
 
         async function submitPaymentClaim() {
-            if (!state.currentOrder || !state.currentOrder.claim_url) return;
+            if (
+                !state.currentOrder
+                || !state.currentOrder.claim_url
+                || !elements.bep20Checkbox
+                || !elements.bep20Checkbox.checked
+            ) {
+                return;
+            }
 
             const txhash = elements.claimTxhashInput ? elements.claimTxhashInput.value.trim() : '';
             const paidAt = elements.claimPaidAtInput ? elements.claimPaidAtInput.value.trim() : '';
@@ -454,6 +477,13 @@
 
         if (elements.showClaimFormBtn) {
             elements.showClaimFormBtn.addEventListener('click', function () {
+                if (
+                    elements.showClaimFormBtn.disabled
+                    || !elements.bep20Checkbox
+                    || !elements.bep20Checkbox.checked
+                ) {
+                    return;
+                }
                 if (elements.claimForm) {
                     elements.claimForm.classList.remove('d-none');
                 }

@@ -491,6 +491,13 @@ class StudentTopUpHttpViewTests(RoleTestCase):
         self.assertContains(resp, 'href="/wallet/?topup=1"')
         self.assertContains(resp, 'id="topUpModal"')
         self.assertContains(resp, 'id="bep20AckCheckbox"')
+        self.assertContains(resp, "topup-bep20-gate")
+        self.assertContains(resp, 'id="topupDepositLockOverlay"')
+        self.assertContains(resp, "topup-deposit-blurred")
+        self.assertContains(
+            resp,
+            'id="showClaimFormBtn" disabled',
+        )
         self.assertContains(
             resp,
             "I confirm I will send USDT on the BNB Smart Chain (BEP-20) network only.",

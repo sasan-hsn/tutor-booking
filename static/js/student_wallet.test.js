@@ -41,6 +41,14 @@ class MockEl {
         this.classList = new MockClassList();
         this.listeners = {};
         this.children = [];
+        this.attributes = {};
+        this.tabIndex = 0;
+    }
+    setAttribute(name, value) {
+        this.attributes[name] = String(value);
+    }
+    getAttribute(name) {
+        return this.attributes[name];
     }
     addEventListener(type, fn) {
         if (!this.listeners[type]) this.listeners[type] = [];
@@ -102,7 +110,8 @@ describe('Student Wallet Top-Up Modal Controller', () => {
             topupOrderExpiresDisplay: new MockEl('SPAN', 'topupOrderExpiresDisplay'),
             topupOrderReusedNote: new MockEl('DIV', 'topupOrderReusedNote'),
             bep20AckCheckbox: new MockEl('INPUT', 'bep20AckCheckbox'),
-            topupDepositLockedHint: new MockEl('DIV', 'topupDepositLockedHint'),
+            topupDepositPreview: new MockEl('DIV', 'topupDepositPreview'),
+            topupDepositLockOverlay: new MockEl('DIV', 'topupDepositLockOverlay'),
             topupDepositDetails: new MockEl('DIV', 'topupDepositDetails'),
             topupQrImg: new MockEl('IMG', 'topupQrImg'),
             topupDepositAddressText: new MockEl('INPUT', 'topupDepositAddressText'),
@@ -120,6 +129,7 @@ describe('Student Wallet Top-Up Modal Controller', () => {
 
         elements.copyTopupAddressBtn._spanChild = copySpan;
         elements.copyTopupAddressBtn.disabled = true;
+        elements.showClaimFormBtn.disabled = true;
 
         elements.topUpModal.dataset.initiateUrl = '/wallet/topup/initiate/';
         elements.topUpModal.dataset.hasActiveAddress = options.hasActiveAddress ?? 'true';
@@ -134,7 +144,7 @@ describe('Student Wallet Top-Up Modal Controller', () => {
         elements.topupStepInstructions.classList.add('d-none');
         elements.topupStepConfirmed.classList.add('d-none');
         elements.topupOrderReusedNote.classList.add('d-none');
-        elements.topupDepositDetails.classList.add('d-none');
+        elements.topupDepositPreview.classList.add('topup-deposit-blurred');
         elements.topupClaimForm.classList.add('d-none');
 
         if (options.activeOrder) {
@@ -235,23 +245,15 @@ describe('Student Wallet Top-Up Modal Controller', () => {
         assert.strictEqual(elements.topupStepInstructions.classList.contains('d-none'), false);
         assert.strictEqual(elements.topupOrderAmountDisplay.textContent, '$30.00 USD');
 
-        // Before BEP-20 checkbox is toggled: hidden, empty, uncopyable
+        // Before BEP-20 checkbox is toggled: blurred preview visible with overlay, copy & claim disabled
         assert.strictEqual(elements.bep20AckCheckbox.checked, false);
-        assert.strictEqual(elements.topupDepositDetails.classList.contains('d-none'), true);
-        assert.strictEqual(elements.topupDepositLockedHint.classList.contains('d-none'), false);
-        assert.strictEqual(elements.topupDepositAddressText.value, '');
-        assert.strictEqual(elements.topupQrImg.src, '');
-        assert.strictEqual(elements.copyTopupAddressBtn.disabled, true);
-
-        await elements.copyTopupAddressBtn.dispatchEvent({ type: 'click' });
-        assert.strictEqual(clipboardWrites.length, 0);
-
-        // Check BEP-20 acknowledgment checkbox
-        elements.bep20AckCheckbox.checked = true;
-        await elements.bep20AckCheckbox.dispatchEvent({ type: 'change' });
-
         assert.strictEqual(elements.topupDepositDetails.classList.contains('d-none'), false);
-        assert.strictEqual(elements.topupDepositLockedHint.classList.contains('d-none'), true);
+        assert.strictEqual(
+            elements.topupDepositPreview.classList.contains('topup-deposit-blurred'),
+            true
+        );
+        assert.strictEqual(elements.topupDepositPreview.getAttribute('aria-hidden'), 'true');
+        assert.strictEqual(elements.topupDepositLockOverlay.classList.contains('d-none'), false);
         assert.strictEqual(
             elements.topupDepositAddressText.value,
             '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
@@ -260,19 +262,43 @@ describe('Student Wallet Top-Up Modal Controller', () => {
             elements.topupQrImg.src,
             'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='
         );
+        assert.strictEqual(elements.topupDepositAddressText.tabIndex, -1);
+        assert.strictEqual(elements.copyTopupAddressBtn.disabled, true);
+        assert.strictEqual(elements.showClaimFormBtn.disabled, true);
+
+        await elements.copyTopupAddressBtn.dispatchEvent({ type: 'click' });
+        assert.strictEqual(clipboardWrites.length, 0);
+        await elements.showClaimFormBtn.dispatchEvent({ type: 'click' });
+        assert.strictEqual(elements.topupClaimForm.classList.contains('d-none'), true);
+
+        // Check BEP-20 acknowledgment checkbox: unblurs preview, removes overlay, enables copy & claim
+        elements.bep20AckCheckbox.checked = true;
+        await elements.bep20AckCheckbox.dispatchEvent({ type: 'change' });
+
+        assert.strictEqual(
+            elements.topupDepositPreview.classList.contains('topup-deposit-blurred'),
+            false
+        );
+        assert.strictEqual(elements.topupDepositPreview.getAttribute('aria-hidden'), 'false');
+        assert.strictEqual(elements.topupDepositLockOverlay.classList.contains('d-none'), true);
+        assert.strictEqual(elements.topupDepositAddressText.tabIndex, 0);
         assert.strictEqual(elements.copyTopupAddressBtn.disabled, false);
+        assert.strictEqual(elements.showClaimFormBtn.disabled, false);
 
         await elements.copyTopupAddressBtn.dispatchEvent({ type: 'click' });
         assert.deepStrictEqual(clipboardWrites, ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed']);
         assert.strictEqual(elements.copyTopupAddressBtn._spanChild.textContent, 'Copied!');
 
-        // Unchecking clears and re-locks details
+        // Unchecking re-blurs preview, restores overlay, and re-disables copy & claim
         elements.bep20AckCheckbox.checked = false;
         await elements.bep20AckCheckbox.dispatchEvent({ type: 'change' });
-        assert.strictEqual(elements.topupDepositDetails.classList.contains('d-none'), true);
-        assert.strictEqual(elements.topupDepositAddressText.value, '');
-        assert.strictEqual(elements.topupQrImg.src, '');
+        assert.strictEqual(
+            elements.topupDepositPreview.classList.contains('topup-deposit-blurred'),
+            true
+        );
+        assert.strictEqual(elements.topupDepositLockOverlay.classList.contains('d-none'), false);
         assert.strictEqual(elements.copyTopupAddressBtn.disabled, true);
+        assert.strictEqual(elements.showClaimFormBtn.disabled, true);
     });
 
     test('reused order displays actual backend order amount and minimum validation blocks low amounts', async () => {
@@ -392,6 +418,11 @@ describe('Student Wallet Top-Up Modal Controller', () => {
         studentWallet.initStudentWallet(global.document, global.window);
         elements.topupAmountInput.value = '40.00';
         await elements.topupInitiateForm.dispatchEvent({ type: 'submit' });
+
+        assert.strictEqual(elements.showClaimFormBtn.disabled, true);
+        elements.bep20AckCheckbox.checked = true;
+        await elements.bep20AckCheckbox.dispatchEvent({ type: 'change' });
+        assert.strictEqual(elements.showClaimFormBtn.disabled, false);
 
         await elements.showClaimFormBtn.dispatchEvent({ type: 'click' });
         assert.strictEqual(elements.topupClaimForm.classList.contains('d-none'), false);

@@ -5,20 +5,20 @@
     data-currency="{{ wallet_snapshot.currency }}"
     data-terms-required="{% if terms_required %}true{% else %}false{% endif %}"
     data-terms-accepted="{% if terms_accepted %}true{% else %}false{% endif %}">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header py-2 px-3">
                 <div>
-                    <h5 class="modal-title mb-0" id="topUpModalLabel">Add Funds (USDT BEP-20)</h5>
+                    <h5 class="modal-title mb-0 fs-6 fw-semibold" id="topUpModalLabel">Add Funds (USDT BEP-20)</h5>
                     <p class="small text-muted mb-0">Prepaid balance in {{ wallet_snapshot.currency }}</p>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div id="topupErrorAlert" class="alert alert-danger d-none mb-3" role="alert"></div>
+            <div class="modal-body py-2 px-3">
+                <div id="topupErrorAlert" class="alert alert-danger d-none py-2 px-3 mb-2 small" role="alert"></div>
 
                 {% if not topup_has_active_address %}
-                <div id="topupInactiveAddressAlert" class="alert alert-warning mb-3" role="alert">
+                <div id="topupInactiveAddressAlert" class="alert alert-warning py-2 px-3 mb-2 small" role="alert">
                     <div class="d-flex align-items-start gap-2">
                         <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
                         <div>
@@ -32,8 +32,8 @@
                 <!-- Step 1: Enter Amount -->
                 <div id="topupStepAmount">
                     <form id="topupInitiateForm" novalidate>
-                        <div class="mb-3">
-                            <label for="topupAmountInput" class="form-label fw-semibold">
+                        <div class="mb-2">
+                            <label for="topupAmountInput" class="form-label small fw-semibold mb-1">
                                 Top-Up Amount ({{ wallet_snapshot.currency }})
                             </label>
                             <div class="input-group">
@@ -49,11 +49,11 @@
                                     required>
                                 <span class="input-group-text">{{ wallet_snapshot.currency }}</span>
                             </div>
-                            <div class="form-text">
+                            <div class="form-text mt-1">
                                 Minimum top-up: ${{ topup_min_amount|floatformat:2 }} {{ wallet_snapshot.currency }}. Orders remain valid for {{ topup_expiry_hours }} hours.
                             </div>
                         </div>
-                        <div class="d-grid">
+                        <div class="d-grid mt-2">
                             <button type="submit"
                                 class="btn btn-primary"
                                 id="initiateTopupBtn"
@@ -66,75 +66,74 @@
 
                 <!-- Step 2: BEP-20 Acknowledgment, Deposit Instructions & Claim Flow -->
                 <div id="topupStepInstructions" class="d-none">
-                    <div class="topup-order-summary border rounded p-3 mb-3 bg-light">
+                    <div class="topup-order-summary border rounded p-2 mb-2 bg-light">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="small text-muted">Order Reference</span>
-                            <span class="fw-semibold" id="topupOrderLabel"></span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="small text-muted">Deposit Amount</span>
-                            <span class="fw-bold fs-5 text-primary" id="topupOrderAmountDisplay"></span>
+                            <span class="small text-muted">Order <span class="fw-semibold text-dark" id="topupOrderLabel"></span></span>
+                            <span class="fw-bold text-primary" id="topupOrderAmountDisplay"></span>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="small text-muted">Expires</span>
                             <span class="small text-muted" id="topupOrderExpiresDisplay"></span>
                         </div>
-                        <div id="topupOrderReusedNote" class="small text-info-emphasis mt-2 d-none">
+                        <div id="topupOrderReusedNote" class="small text-info-emphasis mt-1 d-none">
                             <i class="bi bi-info-circle me-1"></i>
                             Reusing your active pending top-up order to avoid duplicate requests.
                         </div>
                     </div>
 
-                    <div class="form-check p-3 border rounded mb-3 topup-bep20-gate">
-                        <input class="form-check-input ms-0 me-2" type="checkbox" id="bep20AckCheckbox">
-                        <label class="form-check-label fw-medium" for="bep20AckCheckbox">
+                    <div class="topup-bep20-gate mb-2">
+                        <input class="form-check-input flex-shrink-0 mt-1" type="checkbox" id="bep20AckCheckbox">
+                        <label class="form-check-label small fw-medium mb-0" for="bep20AckCheckbox">
                             I confirm I will send USDT on the BNB Smart Chain (BEP-20) network only.
                         </label>
                     </div>
 
-                    <div id="topupDepositLockedHint" class="text-center border rounded p-4 mb-3 bg-light text-muted">
-                        <i class="bi bi-shield-lock fs-3 d-block mb-2"></i>
-                        <p class="small mb-0">
-                            Check the BEP-20 network confirmation above to reveal the deposit address and QR code.
-                        </p>
+                    <div id="topupDepositDetails" class="topup-deposit-card border rounded p-2 mb-2 position-relative">
+                        <div id="topupDepositPreview" class="topup-deposit-preview topup-deposit-blurred" aria-hidden="true">
+                            <div class="text-center mb-2">
+                                <img id="topupQrImg"
+                                    src=""
+                                    alt="BNB Smart Chain (BEP-20) Deposit QR Code"
+                                    class="topup-qr-image border rounded p-1 bg-white">
+                            </div>
+                            <label class="form-label small text-muted mb-1">BEP-20 USDT Deposit Address</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text"
+                                    class="form-control font-monospace"
+                                    id="topupDepositAddressText"
+                                    value=""
+                                    readonly
+                                    tabindex="-1"
+                                    aria-label="BEP-20 USDT Deposit Address">
+                                <button type="button"
+                                    class="btn btn-outline-primary"
+                                    id="copyTopupAddressBtn"
+                                    disabled>
+                                    <i class="bi bi-clipboard me-1"></i><span>Copy</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="topupDepositLockOverlay" class="topup-deposit-lock-overlay">
+                            <div class="topup-lock-pill shadow-sm">
+                                <i class="bi bi-shield-lock-fill me-1"></i>
+                                <span>Confirm BEP-20 network above to reveal</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <div id="topupDepositDetails" class="d-none border rounded p-3 mb-3">
-                        <div class="text-center mb-3">
-                            <img id="topupQrImg"
-                                src=""
-                                alt="BNB Smart Chain (BEP-20) Deposit QR Code"
-                                class="topup-qr-image border rounded p-2 bg-white">
-                        </div>
-                        <label class="form-label small text-muted mb-1">BEP-20 USDT Deposit Address</label>
-                        <div class="input-group input-group-sm">
-                            <input type="text"
-                                class="form-control font-monospace"
-                                id="topupDepositAddressText"
-                                value=""
-                                readonly
-                                aria-label="BEP-20 USDT Deposit Address">
-                            <button type="button"
-                                class="btn btn-outline-primary"
-                                id="copyTopupAddressBtn"
-                                disabled>
-                                <i class="bi bi-clipboard me-1"></i><span>Copy</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="d-grid mb-3">
-                        <button type="button" class="btn btn-success" id="showClaimFormBtn">
+                    <div class="d-grid mb-0">
+                        <button type="button" class="btn btn-success btn-sm py-2" id="showClaimFormBtn" disabled>
                             <i class="bi bi-check2-circle me-1"></i>I Have Paid
                         </button>
                     </div>
 
-                    <form id="topupClaimForm" class="d-none border-top pt-3" novalidate>
+                    <form id="topupClaimForm" class="d-none border-top pt-2 mt-2" novalidate>
                         <p class="small text-muted mb-2">
                             Optional: include your transaction hash or transfer time so your teacher can verify faster.
                         </p>
                         <div class="mb-2">
-                            <label for="claimTxhashInput" class="form-label small fw-semibold">
+                            <label for="claimTxhashInput" class="form-label small fw-semibold mb-1">
                                 Transaction Hash / Reference <span class="text-muted fw-normal">(optional)</span>
                             </label>
                             <input type="text"
@@ -144,8 +143,8 @@
                                 maxlength="128"
                                 placeholder="0x... or transfer reference">
                         </div>
-                        <div class="mb-3">
-                            <label for="claimPaidAtInput" class="form-label small fw-semibold">
+                        <div class="mb-2">
+                            <label for="claimPaidAtInput" class="form-label small fw-semibold mb-1">
                                 Transfer Timestamp <span class="text-muted fw-normal">(optional)</span>
                             </label>
                             <input type="datetime-local"
@@ -154,7 +153,7 @@
                                 name="paid_at">
                         </div>
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-primary" id="submitClaimBtn">
+                            <button type="submit" class="btn btn-primary btn-sm py-2" id="submitClaimBtn">
                                 Submit Payment Claim
                             </button>
                         </div>
@@ -162,19 +161,19 @@
                 </div>
 
                 <!-- Step 3: Confirmation State -->
-                <div id="topupStepConfirmed" class="d-none text-center py-3">
-                    <div class="mb-3 text-success">
-                        <i class="bi bi-check-circle-fill fs-1"></i>
+                <div id="topupStepConfirmed" class="d-none text-center py-2">
+                    <div class="mb-2 text-success">
+                        <i class="bi bi-check-circle-fill fs-2"></i>
                     </div>
-                    <h6 class="fw-bold mb-2">Payment Claim Submitted</h6>
-                    <p class="text-muted small mb-3" id="topupClaimConfirmationMsg">
+                    <h6 class="fw-bold mb-1">Payment Claim Submitted</h6>
+                    <p class="text-muted small mb-2" id="topupClaimConfirmationMsg">
                         Your payment claim has been submitted. The teacher will verify the deposit and credit your account shortly.
                     </p>
                     <div class="small text-muted" id="topupClaimConfirmationMeta"></div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            <div class="modal-footer py-2 px-3">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
