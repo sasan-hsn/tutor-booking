@@ -23,6 +23,7 @@ class Notification(models.Model):
         LESSON_REMINDER_24H = "lesson_reminder_24h", "Lesson Reminder 24h"
         LESSON_REMINDER_1H = "lesson_reminder_1h", "Lesson Reminder 1h"
         DISPUTE_RESOLVED = "dispute_resolved", "Dispute Resolved"
+        TOPUP_CLAIM_SUBMITTED = "topup_claim_submitted", "Top-Up Claim Submitted"
 
     class Level(models.TextChoices):
         INFO = "info", "Info"

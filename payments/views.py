@@ -14,11 +14,20 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from accounts.decorators import teacher_required
+from accounts.decorators import (
+    student_required,
+    teacher_required,
+    terms_accepted_required,
+)
+from accounts.legal import get_default_tenant
 from accounts.models import Tenant
 from booking.models import Booking
 from booking.services import DisputeConflictError, resolve_dispute
-from payments.exceptions import PayoutConflictError, PayoutInsufficientBalanceError
+from payments.exceptions import (
+    PayoutConflictError,
+    PayoutInsufficientBalanceError,
+    TopupOrderConflictError,
+)
 from payments.forms import (
     DUPLICATE_REFERENCE_ERROR,
     CompletePayoutForm,
@@ -26,6 +35,8 @@ from payments.forms import (
     ReceivingAddressForm,
     RejectPayoutForm,
     ResolveDisputeForm,
+    StudentTopUpClaimForm,
+    StudentTopUpInitiateForm,
 )
 from payments.models import Order, Payment, PaymentAddress, Payout
 from payments.services import (
@@ -34,12 +45,17 @@ from payments.services import (
     attach_ledger_display_fields,
     build_manual_external_id,
     build_tenant_ledger_csv,
+    build_topup_order_payload,
+    cancel_pending_topup_order,
+    create_topup_order,
+    get_active_pending_order,
     get_user_display_name,
     has_duplicate_payout_external_ref,
     mark_payout_processing,
     process_manual_topup,
     release_payout,
     settle_payout,
+    submit_topup_claim,
     to_viewer_local,
     update_receiving_address,
 )
@@ -736,3 +752,148 @@ def receiving_address_update(request):
             ),
         }
     )
+
+
+@student_required
+@require_POST
+@terms_accepted_required
+def student_topup_initiate(request):
+    """Create or reuse an unexpired PENDING top-up Order for the authenticated student."""
+    tenant = get_default_tenant()
+    if tenant is None:
+        return JsonResponse(
+            {"success": False, "error": "No active storefront tenant configured."},
+            status=400,
+        )
+
+    existing_order = get_active_pending_order(tenant, request.user)
+    if existing_order is not None:
+        reused = True
+        order = existing_order
+    else:
+        form = StudentTopUpInitiateForm(request.POST, tenant=tenant)
+        if not form.is_valid():
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": _first_form_error(form),
+                    "errors": form.errors,
+                },
+                status=400,
+            )
+
+        try:
+            order = create_topup_order(
+                tenant=tenant,
+                student=request.user,
+                amount=form.cleaned_data["amount"],
+                currency=tenant.default_currency,
+            )
+        except ValidationError as exc:
+            msg = _validation_error_message(exc)
+            return JsonResponse(
+                {"success": False, "error": msg, "errors": {"__all__": [msg]}},
+                status=400,
+            )
+        reused = False
+
+    viewer_tz = ZoneInfo(getattr(request.user, "timezone", "UTC") or "UTC")
+    payload = build_topup_order_payload(
+        order, tenant, viewer_tz, include_instructions=True
+    )
+    payload["success"] = True
+    payload["reused"] = reused
+    return JsonResponse(payload)
+
+
+def _run_student_order_action(request, order_id: int, action_fn):
+    """Resolve tenant & order, run an order mutation, and map domain errors to JSON responses."""
+    tenant = get_default_tenant()
+    if tenant is None:
+        return JsonResponse(
+            {"success": False, "error": "No active storefront tenant configured."},
+            status=400,
+        )
+
+    order = get_object_or_404(Order, pk=order_id)
+    try:
+        return action_fn(tenant, order)
+    except PermissionDenied as exc:
+        return JsonResponse(
+            {"success": False, "error": str(exc) or "Permission denied."},
+            status=403,
+        )
+    except TopupOrderConflictError as exc:
+        return JsonResponse(
+            {"success": False, "error": _validation_error_message(exc)},
+            status=409,
+        )
+    except ValidationError as exc:
+        msg = _validation_error_message(exc)
+        return JsonResponse(
+            {"success": False, "error": msg, "errors": {"__all__": [msg]}},
+            status=400,
+        )
+
+
+@student_required
+@require_POST
+@terms_accepted_required
+def student_topup_claim(request, order_id: int):
+    """Record a student's 'I Have Paid' claim on a pending top-up order."""
+    viewer_tz = ZoneInfo(getattr(request.user, "timezone", "UTC") or "UTC")
+    form = StudentTopUpClaimForm(request.POST, viewer_tz=viewer_tz)
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": _first_form_error(form),
+                "errors": form.errors,
+            },
+            status=400,
+        )
+
+    def perform_claim(tenant: Tenant, order: Order) -> JsonResponse:
+        claimed_order = submit_topup_claim(
+            tenant=tenant,
+            student=request.user,
+            order=order,
+            txhash=form.cleaned_data["txhash"],
+            paid_at=form.cleaned_data["paid_at"],
+        )
+        return JsonResponse(
+            {
+                "success": True,
+                "order_id": claimed_order.id,
+                "claimed_txhash": claimed_order.claimed_txhash,
+                "message": (
+                    "Your payment claim has been submitted. "
+                    "The teacher will verify the deposit and credit your account shortly."
+                ),
+            }
+        )
+
+    return _run_student_order_action(request, order_id, perform_claim)
+
+
+@student_required
+@require_POST
+@terms_accepted_required
+def student_topup_cancel(request, order_id: int):
+    """Cancel an unclaimed pending top-up order so the student can choose a new amount."""
+
+    def perform_cancel(tenant: Tenant, order: Order) -> JsonResponse:
+        cancelled_order = cancel_pending_topup_order(
+            tenant=tenant,
+            student=request.user,
+            order=order,
+        )
+        return JsonResponse(
+            {
+                "success": True,
+                "order_id": cancelled_order.id,
+                "status": cancelled_order.status,
+            }
+        )
+
+    return _run_student_order_action(request, order_id, perform_cancel)

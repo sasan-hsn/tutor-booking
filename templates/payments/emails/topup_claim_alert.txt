@@ -1,0 +1,11 @@
+Hello {{ teacher_name }},
+
+{{ student_name }} has submitted an "I Have Paid" claim for Order #{{ order.id }}.
+
+Expected Amount: ${{ order.amount|floatformat:2 }} {{ order.currency }}
+Transfer Time: {{ paid_at_str }}
+{% if txhash %}Reference / TXHash: {{ txhash }}
+{% endif %}Network: BNB Smart Chain (BEP-20) USDT
+
+Review and credit this deposit in your Finance dashboard: {{ finance_url }}
+Site: {{ site_domain }}

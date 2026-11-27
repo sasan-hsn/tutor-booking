@@ -27,3 +27,9 @@ class PayoutInsufficientBalanceError(
     """
 
     status_code: int = 400
+
+
+class TopupOrderConflictError(ValidationError):
+    """Raised when a top-up order cannot be claimed in its current state (HTTP 409)."""
+
+    status_code: int = 409

@@ -77,6 +77,50 @@ def safe_send_receiving_address_change_alert(payment_address_id: int) -> None:
         )
 
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_topup_claim_alert_task",
+)
+def send_topup_claim_alert_task(self, order_id: int) -> bool:
+    """Async task to alert the teacher when a student submits a top-up payment claim."""
+    try:
+        order = Order.objects.select_related(
+            "tenant__teacher_profile__user",
+            "student",
+        ).get(pk=order_id)
+    except Order.DoesNotExist:
+        logger.warning(
+            "Order #%s not found; skipping top-up claim alert email.",
+            order_id,
+        )
+        return False
+
+    try:
+        return emails.send_topup_claim_alert_email(order)
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
+        logger.exception(
+            "Transient error sending top-up claim alert for Order #%s. Retrying...",
+            order_id,
+        )
+        raise self.retry(exc=exc)
+
+
+def safe_send_topup_claim_alert(order_id: int) -> None:
+    """Safely enqueue top-up claim alert email without blocking HTTP responses."""
+    try:
+        send_topup_claim_alert_task.delay(order_id)
+    except Exception:
+        logger.exception(
+            "Failed to enqueue top-up claim alert task for Order #%s",
+            order_id,
+        )
+
+
 @shared_task(name="payments.tasks.expire_payout_tokens_task")
 def expire_payout_tokens_task() -> int:
     """
