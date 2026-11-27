@@ -15,6 +15,7 @@ urlpatterns = [
     path("accounts/", include("accounts.urls")),
     path("dashboard/finance/", include("payments.urls")),
     path("dashboard/", include("booking.urls")),
+    path("wallet/", include("wallet.urls")),
     path("messages/", include("chat.urls")),
     path("notifications/", include("notifications.urls")),
     path("health/", health_check, name="health_check"),

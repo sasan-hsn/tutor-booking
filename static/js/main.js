@@ -2206,6 +2206,13 @@ function initLessonJoinWindowWatcher() {
     return intervalId;
 }
 
+function initWalletBadgePopover() {
+    if (typeof window === 'undefined' || !window.bootstrap || !window.bootstrap.Popover) return;
+    const badge = document.getElementById('navbarWalletBadge');
+    if (!badge) return;
+    window.bootstrap.Popover.getOrCreateInstance(badge);
+}
+
 /* --------------------------------------------------------------------------
    12. Single Application Bootstrap
    -------------------------------------------------------------------------- */
@@ -2225,6 +2232,7 @@ if (typeof document !== 'undefined') {
         initCertificateManager();
         initPendingReviewsManager();
         initLessonJoinWindowWatcher();
+        initWalletBadgePopover();
     });
 }
 

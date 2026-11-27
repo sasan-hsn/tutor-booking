@@ -1,0 +1,99 @@
+{% if ledger_entries.object_list %}
+<div class="table-responsive">
+    <table class="student-roster-table" id="studentLedgerTable">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Net Impact</th>
+                <th>Balance Snapshot</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in ledger_entries %}
+            <tr>
+                <td class="text-nowrap small text-muted">
+                    {{ entry.local_created_at|date:"M d, Y H:i" }}
+                </td>
+                <td>
+                    <span class="badge finance-entry-badge wallet-cat-{{ entry.student_display.category|lower }}">
+                        {{ entry.student_display.category_label }}
+                    </span>
+                </td>
+                <td class="small">
+                    <span class="d-inline-block wallet-ledger-desc" title="{{ entry.student_description }}">
+                        {{ entry.student_description }}
+                    </span>
+                </td>
+                <td class="text-nowrap fw-semibold">
+                    <span class="wallet-impact-{{ entry.student_display.impact_direction }}">
+                        {{ entry.student_display.formatted_impact }}
+                    </span>
+                    {% if entry.student_display.impact_note %}
+                    <div class="small fw-normal text-muted">{{ entry.student_display.impact_note }}</div>
+                    {% endif %}
+                </td>
+                <td class="text-nowrap small">
+                    <div class="fw-semibold">Available: ${{ entry.available_after|floatformat:2 }}</div>
+                    <div class="text-muted">
+                        Settled: ${{ entry.settled_after|floatformat:2 }} &middot; Reserved: ${{ entry.reserved_after|floatformat:2 }}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if ledger_entries.paginator.num_pages > 1 %}
+<nav class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3" aria-label="Ledger pagination">
+    <div class="small text-muted">
+        Page {{ ledger_entries.number }} of {{ ledger_entries.paginator.num_pages }}
+        ({{ total_entries_count }} transaction{{ total_entries_count|pluralize }})
+    </div>
+    <ul class="pagination pagination-sm mb-0">
+        {% if ledger_entries.has_previous %}
+        <li class="page-item">
+            <a class="page-link"
+                href="?page={{ ledger_entries.previous_page_number }}{% if active_type_filter %}&type={{ active_type_filter }}{% endif %}">
+                Previous
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+
+        {% for num in ledger_entries.paginator.page_range %}
+        <li class="page-item {% if num == ledger_entries.number %}active{% endif %}">
+            <a class="page-link"
+                href="?page={{ num }}{% if active_type_filter %}&type={{ active_type_filter }}{% endif %}">
+                {{ num }}
+            </a>
+        </li>
+        {% endfor %}
+
+        {% if ledger_entries.has_next %}
+        <li class="page-item">
+            <a class="page-link"
+                href="?page={{ ledger_entries.next_page_number }}{% if active_type_filter %}&type={{ active_type_filter }}{% endif %}">
+                Next
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% else %}
+<div class="empty-state" id="studentLedgerEmptyState">
+    <p class="mb-0">
+        {% if active_type_filter %}
+        No transactions match the selected filter.
+        {% else %}
+        No wallet transactions recorded yet.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

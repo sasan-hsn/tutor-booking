@@ -1,0 +1,77 @@
+{% extends "dashboard_base.html" %}
+{% load static %}
+
+{% block page_content %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div>
+        <h2 class="mb-1">My Wallet</h2>
+        <p class="text-muted small mb-0">View your prepaid lesson balance, reserved holds, and transaction history.</p>
+    </div>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2"
+            id="requestRefundBtn" data-bs-toggle="modal" data-bs-target="#refundModal">
+            <i class="bi bi-arrow-up-right-circle"></i> Request Refund
+        </button>
+        <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2"
+            id="addFundsBtn" data-bs-toggle="modal" data-bs-target="#topUpModal">
+            <i class="bi bi-plus-circle"></i> Add Funds
+        </button>
+    </div>
+</div>
+
+{% if wallet_snapshot.is_frozen %}
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-4" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <span>Your wallet is currently frozen. New lesson holds and refund requests are paused while existing holds settle normally.</span>
+</div>
+{% endif %}
+
+<section class="mb-4" aria-label="Wallet Balance Summary">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="finance-summary-card">
+                <div class="finance-summary-label">Available Balance</div>
+                <div class="finance-summary-value">${{ wallet_snapshot.available_balance|floatformat:2 }}</div>
+                <div class="finance-summary-sub">{{ wallet_snapshot.currency }} ready to book lessons</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="finance-summary-card">
+                <div class="finance-summary-label">Reserved in Lesson Holds</div>
+                <div class="finance-summary-value">${{ wallet_snapshot.reserved_balance|floatformat:2 }}</div>
+                <div class="finance-summary-sub">{{ wallet_snapshot.currency }} held for upcoming lessons &amp; requests</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="finance-summary-card">
+                <div class="finance-summary-label">Settled Account Total</div>
+                <div class="finance-summary-value">${{ wallet_snapshot.settled_balance|floatformat:2 }}</div>
+                <div class="finance-summary-sub">{{ wallet_snapshot.currency }} total settled balance</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section aria-label="Transaction Ledger History">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <h4 class="mb-0">Transaction History</h4>
+        <div class="d-flex align-items-center flex-wrap gap-1" role="group" aria-label="Filter transactions by type">
+            <a href="{% url 'wallet:student_wallet' %}"
+                class="btn btn-sm {% if not active_type_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                All
+            </a>
+            {% for cat_code, cat_label in ledger_categories %}
+            <a href="?type={{ cat_code }}"
+                class="btn btn-sm {% if active_type_filter == cat_code %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                {{ cat_label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% include "wallet/partials/_student_ledger_table.html" %}
+</section>
+
+{% include "wallet/partials/_placeholder_modal.html" with modal_id="topUpModal" modal_title="Add Funds" modal_body="Self-service wallet top-up instructions are coming soon. Please contact your teacher to credit your prepaid balance." %}
+{% include "wallet/partials/_placeholder_modal.html" with modal_id="refundModal" modal_title="Request Refund" modal_body="Self-service refund requests are coming soon. Please message your teacher if you need assistance with a refund." %}
+{% endblock %}

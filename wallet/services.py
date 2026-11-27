@@ -1,11 +1,15 @@
 import logging
+import re
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
+from django.utils import timezone
 
 from wallet.exceptions import (
     CurrencyMismatchError,
@@ -62,6 +66,267 @@ RESERVED_DECREMENT_ENTRY_TYPES = frozenset(
         LedgerEntry.EntryType.PAYOUT_RELEASE,
     }
 )
+
+STUDENT_LEDGER_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("CREDIT", "Credit"),
+    ("HOLD", "Hold"),
+    ("RELEASE", "Release"),
+    ("SETTLEMENT", "Settlement"),
+    ("REFUND", "Refund"),
+)
+
+
+class _EntryClassification(NamedTuple):
+    category: str
+    impact_direction: str
+    impact_note: str
+
+
+_STUDENT_ENTRY_CLASSIFICATION: dict[str, _EntryClassification] = {
+    LedgerEntry.EntryType.CREDIT: _EntryClassification(
+        "CREDIT", "positive", "Added to balance"
+    ),
+    LedgerEntry.EntryType.WAIVER: _EntryClassification(
+        "CREDIT", "positive", "Penalty waiver credit"
+    ),
+    LedgerEntry.EntryType.ADJUSTMENT_CREDIT: _EntryClassification(
+        "CREDIT", "positive", "Balance adjustment"
+    ),
+    LedgerEntry.EntryType.RESERVE: _EntryClassification(
+        "HOLD", "negative", "Reserved for lesson"
+    ),
+    LedgerEntry.EntryType.RELEASE: _EntryClassification(
+        "RELEASE", "positive", "Released from hold"
+    ),
+    LedgerEntry.EntryType.CONSUME: _EntryClassification(
+        "SETTLEMENT", "neutral", "Settled from hold"
+    ),
+    LedgerEntry.EntryType.ADJUSTMENT_DEBIT: _EntryClassification(
+        "SETTLEMENT", "negative", "Balance adjustment"
+    ),
+    LedgerEntry.EntryType.PAYOUT_HOLD: _EntryClassification(
+        "REFUND", "negative", "Reserved for refund"
+    ),
+    LedgerEntry.EntryType.PAYOUT_RELEASE: _EntryClassification(
+        "REFUND", "positive", "Refund hold released"
+    ),
+    LedgerEntry.EntryType.PAYOUT_SETTLE: _EntryClassification(
+        "REFUND", "neutral", "Refund settled from hold"
+    ),
+}
+
+_STUDENT_CATEGORY_ENTRY_TYPES: dict[str, tuple[str, ...]] = {
+    cat_code: tuple(
+        entry_type
+        for entry_type, spec in _STUDENT_ENTRY_CLASSIFICATION.items()
+        if spec.category == cat_code
+    )
+    for cat_code, _ in STUDENT_LEDGER_CATEGORIES
+}
+
+_CATEGORY_LABELS = dict(STUDENT_LEDGER_CATEGORIES)
+
+
+class StudentLedgerEntryDisplay(NamedTuple):
+    category: str
+    category_label: str
+    impact_direction: str
+    formatted_impact: str
+    impact_note: str
+
+
+def classify_student_ledger_entry(
+    *,
+    entry_type: str,
+    amount: Decimal,
+) -> StudentLedgerEntryDisplay:
+    """
+    Map a LedgerEntry.EntryType and amount to a student-facing category and signed
+    available-balance net impact without double-counting holds and settlements.
+    """
+    spec = _STUDENT_ENTRY_CLASSIFICATION.get(
+        entry_type,
+        _EntryClassification("SETTLEMENT", "neutral", ""),
+    )
+    abs_amount = abs(amount).quantize(Decimal("0.01"))
+    if spec.impact_direction == "positive":
+        formatted = f"+${abs_amount:.2f}"
+    elif spec.impact_direction == "negative":
+        formatted = f"-${abs_amount:.2f}"
+    else:
+        formatted = f"${abs_amount:.2f}"
+
+    return StudentLedgerEntryDisplay(
+        category=spec.category,
+        category_label=_CATEGORY_LABELS.get(spec.category, spec.category.title()),
+        impact_direction=spec.impact_direction,
+        formatted_impact=formatted,
+        impact_note=spec.impact_note,
+    )
+
+
+def get_entry_types_for_student_category(
+    category: str | None,
+) -> tuple[str, ...] | None:
+    """Return underlying LedgerEntry.EntryType values for a student category, or None if invalid."""
+    if not category:
+        return None
+    return _STUDENT_CATEGORY_ENTRY_TYPES.get(category.strip().upper())
+
+
+_TENANT_MANUAL_PREFIX_RE = re.compile(r"tenant_\d+:manual_")
+_BOOKING_REF_RE = re.compile(r"^booking_(\d+)$")
+_BOOKING_DESC_RE = re.compile(r"booking\s*#(\d+)", re.IGNORECASE)
+_INTERNAL_AUDIT_TOKEN_RE = re.compile(
+    r"(tenant_\d+:manual_|manual top-up:|by (?:user:\d+|system)|\(\s*(?:consume|release):)",
+    re.IGNORECASE,
+)
+
+_BOOKING_DESCRIPTION_TEMPLATES: dict[str, str] = {
+    LedgerEntry.EntryType.RESERVE: "Lesson Hold",
+    LedgerEntry.EntryType.RELEASE: "Lesson Hold Released",
+    LedgerEntry.EntryType.CONSUME: "Lesson Settlement",
+    LedgerEntry.EntryType.WAIVER: "Penalty Waiver Credit",
+}
+
+_STATIC_STUDENT_DESCRIPTIONS: dict[str, str] = {
+    LedgerEntry.EntryType.ADJUSTMENT_CREDIT: "Account Balance Adjustment",
+    LedgerEntry.EntryType.ADJUSTMENT_DEBIT: "Account Balance Adjustment",
+    LedgerEntry.EntryType.PAYOUT_HOLD: "Refund Request Hold",
+    LedgerEntry.EntryType.PAYOUT_RELEASE: "Refund Hold Released",
+    LedgerEntry.EntryType.PAYOUT_SETTLE: "Refund Completed",
+}
+
+
+def _extract_booking_id(entry: LedgerEntry) -> str | None:
+    ref_match = _BOOKING_REF_RE.match((entry.reference_id or "").strip())
+    if ref_match:
+        return ref_match.group(1)
+    desc_match = _BOOKING_DESC_RE.search(entry.description or "")
+    if desc_match:
+        return desc_match.group(1)
+    return None
+
+
+def format_student_ledger_description(entry: LedgerEntry) -> str:
+    """
+    Return a student-safe, human-readable description for a LedgerEntry without
+    exposing internal audit tokens (actor IDs, settlement codes, or tenant prefixes).
+    """
+    entry_type = entry.entry_type
+    raw_desc = (entry.description or "").strip()
+
+    if entry_type in _STATIC_STUDENT_DESCRIPTIONS:
+        return _STATIC_STUDENT_DESCRIPTIONS[entry_type]
+
+    if entry_type in _BOOKING_DESCRIPTION_TEMPLATES:
+        base_label = _BOOKING_DESCRIPTION_TEMPLATES[entry_type]
+        booking_id = _extract_booking_id(entry)
+        label = f"{base_label} for Booking #{booking_id}" if booking_id else base_label
+        if (
+            entry_type
+            in (
+                LedgerEntry.EntryType.CONSUME,
+                LedgerEntry.EntryType.RELEASE,
+            )
+            and "DISPUTE_" in raw_desc
+        ):
+            return f"{label} (Dispute Resolved)"
+        return label
+
+    if entry_type == LedgerEntry.EntryType.CREDIT:
+        if not raw_desc or _INTERNAL_AUDIT_TOKEN_RE.search(raw_desc):
+            return "Wallet Deposit Credit"
+        return raw_desc
+
+    return _TENANT_MANUAL_PREFIX_RE.sub("", raw_desc) or "Wallet Transaction"
+
+
+def attach_student_ledger_display_fields(
+    entries: list[LedgerEntry],
+    viewer_tz: ZoneInfo,
+) -> None:
+    """
+    Attach localized timestamps, 5-category badge metadata, signed available-balance
+    net impact, and post-entry available balance snapshot for student ledger rendering.
+    """
+    for entry in entries:
+        local_dt: datetime | None = (
+            timezone.localtime(entry.created_at, viewer_tz).replace(tzinfo=None)
+            if entry.created_at is not None
+            else None
+        )
+        entry.local_created_at = local_dt
+        entry.student_display = classify_student_ledger_entry(
+            entry_type=entry.entry_type,
+            amount=entry.amount,
+        )
+        entry.available_after = (entry.settled_after - entry.reserved_after).quantize(
+            Decimal("0.01")
+        )
+        entry.student_description = format_student_ledger_description(entry)
+
+
+class StudentWalletSnapshot(NamedTuple):
+    tenant: "Tenant | None"
+    wallet: Wallet | None
+    available_balance: Decimal
+    reserved_balance: Decimal
+    settled_balance: Decimal
+    currency: str
+    is_frozen: bool
+
+
+def get_student_wallet_snapshot(
+    user: "User",
+    *,
+    request=None,
+) -> StudentWalletSnapshot:
+    """
+    Read-only lookup of a student's wallet balances for the active storefront tenant.
+    Caches on request (when provided) to avoid duplicate queries between view and context processor.
+    Returns zero balances without creating a Wallet row when none exists.
+    """
+    if request is not None:
+        cached = getattr(request, "_student_wallet_snapshot", None)
+        if cached is not None:
+            return cached
+
+    from accounts.legal import get_default_tenant
+
+    tenant = get_default_tenant()
+    wallet = None
+    if tenant is not None:
+        wallet = Wallet.objects.filter(
+            tenant=tenant,
+            user=user,
+            currency=tenant.default_currency,
+        ).first()
+
+    if wallet is None:
+        snapshot = StudentWalletSnapshot(
+            tenant=tenant,
+            wallet=None,
+            available_balance=Decimal("0.00"),
+            reserved_balance=Decimal("0.00"),
+            settled_balance=Decimal("0.00"),
+            currency=tenant.default_currency if tenant is not None else "USD",
+            is_frozen=False,
+        )
+    else:
+        snapshot = StudentWalletSnapshot(
+            tenant=tenant,
+            wallet=wallet,
+            available_balance=wallet.available_balance,
+            reserved_balance=wallet.reserved_balance,
+            settled_balance=wallet.settled_balance,
+            currency=wallet.currency,
+            is_frozen=wallet.is_frozen,
+        )
+
+    if request is not None:
+        request._student_wallet_snapshot = snapshot
+    return snapshot
 
 
 class ExpectedBalances(NamedTuple):
