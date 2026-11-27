@@ -96,6 +96,7 @@ TEMPLATES = [
                 "portfolio.context_processors.global_teacher_context",
                 "notifications.context_processors.notification_context",
                 "chat.context_processors.chat_context",
+                "wallet.context_processors.student_wallet_context",
             ],
         },
     },

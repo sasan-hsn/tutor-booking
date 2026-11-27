@@ -26,6 +26,7 @@
 
                 <div class="d-flex align-items-center gap-3 ms-md-3">
                     {% if user.is_authenticated %}
+                    {% include "partials/_navbar_wallet_badge.html" %}
                     <form method="post" action="{% url 'accounts:logout' %}">
                         {% csrf_token %}
                         <button type="submit" class="btn-login fw-bold">Log out</button>
