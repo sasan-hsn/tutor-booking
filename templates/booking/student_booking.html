@@ -62,7 +62,9 @@
     data-resend-verification-url="{% url 'accounts:resend_verification_email' %}"
     data-current-week-start="{{ week_start|date:'Y-m-d' }}"
     data-current-duration="{{ duration_minutes }}"
-    data-selected-lesson-option="{{ selected_option.key }}">
+    data-selected-lesson-option="{{ selected_option.key }}"
+    data-terms-required="{% if terms_required %}true{% else %}false{% endif %}"
+    data-terms-accepted="{% if terms_accepted %}true{% else %}false{% endif %}">
     {% include "partials/_day_picker_columns.html" %}
 </div>
 
@@ -126,4 +128,6 @@
         </div>
     </div>
 </div>
+
+{% include "partials/_terms_acceptance_modal.html" %}
 {% endblock %}

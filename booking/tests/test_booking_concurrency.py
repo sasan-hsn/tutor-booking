@@ -9,7 +9,7 @@ from django.test import Client, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import Tenant, User
+from accounts.models import Tenant, TermsAcceptance, User
 from booking.models import Booking, RegularAvailability
 from booking.services import (
     DisputeConflictError,
@@ -136,6 +136,13 @@ class BookingHoldConcurrencyTests(TransactionTestCase):
             password="test123",
             role=User.Role.STUDENT,
             is_email_verified=True,
+        )
+        TermsAcceptance.objects.create(
+            user=self.student,
+            tenant=self.tenant,
+            version=settings.TERMS_CURRENT_VERSION,
+            ip_address="127.0.0.1",
+            user_agent="TestSuite",
         )
 
         today = timezone.now().date()

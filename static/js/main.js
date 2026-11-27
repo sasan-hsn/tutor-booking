@@ -320,6 +320,133 @@ function initWeekNav() {
     });
 }
 
+let pendingTermsActionCallback = null;
+
+function getTermsModalInstance(modalEl) {
+    if (!modalEl || typeof bootstrap === 'undefined' || !bootstrap.Modal) return null;
+    if (typeof bootstrap.Modal.getOrCreateInstance === 'function') {
+        return bootstrap.Modal.getOrCreateInstance(modalEl);
+    }
+    return new bootstrap.Modal(modalEl);
+}
+
+function setTermsError(errorAlert, message) {
+    if (!errorAlert) return;
+    errorAlert.textContent = message || '';
+    if (message) {
+        errorAlert.classList.remove('d-none');
+    } else {
+        errorAlert.classList.add('d-none');
+    }
+}
+
+function resetTermsAcceptanceModalState() {
+    const checkbox = document.getElementById('acceptTermsCheckbox');
+    const continueBtn = document.getElementById('acceptTermsContinueBtn');
+    const errorAlert = document.getElementById('termsAcceptanceErrorAlert');
+    if (checkbox) checkbox.checked = false;
+    if (continueBtn) {
+        continueBtn.disabled = true;
+        continueBtn.textContent = 'Accept & Continue';
+    }
+    setTermsError(errorAlert, '');
+}
+
+function openTermsAcceptanceModal(onAcceptedCallback) {
+    const modalEl = document.getElementById('termsAcceptanceModal');
+    if (!modalEl) return false;
+
+    pendingTermsActionCallback = typeof onAcceptedCallback === 'function' ? onAcceptedCallback : null;
+    resetTermsAcceptanceModalState();
+
+    const modal = getTermsModalInstance(modalEl);
+    if (modal) modal.show();
+    return true;
+}
+
+function initTermsAcceptanceModal() {
+    const modalEl = document.getElementById('termsAcceptanceModal');
+    const checkbox = document.getElementById('acceptTermsCheckbox');
+    const continueBtn = document.getElementById('acceptTermsContinueBtn');
+    const errorAlert = document.getElementById('termsAcceptanceErrorAlert');
+    if (!modalEl || !checkbox || !continueBtn) return;
+
+    if (modalEl.dataset.termsModalBound === 'true') return;
+    modalEl.dataset.termsModalBound = 'true';
+
+    function restoreContinueButton() {
+        continueBtn.disabled = !checkbox.checked;
+        continueBtn.textContent = 'Accept & Continue';
+    }
+
+    checkbox.addEventListener('change', () => {
+        continueBtn.disabled = !checkbox.checked;
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        resetTermsAcceptanceModalState();
+    });
+
+    continueBtn.addEventListener('click', async () => {
+        if (!checkbox.checked) return;
+        const acceptUrl = modalEl.dataset.acceptUrl;
+        if (!acceptUrl) return;
+
+        setTermsError(errorAlert, '');
+        continueBtn.disabled = true;
+        continueBtn.textContent = 'Saving...';
+
+        const termsVersion = modalEl.dataset.termsVersion || '';
+        const bodyParams = termsVersion
+            ? `accepted=true&version=${encodeURIComponent(termsVersion)}`
+            : 'accepted=true';
+
+        try {
+            const response = await csrfFetch(acceptUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: bodyParams,
+            });
+
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {}
+
+            if (!response.ok || !data || !data.accepted) {
+                const msg = (data && data.error)
+                    ? data.error
+                    : 'Could not record terms acceptance. Please try again.';
+                setTermsError(errorAlert, msg);
+                restoreContinueButton();
+                return;
+            }
+
+            document.querySelectorAll('[data-terms-accepted]').forEach((el) => {
+                el.dataset.termsAccepted = 'true';
+            });
+
+            const callbackToResume = pendingTermsActionCallback;
+            pendingTermsActionCallback = null;
+
+            const modal = getTermsModalInstance(modalEl);
+            if (modal) modal.hide();
+            resetTermsAcceptanceModalState();
+
+            if (typeof callbackToResume === 'function') {
+                await callbackToResume();
+            }
+        } catch (err) {
+            setTermsError(errorAlert, 'Network error. Please try again.');
+            restoreContinueButton();
+        }
+    });
+}
+
 function initBookingModal() {
     const dayPicker = document.getElementById('dayPicker');
     const modalEl = document.getElementById('confirmBookingModal');
@@ -452,7 +579,17 @@ function initBookingModal() {
         resetVerificationAlert();
     });
 
-    confirmBtn.addEventListener('click', async () => {
+    function resetConfirmBtn(disabled = false) {
+        confirmBtn.disabled = disabled;
+        confirmBtn.textContent = 'Next';
+    }
+
+    function promptTermsBeforeBooking() {
+        modal.hide();
+        return openTermsAcceptanceModal(submitBooking);
+    }
+
+    async function submitBooking() {
         const startAtVal = confirmBtn.dataset.startAt;
         const lessonOptionVal = confirmBtn.dataset.lessonOption;
         if (!startAtVal || !lessonOptionVal) return;
@@ -463,7 +600,11 @@ function initBookingModal() {
         try {
             const response = await csrfFetch(bookSlotUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
                 body: `start_at=${encodeURIComponent(startAtVal)}&lesson_option=${encodeURIComponent(lessonOptionVal)}`,
             });
 
@@ -479,9 +620,26 @@ function initBookingModal() {
                     if (verificationAlert) {
                         verificationAlert.classList.remove('d-none');
                     }
-                    confirmBtn.disabled = true;
-                    confirmBtn.textContent = 'Next';
+                    resetConfirmBtn(true);
                     return;
+                }
+
+                if (response.status === 403 && data && data.error === 'terms_not_accepted') {
+                    dayPicker.dataset.termsAccepted = 'false';
+                    const termsModalEl = document.getElementById('termsAcceptanceModal');
+                    const renderedVersion = termsModalEl ? termsModalEl.dataset.termsVersion : '';
+                    if (
+                        data.terms_version
+                        && renderedVersion
+                        && data.terms_version !== renderedVersion
+                    ) {
+                        window.location.reload();
+                        return;
+                    }
+                    resetConfirmBtn(false);
+                    if (promptTermsBeforeBooking()) {
+                        return;
+                    }
                 }
 
                 const errorMsg = (data && data.error)
@@ -490,8 +648,7 @@ function initBookingModal() {
                         ? 'A server error occurred. Please refresh the page to verify your booking status.'
                         : 'Something went wrong. Please try again.');
                 alert(errorMsg);
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Next';
+                resetConfirmBtn(false);
                 return;
             }
 
@@ -499,9 +656,22 @@ function initBookingModal() {
             window.location.reload();
         } catch (err) {
             alert('Network error. Please check your connection and try again.');
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = 'Next';
+            resetConfirmBtn(false);
         }
+    }
+
+    confirmBtn.addEventListener('click', async () => {
+        if (!confirmBtn.dataset.startAt || !confirmBtn.dataset.lessonOption) return;
+
+        if (
+            dayPicker.dataset.termsRequired === 'true'
+            && dayPicker.dataset.termsAccepted !== 'true'
+            && promptTermsBeforeBooking()
+        ) {
+            return;
+        }
+
+        await submitBooking();
     });
 }
 
@@ -2044,6 +2214,7 @@ if (typeof document !== 'undefined') {
         initSignupTimezoneDetection();
         initLessonCardsScroll();
         initWeekNav();
+        initTermsAcceptanceModal();
         initBookingModal();
         initVerificationBanner();
         initLessonDetailModalManager();
@@ -2059,6 +2230,9 @@ if (typeof document !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        initTermsAcceptanceModal,
+        openTermsAcceptanceModal,
+        initBookingModal,
         initLessonJoinWindowWatcher,
         updateLessonJoinWindows,
         updateLessonRequestsBadge,

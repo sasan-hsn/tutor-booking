@@ -2,6 +2,7 @@ from datetime import time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.messages import get_messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -9,7 +10,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import Tenant, User
+from accounts.models import Tenant, TermsAcceptance, User
 from booking.models import Booking, RegularAvailability
 from booking.services import create_booking_with_hold
 from wallet.exceptions import (
@@ -589,6 +590,13 @@ class BookSlotHoldViewTests(TestCase):
         )
         self.student_client = self.client_class()
         self.student_client.force_login(self.student_user)
+        TermsAcceptance.objects.create(
+            user=self.student_user,
+            tenant=self.tenant,
+            version=settings.TERMS_CURRENT_VERSION,
+            ip_address="127.0.0.1",
+            user_agent="TestSuite",
+        )
 
         self.tz = ZoneInfo(self.teacher_user.timezone)
         self.future_day = timezone.localdate() + timedelta(days=2)

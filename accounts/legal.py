@@ -97,3 +97,57 @@ def render_terms_html(markdown_text: str) -> SafeString:
 
     flush_all()
     return mark_safe("\n".join(blocks))
+
+
+def get_default_tenant(*, teacher=None):
+    """Return the storefront's primary Tenant instance, if provisioned."""
+    from portfolio.models import TeacherProfile
+
+    from .models import Tenant
+
+    target_teacher = teacher
+    if target_teacher is None:
+        target_teacher = TeacherProfile.objects.order_by("id").first()
+    if target_teacher is not None:
+        tenant = Tenant.objects.filter(teacher_profile=target_teacher).first()
+        if tenant is not None:
+            return tenant
+    return Tenant.objects.select_related("teacher_profile").order_by("id").first()
+
+
+def has_accepted_current_terms(user, *, tenant=None) -> bool:
+    """Return True if user has accepted settings.TERMS_CURRENT_VERSION for tenant."""
+    from .models import TermsAcceptance
+
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+
+    target_tenant = tenant if tenant is not None else get_default_tenant()
+    if target_tenant is None:
+        return False
+
+    return TermsAcceptance.objects.filter(
+        user=user,
+        tenant=target_tenant,
+        version=settings.TERMS_CURRENT_VERSION,
+    ).exists()
+
+
+def get_terms_gate_state(
+    user,
+    *,
+    teacher=None,
+    tenant=None,
+    only_if_payments_enabled: bool = False,
+) -> tuple[bool, bool]:
+    """
+    Return (terms_required, terms_accepted) for user on the resolved tenant.
+    """
+    target_tenant = (
+        tenant if tenant is not None else get_default_tenant(teacher=teacher)
+    )
+    if only_if_payments_enabled and (
+        target_tenant is None or not target_tenant.payments_enabled
+    ):
+        return False, True
+    return True, has_accepted_current_terms(user, tenant=target_tenant)

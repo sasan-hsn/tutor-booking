@@ -1,20 +1,23 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls.exceptions import NoReverseMatch
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from .decorators import student_required
 from .forms import (
     StudentProfileSettingsForm,
     StudentSignUpForm,
     StyledAuthenticationForm,
     TeacherSignUpForm,
 )
-from .models import User
+from .legal import get_default_tenant
+from .models import TermsAcceptance, User
 from .rate_limiting import (
     check_login_rate_limit,
     check_resend_rate_limit,
@@ -585,3 +588,65 @@ def resend_verification_email(request):
             return redirect("booking:teacher_dashboard")
         return redirect("booking:student_dashboard")
     return redirect("accounts:login")
+
+
+@student_required
+@require_POST
+def accept_terms(request):
+    """Record student acceptance of the current Terms of Service version."""
+    accepted_val = (request.POST.get("accepted") or "").strip().lower()
+    if accepted_val not in {"true", "1", "on"}:
+        return JsonResponse(
+            {
+                "error": (
+                    "You must accept the Terms of Service and Financial Policy to continue."
+                )
+            },
+            status=400,
+        )
+
+    version = settings.TERMS_CURRENT_VERSION
+    submitted_version = (request.POST.get("version") or "").strip()
+    if submitted_version and submitted_version != version:
+        return JsonResponse(
+            {
+                "error": (
+                    "Terms version has been updated. Please refresh and review the latest Terms."
+                ),
+                "current_version": version,
+            },
+            status=409,
+        )
+
+    tenant = get_default_tenant()
+    if tenant is None:
+        return JsonResponse({"error": "No active tenant configured."}, status=400)
+
+    ip_address = get_client_ip(request) or "0.0.0.0"
+    user_agent = request.META.get("HTTP_USER_AGENT", "")
+
+    try:
+        acceptance, _ = TermsAcceptance.objects.get_or_create(
+            user=request.user,
+            tenant=tenant,
+            version=version,
+            defaults={
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+            },
+        )
+    except IntegrityError:
+        acceptance = TermsAcceptance.objects.get(
+            user=request.user,
+            tenant=tenant,
+            version=version,
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "accepted": True,
+            "version": acceptance.version,
+            "accepted_at": acceptance.accepted_at.isoformat(),
+        }
+    )
