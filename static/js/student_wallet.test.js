@@ -109,6 +109,7 @@ describe('Student Wallet Top-Up Modal Controller', () => {
             topupOrderAmountDisplay: new MockEl('SPAN', 'topupOrderAmountDisplay'),
             topupOrderExpiresDisplay: new MockEl('SPAN', 'topupOrderExpiresDisplay'),
             topupOrderReusedNote: new MockEl('DIV', 'topupOrderReusedNote'),
+            changeTopupAmountBtn: new MockEl('BUTTON', 'changeTopupAmountBtn'),
             bep20AckCheckbox: new MockEl('INPUT', 'bep20AckCheckbox'),
             topupDepositPreview: new MockEl('DIV', 'topupDepositPreview'),
             topupDepositLockOverlay: new MockEl('DIV', 'topupDepositLockOverlay'),
@@ -477,5 +478,102 @@ describe('Student Wallet Top-Up Modal Controller', () => {
         await termsModalOpenedWith();
         assert.strictEqual(elements.topUpModal.dataset.termsAccepted, 'true');
         assert.strictEqual(modalStates.topUpModal.shown, 1);
+    });
+
+    test('Change amount cancels unclaimed pending order, resets state, and returns to amount input step', async () => {
+        buildEnv({
+            activeOrder: {
+                order_id: 66,
+                amount: '25.00',
+                currency: 'USD',
+                expires_at_display: 'Nov 28, 2026 10:00',
+                already_claimed: false,
+                claimed_txhash: '',
+                claim_url: '/wallet/topup/66/claim/',
+                cancel_url: '/wallet/topup/66/cancel/',
+            },
+        });
+
+        let initiateCount = 0;
+        global.fetch = async (url, opts) => {
+            fetchCalls.push({ url, opts });
+            if (url === '/wallet/topup/initiate/') {
+                initiateCount += 1;
+                if (initiateCount === 1) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            success: true,
+                            reused: true,
+                            order_id: 66,
+                            amount: '25.00',
+                            currency: 'USD',
+                            address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+                            qr_data_uri: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                            expires_at_display: 'Nov 28, 2026 10:00',
+                            already_claimed: false,
+                            claim_url: '/wallet/topup/66/claim/',
+                            cancel_url: '/wallet/topup/66/cancel/',
+                        }),
+                    };
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        reused: false,
+                        order_id: 67,
+                        amount: '50.00',
+                        currency: 'USD',
+                        address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+                        qr_data_uri: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                        expires_at_display: 'Nov 28, 2026 11:00',
+                        already_claimed: false,
+                        claim_url: '/wallet/topup/67/claim/',
+                        cancel_url: '/wallet/topup/67/cancel/',
+                    }),
+                };
+            }
+            if (url === '/wallet/topup/66/cancel/') {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        order_id: 66,
+                        status: 'CANCELLED',
+                    }),
+                };
+            }
+            throw new Error(`Unexpected URL ${url}`);
+        };
+
+        studentWallet.initStudentWallet(global.document, global.window);
+        await elements.topupInitiateForm.dispatchEvent({ type: 'submit' });
+
+        // Check BEP-20 checkbox first to verify Change amount resets it cleanly
+        elements.bep20AckCheckbox.checked = true;
+        await elements.bep20AckCheckbox.dispatchEvent({ type: 'change' });
+        assert.strictEqual(elements.changeTopupAmountBtn.classList.contains('d-none'), false);
+
+        await elements.changeTopupAmountBtn.dispatchEvent({ type: 'click' });
+
+        assert.strictEqual(fetchCalls.length, 2);
+        assert.strictEqual(fetchCalls[1].url, '/wallet/topup/66/cancel/');
+        assert.strictEqual(elements.topupStepAmount.classList.contains('d-none'), false);
+        assert.strictEqual(elements.topupStepInstructions.classList.contains('d-none'), true);
+        assert.strictEqual(elements.bep20AckCheckbox.checked, false);
+        assert.strictEqual(elements.topupDepositAddressText.value, '');
+        assert.strictEqual(elements.topupQrImg.src, '');
+        assert.strictEqual(elements.topupActiveOrderData.textContent, '');
+
+        // Now submitting a lower/new amount validates normally and creates a fresh order
+        elements.topupAmountInput.value = '50.00';
+        await elements.topupInitiateForm.dispatchEvent({ type: 'submit' });
+        assert.strictEqual(fetchCalls.length, 3);
+        assert.strictEqual(elements.topupOrderAmountDisplay.textContent, '$50.00 USD');
+        assert.strictEqual(elements.topupOrderLabel.textContent, '#67');
     });
 });

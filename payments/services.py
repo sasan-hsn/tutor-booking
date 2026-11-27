@@ -107,6 +107,9 @@ def build_topup_order_payload(
         "claim_url": reverse(
             "wallet:student_topup_claim", kwargs={"order_id": order.id}
         ),
+        "cancel_url": reverse(
+            "wallet:student_topup_cancel", kwargs={"order_id": order.id}
+        ),
     }
     if include_instructions:
         from payments.qr import render_qr_data_uri
@@ -180,6 +183,34 @@ def create_topup_order(
     return order
 
 
+def _lock_owned_pending_order(
+    *,
+    tenant: "Tenant",
+    student: "User",
+    order: Order,
+    action_label: str,
+    action_past: str,
+) -> Order:
+    """Lock an Order row and enforce tenant/student ownership, PENDING status, and unclaimed state."""
+    locked_order = Order.objects.select_for_update().get(pk=order.pk)
+
+    if locked_order.tenant_id != tenant.id:
+        raise PermissionDenied("This top-up order does not belong to this workspace.")
+    if locked_order.student_id != student.id:
+        raise PermissionDenied(
+            f"You do not have permission to {action_label} this top-up order."
+        )
+    if locked_order.status != Order.Status.PENDING:
+        raise TopupOrderConflictError(
+            f"Only pending top-up orders can be {action_past}."
+        )
+    if locked_order.claimed_at is not None:
+        raise TopupOrderConflictError(
+            "A payment claim has already been submitted for this order."
+        )
+    return locked_order
+
+
 def submit_topup_claim(
     *,
     tenant: "Tenant",
@@ -203,27 +234,18 @@ def submit_topup_claim(
         raise ValidationError("Transfer timestamp must include timezone information.")
 
     with transaction.atomic():
-        locked_order = Order.objects.select_for_update().get(pk=order.pk)
-
-        if locked_order.tenant_id != tenant.id:
-            raise PermissionDenied(
-                "This top-up order does not belong to this workspace."
-            )
-        if locked_order.student_id != student.id:
-            raise PermissionDenied(
-                "You do not have permission to claim this top-up order."
-            )
+        locked_order = _lock_owned_pending_order(
+            tenant=tenant,
+            student=student,
+            order=order,
+            action_label="claim",
+            action_past="claimed",
+        )
 
         now = timezone.now()
-        if locked_order.status != Order.Status.PENDING:
-            raise TopupOrderConflictError("Only pending top-up orders can be claimed.")
         if locked_order.expires_at <= now:
             raise TopupOrderConflictError(
                 "This top-up order has expired. Please start a new top-up."
-            )
-        if locked_order.claimed_at is not None:
-            raise TopupOrderConflictError(
-                "A payment claim has already been submitted for this order."
             )
 
         effective_paid_at = paid_at if paid_at is not None else now
@@ -273,6 +295,37 @@ def submit_topup_claim(
             tenant.id,
             student.id,
             clean_txhash or "<none>",
+        )
+        return locked_order
+
+
+def cancel_pending_topup_order(
+    *,
+    tenant: "Tenant",
+    student: "User",
+    order: Order,
+) -> Order:
+    """
+    Cancel an unclaimed PENDING top-up Order for the owning student and tenant so
+    the student can initiate a new order with a corrected amount.
+    """
+    with transaction.atomic():
+        locked_order = _lock_owned_pending_order(
+            tenant=tenant,
+            student=student,
+            order=order,
+            action_label="cancel",
+            action_past="cancelled",
+        )
+        locked_order.status = Order.Status.CANCELLED
+        locked_order.save(update_fields=["status"])
+        order.status = locked_order.status
+
+        logger.info(
+            "Pending top-up order cancelled: order_id=%s tenant_id=%s student_id=%s",
+            locked_order.id,
+            tenant.id,
+            student.id,
         )
         return locked_order
 

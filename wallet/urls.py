@@ -18,4 +18,9 @@ urlpatterns = [
         payment_views.student_topup_claim,
         name="student_topup_claim",
     ),
+    path(
+        "topup/<int:order_id>/cancel/",
+        payment_views.student_topup_cancel,
+        name="student_topup_cancel",
+    ),
 ]

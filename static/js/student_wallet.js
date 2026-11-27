@@ -95,6 +95,7 @@
             orderAmountDisplay: documentRef.getElementById('topupOrderAmountDisplay'),
             orderExpiresDisplay: documentRef.getElementById('topupOrderExpiresDisplay'),
             orderReusedNote: documentRef.getElementById('topupOrderReusedNote'),
+            changeAmountBtn: documentRef.getElementById('changeTopupAmountBtn'),
             bep20Checkbox: documentRef.getElementById('bep20AckCheckbox'),
             depositPreview: documentRef.getElementById('topupDepositPreview'),
             depositLockOverlay: documentRef.getElementById('topupDepositLockOverlay'),
@@ -196,6 +197,10 @@
             }
             if (elements.orderReusedNote) {
                 elements.orderReusedNote.classList.toggle('d-none', !orderData.reused);
+            }
+            if (elements.changeAmountBtn) {
+                const canChange = !orderData.already_claimed && Boolean(orderData.cancel_url);
+                elements.changeAmountBtn.classList.toggle('d-none', !canChange);
             }
             if (elements.amountInput && orderData.amount) {
                 elements.amountInput.value = orderData.amount;
@@ -411,6 +416,69 @@
             );
         }
 
+        async function cancelAndChangeAmount() {
+            if (!state.currentOrder || !state.currentOrder.cancel_url) return;
+
+            const result = await postTopupForm(
+                state.currentOrder.cancel_url,
+                '',
+                elements.changeAmountBtn,
+                'Cancelling...',
+                'Change amount'
+            );
+            if (result.networkError) return;
+
+            if (!result.ok) {
+                if (result.status === 403 && result.data && result.data.error === 'terms_not_accepted') {
+                    if (handleTermsNotAccepted(result.data, cancelAndChangeAmount)) {
+                        return;
+                    }
+                }
+                const errorMsg = (result.data && result.data.error)
+                    ? result.data.error
+                    : 'Unable to cancel this order. Please try again.';
+                setAlert(elements.errorAlert, errorMsg);
+                return;
+            }
+
+            state.currentOrder = null;
+            const activeOrderScript = documentRef.getElementById('topupActiveOrderData');
+            if (activeOrderScript) {
+                activeOrderScript.textContent = '';
+            }
+            if (elements.bep20Checkbox) {
+                elements.bep20Checkbox.checked = false;
+            }
+            if (elements.addressInput) {
+                elements.addressInput.value = '';
+            }
+            if (elements.qrImg) {
+                elements.qrImg.src = '';
+            }
+            if (elements.orderReusedNote) {
+                elements.orderReusedNote.classList.add('d-none');
+            }
+            if (elements.claimTxhashInput) {
+                elements.claimTxhashInput.value = '';
+            }
+            if (elements.claimPaidAtInput) {
+                elements.claimPaidAtInput.value = '';
+            }
+
+            const hasActiveAddress = modalEl.dataset.hasActiveAddress === 'true';
+            if (elements.amountInput) {
+                elements.amountInput.disabled = !hasActiveAddress;
+            }
+            if (elements.initiateBtn) {
+                elements.initiateBtn.disabled = !hasActiveAddress;
+            }
+
+            resetCopyButtonLabel();
+            syncBep20Gate();
+            setAlert(elements.errorAlert, '');
+            showOnlyStep('amount');
+        }
+
         if (elements.initiateForm) {
             elements.initiateForm.addEventListener('submit', async function (e) {
                 if (e && typeof e.preventDefault === 'function') {
@@ -438,6 +506,10 @@
 
         if (elements.bep20Checkbox) {
             elements.bep20Checkbox.addEventListener('change', syncBep20Gate);
+        }
+
+        if (elements.changeAmountBtn) {
+            elements.changeAmountBtn.addEventListener('click', cancelAndChangeAmount);
         }
 
         if (elements.copyBtn) {

@@ -13,7 +13,11 @@ from accounts.models import Tenant, TermsAcceptance, User
 from accounts.tests.base import RoleTestCase
 from notifications.models import Notification
 from payments.models import Order, PaymentAddress
-from payments.services import create_topup_order, submit_topup_claim
+from payments.services import (
+    cancel_pending_topup_order,
+    create_topup_order,
+    submit_topup_claim,
+)
 
 
 class SubmitTopupClaimServiceTests(TestCase):
@@ -222,6 +226,88 @@ class SubmitTopupClaimServiceTests(TestCase):
 
         self.assertEqual(Notification.objects.count(), 0)
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_cancel_pending_topup_order_transitions_unclaimed_order_to_cancelled(self):
+        order = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("25.00"),
+        )
+        cancelled = cancel_pending_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            order=order,
+        )
+        order.refresh_from_db()
+        self.assertEqual(cancelled.status, Order.Status.CANCELLED)
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+
+        # Creating a new order now creates a fresh order with the corrected amount
+        replacement = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("50.00"),
+        )
+        self.assertNotEqual(replacement.pk, order.pk)
+        self.assertEqual(replacement.amount, Decimal("50.00"))
+
+    def test_cancel_pending_topup_order_rejects_claimed_wrong_owner_and_non_pending(
+        self,
+    ):
+        claimed_order = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("30.00"),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            submit_topup_claim(
+                tenant=self.tenant,
+                student=self.student_user,
+                order=claimed_order,
+                txhash="0xclaimed",
+            )
+
+        with self.assertRaises(ValidationError):
+            cancel_pending_topup_order(
+                tenant=self.tenant,
+                student=self.student_user,
+                order=claimed_order,
+            )
+
+        unclaimed_order = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("35.00"),
+        )
+        with self.assertRaises(PermissionDenied):
+            cancel_pending_topup_order(
+                tenant=self.tenant,
+                student=self.other_student,
+                order=unclaimed_order,
+            )
+        with self.assertRaises(PermissionDenied):
+            cancel_pending_topup_order(
+                tenant=self.other_tenant,
+                student=self.student_user,
+                order=unclaimed_order,
+            )
+
+        completed_order = Order.objects.create(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("40.00"),
+            currency="USD",
+            status=Order.Status.COMPLETED,
+            idempotency_key="cancel-completed-key",
+            expires_at=timezone.now() + timedelta(hours=12),
+            completed_at=timezone.now(),
+        )
+        with self.assertRaises(ValidationError):
+            cancel_pending_topup_order(
+                tenant=self.tenant,
+                student=self.student_user,
+                order=completed_order,
+            )
 
 
 class LocalQrGeneratorTests(TestCase):
@@ -516,3 +602,87 @@ class StudentTopUpHttpViewTests(RoleTestCase):
         self.assertContains(inactive_resp, 'data-has-active-address="false"')
         self.assertContains(inactive_resp, 'id="topupInactiveAddressAlert"')
         self.assertContains(inactive_resp, "Top-ups temporarily unavailable.")
+
+    def test_topup_cancel_endpoint_cancels_unclaimed_order_and_enforces_guards(self):
+        order = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("25.00"),
+        )
+        cancel_url = reverse(
+            "wallet:student_topup_cancel", kwargs={"order_id": order.id}
+        )
+        self.assertEqual(cancel_url, f"/wallet/topup/{order.id}/cancel/")
+
+        # Other student gets 403
+        TermsAcceptance.objects.create(
+            user=self.other_student,
+            tenant=self.tenant,
+            version="2026.1",
+            ip_address="127.0.0.1",
+        )
+        other_client = self.client_class()
+        other_client.force_login(self.other_student)
+        self.assertEqual(
+            other_client.post(
+                cancel_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+            ).status_code,
+            403,
+        )
+
+        # Unaccepted terms gets 403 terms_not_accepted
+        TermsAcceptance.objects.filter(user=self.student_user).delete()
+        terms_resp = self.student_client.post(
+            cancel_url,
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(terms_resp.status_code, 403)
+        self.assertEqual(terms_resp.json().get("error"), "terms_not_accepted")
+
+        TermsAcceptance.objects.create(
+            user=self.student_user,
+            tenant=self.tenant,
+            version="2026.1",
+            ip_address="127.0.0.1",
+        )
+
+        # Owner cancels unclaimed pending order -> 200 CANCELLED
+        ok_resp = self.student_client.post(
+            cancel_url,
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(ok_resp.status_code, 200)
+        self.assertTrue(ok_resp.json()["success"])
+        self.assertEqual(ok_resp.json()["status"], Order.Status.CANCELLED)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+
+        # Re-cancelling cancelled order -> 409
+        self.assertEqual(
+            self.student_client.post(
+                cancel_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+            ).status_code,
+            409,
+        )
+
+        # Cancelling an already-claimed order -> 409
+        claimed_order = create_topup_order(
+            tenant=self.tenant,
+            student=self.student_user,
+            amount=Decimal("40.00"),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            submit_topup_claim(
+                tenant=self.tenant,
+                student=self.student_user,
+                order=claimed_order,
+                txhash="0xclaimed",
+            )
+        claimed_cancel_resp = self.student_client.post(
+            reverse(
+                "wallet:student_topup_cancel", kwargs={"order_id": claimed_order.id}
+            ),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(claimed_cancel_resp.status_code, 409)

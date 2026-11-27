@@ -46,6 +46,7 @@ from payments.services import (
     build_manual_external_id,
     build_tenant_ledger_csv,
     build_topup_order_payload,
+    cancel_pending_topup_order,
     create_topup_order,
     get_active_pending_order,
     get_user_display_name,
@@ -805,11 +806,8 @@ def student_topup_initiate(request):
     return JsonResponse(payload)
 
 
-@student_required
-@require_POST
-@terms_accepted_required
-def student_topup_claim(request, order_id: int):
-    """Record a student's 'I Have Paid' claim on a pending top-up order."""
+def _run_student_order_action(request, order_id: int, action_fn):
+    """Resolve tenant & order, run an order mutation, and map domain errors to JSON responses."""
     tenant = get_default_tenant()
     if tenant is None:
         return JsonResponse(
@@ -818,26 +816,8 @@ def student_topup_claim(request, order_id: int):
         )
 
     order = get_object_or_404(Order, pk=order_id)
-    viewer_tz = ZoneInfo(getattr(request.user, "timezone", "UTC") or "UTC")
-    form = StudentTopUpClaimForm(request.POST, viewer_tz=viewer_tz)
-    if not form.is_valid():
-        return JsonResponse(
-            {
-                "success": False,
-                "error": _first_form_error(form),
-                "errors": form.errors,
-            },
-            status=400,
-        )
-
     try:
-        claimed_order = submit_topup_claim(
-            tenant=tenant,
-            student=request.user,
-            order=order,
-            txhash=form.cleaned_data["txhash"],
-            paid_at=form.cleaned_data["paid_at"],
-        )
+        return action_fn(tenant, order)
     except PermissionDenied as exc:
         return JsonResponse(
             {"success": False, "error": str(exc) or "Permission denied."},
@@ -855,14 +835,65 @@ def student_topup_claim(request, order_id: int):
             status=400,
         )
 
-    return JsonResponse(
-        {
-            "success": True,
-            "order_id": claimed_order.id,
-            "claimed_txhash": claimed_order.claimed_txhash,
-            "message": (
-                "Your payment claim has been submitted. "
-                "The teacher will verify the deposit and credit your account shortly."
-            ),
-        }
-    )
+
+@student_required
+@require_POST
+@terms_accepted_required
+def student_topup_claim(request, order_id: int):
+    """Record a student's 'I Have Paid' claim on a pending top-up order."""
+    viewer_tz = ZoneInfo(getattr(request.user, "timezone", "UTC") or "UTC")
+    form = StudentTopUpClaimForm(request.POST, viewer_tz=viewer_tz)
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "error": _first_form_error(form),
+                "errors": form.errors,
+            },
+            status=400,
+        )
+
+    def perform_claim(tenant: Tenant, order: Order) -> JsonResponse:
+        claimed_order = submit_topup_claim(
+            tenant=tenant,
+            student=request.user,
+            order=order,
+            txhash=form.cleaned_data["txhash"],
+            paid_at=form.cleaned_data["paid_at"],
+        )
+        return JsonResponse(
+            {
+                "success": True,
+                "order_id": claimed_order.id,
+                "claimed_txhash": claimed_order.claimed_txhash,
+                "message": (
+                    "Your payment claim has been submitted. "
+                    "The teacher will verify the deposit and credit your account shortly."
+                ),
+            }
+        )
+
+    return _run_student_order_action(request, order_id, perform_claim)
+
+
+@student_required
+@require_POST
+@terms_accepted_required
+def student_topup_cancel(request, order_id: int):
+    """Cancel an unclaimed pending top-up order so the student can choose a new amount."""
+
+    def perform_cancel(tenant: Tenant, order: Order) -> JsonResponse:
+        cancelled_order = cancel_pending_topup_order(
+            tenant=tenant,
+            student=request.user,
+            order=order,
+        )
+        return JsonResponse(
+            {
+                "success": True,
+                "order_id": cancelled_order.id,
+                "status": cancelled_order.status,
+            }
+        )
+
+    return _run_student_order_action(request, order_id, perform_cancel)
