@@ -209,7 +209,8 @@ class PeriodicExpirationTasksTests(TestCase):
         )
 
         mail.outbox.clear()
-        reminded_count = payout_reminder_task()
+        with self.captureOnCommitCallbacks(execute=True):
+            reminded_count = payout_reminder_task()
 
         self.assertEqual(reminded_count, 1)
 

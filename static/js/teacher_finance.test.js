@@ -719,4 +719,30 @@ describe('Teacher Finance JS Controller', () => {
         );
         assert.strictEqual(elements.receivingAddressPassword.value, '');
     });
+
+    test('?claim_id query parameter pre-fills manual top-up modal from verified DOM claim button', () => {
+        const claimBtn = new MockEl('BUTTON');
+        claimBtn.dataset = {
+            orderId: '99',
+            studentId: '14',
+            amount: '55.00',
+            reference: '0xverifiedclaimtx',
+            notes: 'Top-up claim for Order #99',
+        };
+        elements.financeClaimsContainer.querySelector = (selector) => {
+            if (selector === '.btn-credit-deposit[data-order-id="99"]') {
+                return claimBtn;
+            }
+            return null;
+        };
+        global.window.location = { search: '?claim_id=99' };
+
+        initTeacherFinance(mockDoc);
+
+        assert.strictEqual(modalShown, true);
+        assert.strictEqual(elements.manualTopupStudent.value, '14');
+        assert.strictEqual(elements.manualTopupAmount.value, '55.00');
+        assert.strictEqual(elements.manualTopupReference.value, '0xverifiedclaimtx');
+        assert.strictEqual(elements.manualTopupNotes.value, 'Top-up claim for Order #99');
+    });
 });

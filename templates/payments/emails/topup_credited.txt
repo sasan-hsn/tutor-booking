@@ -1,0 +1,12 @@
+Hello {{ student_name }},
+
+Your deposit of ${{ amount_credited|floatformat:2 }} {{ currency }} has been verified and credited to your prepaid lesson wallet.
+
+Amount Credited: +${{ amount_credited|floatformat:2 }} {{ currency }}
+Updated Available Balance: ${{ available_balance|floatformat:2 }} {{ currency }}
+Ledger Reference: {{ reference_display }}
+{% if order_id %}Order ID: #{{ order_id }}
+{% endif %}{% if notes %}Notes: {{ notes }}
+{% endif %}
+View your wallet: {{ wallet_url }}
+Site: {{ site_domain }}

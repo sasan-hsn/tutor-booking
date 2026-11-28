@@ -103,6 +103,52 @@
         }
     }
 
+    function handleWalletBalanceUpdated(data) {
+        if (!data || typeof document === 'undefined') return;
+        const avail = data.available_balance;
+        const reserved = data.reserved_balance;
+        const settled = data.settled_balance;
+
+        const navbarAmount = document.getElementById('navbarWalletAmount');
+        if (navbarAmount && typeof avail !== 'undefined') {
+            navbarAmount.textContent = `$${avail}`;
+        }
+
+        const navbarBadge = document.getElementById('navbarWalletBadge');
+        if (navbarBadge && typeof avail !== 'undefined') {
+            if (typeof navbarBadge.setAttribute === 'function') {
+                navbarBadge.setAttribute('aria-label', `Wallet balance $${avail}`);
+                if (typeof reserved !== 'undefined' && typeof settled !== 'undefined') {
+                    const popoverHtml = `<div class='small'><div>Available Balance: <strong>$${avail}</strong></div><div>Reserved in Lesson Holds: <strong>$${reserved}</strong></div><div>Settled Account Total: <strong>$${settled}</strong></div></div>`;
+                    navbarBadge.setAttribute('data-bs-content', popoverHtml);
+                    if (
+                        typeof window !== 'undefined'
+                        && window.bootstrap
+                        && window.bootstrap.Popover
+                        && typeof window.bootstrap.Popover.getInstance === 'function'
+                    ) {
+                        const popoverInstance = window.bootstrap.Popover.getInstance(navbarBadge);
+                        if (popoverInstance && typeof popoverInstance.setContent === 'function') {
+                            popoverInstance.setContent({ '.popover-body': popoverHtml });
+                        }
+                    }
+                }
+            }
+        }
+
+        const summaryMappings = [
+            ['walletAvailableBalanceValue', avail],
+            ['walletReservedBalanceValue', reserved],
+            ['walletSettledBalanceValue', settled],
+        ];
+        for (let i = 0; i < summaryMappings.length; i++) {
+            const [elId, val] = summaryMappings[i];
+            if (typeof val === 'undefined') continue;
+            const el = document.getElementById(elId);
+            if (el) el.textContent = `$${val}`;
+        }
+    }
+
     function prependNotificationItem(data, listEl) {
         if (!listEl || typeof document === 'undefined') return null;
 
@@ -234,7 +280,9 @@
                 // If close button was clicked, don't navigate
                 if (e.target && e.target.closest('.btn-close')) return;
                 try {
-                    await markNotificationAsRead(data.id, { elements });
+                    if (data.id) {
+                        await markNotificationAsRead(data.id, { elements });
+                    }
                 } finally {
                     if (typeof window !== 'undefined') {
                         window.location.href = data.action_url;
@@ -435,6 +483,14 @@
                         if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
                             document.dispatchEvent(new CustomEvent('tutor:chat:unread_count', { detail: data }));
                         }
+                    } else if (data && data.type === 'wallet_balance_updated') {
+                        handleWalletBalanceUpdated(data);
+                        if (toastContainerEl) {
+                            showNotificationToast(data, toastContainerEl, { elements });
+                        }
+                        if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+                            document.dispatchEvent(new CustomEvent('tutor:wallet:updated', { detail: data }));
+                        }
                     }
                 } catch (err) {
                     console.error('Error handling notification message:', err);
@@ -484,7 +540,8 @@
 
         const dropdownBtn = document.getElementById('notificationDropdownBtn');
         const chatBtn = document.getElementById('chatInboxBtn');
-        if (!dropdownBtn && !chatBtn && !options.force) return null;
+        const walletBadge = document.getElementById('navbarWalletBadge');
+        if (!dropdownBtn && !chatBtn && !walletBadge && !options.force) return null;
 
         const elements = {
             badge: document.getElementById('notificationBadge'),
@@ -571,6 +628,7 @@
         getCurrentUnreadCount,
         updateUnreadCount,
         updateUnreadChatCount,
+        handleWalletBalanceUpdated,
         prependNotificationItem,
         showNotificationToast,
         markNotificationItemReadInDom,

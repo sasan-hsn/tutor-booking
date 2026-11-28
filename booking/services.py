@@ -16,9 +16,12 @@ from wallet.exceptions import CurrencyMismatchError, TenantMismatchError
 from wallet.models import Wallet
 from wallet.services import get_or_create_wallet, reserve_funds, settle_booking
 
-from . import emails as booking_emails
 from .models import Booking, RegularAvailability, WeeklyOverride
-from .notifications import notify_booking_expired, notify_dispute_resolved
+from .notifications import (
+    notify_booking_expired,
+    notify_dispute_opened,
+    notify_dispute_resolved,
+)
 
 INSTANT_TUTORING_BUFFER = timedelta(hours=1)
 
@@ -659,6 +662,11 @@ def open_dispute(*, booking: Booking, student, reason: str = "", now=None) -> Bo
                 "updated_at",
             ]
         )
+        notify_dispute_opened(locked_booking)
+        booking_id = locked_booking.id
+        transaction.on_commit(
+            lambda bid=booking_id: _dispatch_dispute_opened_email(bid)
+        )
         return locked_booking
 
 
@@ -682,12 +690,16 @@ _DISPUTE_RESOLUTION_MAP = {
 }
 
 
-def _dispatch_dispute_resolved_notifications(booking_id: int, resolution: str) -> None:
-    booking = Booking.objects.select_related("student", "teacher__user").get(
-        pk=booking_id
-    )
-    notify_dispute_resolved(booking, resolution=resolution)
-    booking_emails.send_dispute_resolved_emails(booking, resolution=resolution)
+def _dispatch_dispute_opened_email(booking_id: int) -> None:
+    from . import tasks as booking_tasks
+
+    booking_tasks.safe_send_dispute_opened_email(booking_id)
+
+
+def _dispatch_dispute_resolved_email(booking_id: int, resolution: str) -> None:
+    from . import tasks as booking_tasks
+
+    booking_tasks.safe_send_dispute_resolved_emails(booking_id, resolution)
 
 
 def resolve_dispute(
@@ -749,9 +761,12 @@ def resolve_dispute(
             ]
         )
 
+        notify_dispute_resolved(locked_booking, resolution=resolution)
         booking_id = locked_booking.id
         transaction.on_commit(
-            lambda: _dispatch_dispute_resolved_notifications(booking_id, resolution)
+            lambda bid=booking_id, res=resolution: _dispatch_dispute_resolved_email(
+                bid, res
+            )
         )
 
         booking.status = locked_booking.status

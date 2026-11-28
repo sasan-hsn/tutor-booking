@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
@@ -269,7 +268,7 @@ def submit_topup_claim(
                 f"{student_name} claimed a ${locked_order.amount:.2f} "
                 f"{locked_order.currency} top-up deposit{tx_suffix}."
             ),
-            action_url=reverse("payments:teacher_finance"),
+            action_url=f"{reverse('payments:teacher_finance')}?claim_id={locked_order.id}",
             metadata={
                 "order_id": locked_order.id,
                 "student_id": student.id,
@@ -387,6 +386,14 @@ def mark_payment_successful(
             locked_order.status = Order.Status.COMPLETED
             locked_order.completed_at = now
             locked_order.save(update_fields=["status", "completed_at"])
+
+        import payments.tasks as payment_tasks
+
+        transaction.on_commit(
+            lambda pid=locked_payment.id: payment_tasks.safe_send_topup_credited_email(
+                pid
+            )
+        )
 
         payment.status = locked_payment.status
         payment.completed_at = locked_payment.completed_at
@@ -547,8 +554,6 @@ def create_payout_request(
     now = timezone.now()
     expires_at = now + timedelta(hours=confirmation_hours)
 
-    from payments.emails import send_payout_confirmation_email
-
     with transaction.atomic():
         payout = Payout.objects.create(
             tenant=tenant,
@@ -567,10 +572,12 @@ def create_payout_request(
         # Attach raw token to in-memory instance for caller convenience
         payout.raw_token = raw_token
 
-        send_payout_confirmation_email(
-            payout,
-            raw_token,
-            confirmation_hours=confirmation_hours,
+        import payments.tasks as payment_tasks
+
+        transaction.on_commit(
+            lambda pid=payout.id, tok=raw_token, hrs=confirmation_hours: payment_tasks.safe_send_payout_confirmation_email(
+                pid, tok, hrs
+            )
         )
 
     logger.info(
@@ -1034,29 +1041,18 @@ def has_duplicate_payout_external_ref(
 
 def _schedule_payout_status_email(
     *,
-    student: "User",
-    subject: str,
-    body_lines: list[str],
+    payout_id: int,
+    status: str,
+    reason: str = "",
 ) -> None:
-    """Schedule a transactional payout status email on transaction commit."""
-    recipient_email = (getattr(student, "email", "") or "").strip()
-    if not recipient_email:
-        return
+    """Schedule a non-blocking payout status email on transaction commit."""
+    import payments.tasks as payment_tasks
 
-    student_name = student.first_name or student.username
-    message = f"Hello {student_name},\n\n" + "\n".join(body_lines)
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
-
-    def _send():
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=from_email,
-            recipient_list=[recipient_email],
-            fail_silently=False,
+    transaction.on_commit(
+        lambda pid=payout_id, st=status, r=reason: payment_tasks.safe_send_payout_status_email(
+            pid, st, r
         )
-
-    transaction.on_commit(_send)
+    )
 
 
 def mark_payout_processing(
@@ -1096,20 +1092,8 @@ def mark_payout_processing(
         locked_payout.save(update_fields=["status", "processed_at"])
 
         _schedule_payout_status_email(
-            student=locked_payout.student,
-            subject=f"Payout Request #{locked_payout.id} Is Being Processed",
-            body_lines=[
-                (
-                    f"Your refund request #{locked_payout.id} for "
-                    f"${locked_payout.amount_net:.2f} {tenant.default_currency} "
-                    f"to {locked_payout.destination} is now marked as PROCESSING."
-                ),
-                "",
-                (
-                    "Your teacher is executing the transfer and you will receive another "
-                    "confirmation once the transaction reference is recorded."
-                ),
-            ],
+            payout_id=locked_payout.id,
+            status=Payout.Status.PROCESSING,
         )
 
     # Sync memory instance
@@ -1206,18 +1190,8 @@ def settle_payout(
         )
 
         _schedule_payout_status_email(
-            student=locked_payout.student,
-            subject=f"Payout Request #{locked_payout.id} Completed",
-            body_lines=[
-                (
-                    f"Your refund request #{locked_payout.id} for "
-                    f"${locked_payout.amount_net:.2f} {tenant.default_currency} "
-                    f"to {locked_payout.destination} has been completed."
-                ),
-                "",
-                f"Transaction reference: {clean_ref}",
-                "This settlement has been recorded in your wallet ledger.",
-            ],
+            payout_id=locked_payout.id,
+            status=Payout.Status.COMPLETED,
         )
 
     # Sync memory instance
@@ -1293,24 +1267,10 @@ def release_payout(
         locked_payout.processed_at = timezone.now()
         locked_payout.save(update_fields=["processed_at"])
 
-        body_lines = [
-            (
-                f"Your refund request #{locked_payout.id} for "
-                f"${locked_payout.amount_gross:.2f} {tenant.default_currency} "
-                f"has been rejected."
-            ),
-            "",
-        ]
-        if clean_reason:
-            body_lines.extend([f"Reason: {clean_reason}", ""])
-        body_lines.append(
-            f"The held amount (${locked_payout.amount_gross:.2f} {tenant.default_currency}) "
-            "has been released back to your available wallet balance."
-        )
         _schedule_payout_status_email(
-            student=locked_payout.student,
-            subject=f"Payout Request #{locked_payout.id} Rejected",
-            body_lines=body_lines,
+            payout_id=locked_payout.id,
+            status=Payout.Status.REJECTED,
+            reason=clean_reason,
         )
 
     # Sync memory instance

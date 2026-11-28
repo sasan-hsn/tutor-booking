@@ -11,6 +11,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Case, DecimalField, F, Sum, Value, When
 from django.utils import timezone
 
+from notifications.services import schedule_wallet_balance_updated
 from wallet.exceptions import (
     CurrencyMismatchError,
     InsufficientBalanceError,
@@ -576,7 +577,8 @@ def credit_wallet(
 ) -> LedgerEntry:
     """
     Credits a wallet's settled_balance atomically under select_for_update lock.
-    Creates an immutable LedgerEntry audit record.
+    Creates an immutable LedgerEntry audit record and pushes a live balance update
+    to the wallet owner's private Channels group upon transaction commit.
     Allowed even if wallet.is_frozen is True.
     """
     _validate_positive_decimal(amount)
@@ -603,6 +605,13 @@ def credit_wallet(
             idempotency_key=idempotency_key,
             reference_id=reference_id,
             description=description,
+        )
+
+        schedule_wallet_balance_updated(
+            locked_wallet,
+            entry_id=entry.id,
+            entry_type=entry_type,
+            amount=amount,
         )
 
         _sync_wallet_instance(wallet, locked_wallet)
@@ -721,6 +730,14 @@ def adjust_wallet(
             reference_id=reference_id,
             description=description,
         )
+
+        if direction == "credit":
+            schedule_wallet_balance_updated(
+                locked_wallet,
+                entry_id=entry.id,
+                entry_type=entry_type,
+                amount=amount,
+            )
 
         _sync_wallet_instance(wallet, locked_wallet)
 
@@ -927,6 +944,13 @@ def waive_penalty(
             idempotency_key=f"tenant:{tenant.id}:booking:{locked_booking.id}:waiver",
             reference_id=f"booking_{locked_booking.id}",
             description=description,
+        )
+
+        schedule_wallet_balance_updated(
+            locked_wallet,
+            entry_id=entry.id,
+            entry_type=LedgerEntry.EntryType.WAIVER,
+            amount=amount,
         )
 
         logger.info(

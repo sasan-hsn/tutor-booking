@@ -22,6 +22,7 @@ class Notification(models.Model):
         BOOKING_EXPIRED = "booking_expired", "Booking Expired"
         LESSON_REMINDER_24H = "lesson_reminder_24h", "Lesson Reminder 24h"
         LESSON_REMINDER_1H = "lesson_reminder_1h", "Lesson Reminder 1h"
+        DISPUTE_OPENED = "dispute_opened", "Dispute Opened"
         DISPUTE_RESOLVED = "dispute_resolved", "Dispute Resolved"
         TOPUP_CLAIM_SUBMITTED = "topup_claim_submitted", "Top-Up Claim Submitted"
         PAYOUT_REQUESTED = "payout_requested", "Refund Request Submitted"

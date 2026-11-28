@@ -26,6 +26,7 @@
                 <td>
                     <button type="button"
                         class="btn btn-sm btn-primary btn-credit-deposit"
+                        data-order-id="{{ claim.id }}"
                         data-student-id="{{ claim.student_id }}"
                         data-amount="{{ claim.amount|floatformat:2 }}"
                         data-reference="{{ claim.claimed_txhash }}"

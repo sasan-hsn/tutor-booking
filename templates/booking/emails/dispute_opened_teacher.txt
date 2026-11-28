@@ -1,0 +1,11 @@
+Hello {{ teacher_name }},
+
+{{ student_name }} has opened a dispute for Booking #{{ booking.id }} ({{ lesson_type }}).
+
+Lesson Date: {{ date }}
+Lesson Time: {{ time }} ({{ timezone }})
+Held Amount: ${{ amount_display }} {{ currency }}
+{% if dispute_reason %}Reason: {{ dispute_reason }}
+{% endif %}
+Please review and resolve this dispute within {{ dispute_window_days }} days in your Finance dashboard: {{ finance_url }}
+Site: {{ site_domain }}

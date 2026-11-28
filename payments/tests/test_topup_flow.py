@@ -103,7 +103,10 @@ class SubmitTopupClaimServiceTests(TestCase):
             event_type=Notification.EventType.TOPUP_CLAIM_SUBMITTED,
         )
         self.assertEqual(notif.actor, self.student_user)
-        self.assertEqual(notif.action_url, reverse("payments:teacher_finance"))
+        self.assertEqual(
+            notif.action_url,
+            f"{reverse('payments:teacher_finance')}?claim_id={order.id}",
+        )
         self.assertEqual(notif.metadata.get("order_id"), order.id)
         self.assertIn("40.00", notif.message)
         self.assertIn("Alice Student", notif.message)

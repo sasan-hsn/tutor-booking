@@ -171,6 +171,13 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
         """
         await self.send_json(event)
 
+    async def wallet_balance_updated(self, event):
+        """
+        Handler invoked when a real-time wallet balance update frame is broadcast
+        to the authenticated user's private channel layer group.
+        """
+        await self.send_json(event)
+
     @database_sync_to_async
     def _get_unread_count(self, user_id):
         return Notification.objects.unread_count_for(user_id)

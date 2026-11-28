@@ -355,7 +355,34 @@
         toggleModal(modal, 'show');
     }
 
-    function initTeacherFinance(doc) {
+    function prefillClaimByIdFromQuery(elements, win) {
+        const windowRef = win || (typeof window !== 'undefined' ? window : null);
+        const search = (windowRef && windowRef.location && windowRef.location.search) || '';
+        if (!search || !elements.financeClaimsContainer || typeof elements.financeClaimsContainer.querySelector !== 'function') {
+            return;
+        }
+        const params = new URLSearchParams(search);
+        const rawClaimId = (params.get('claim_id') || '').trim();
+        if (!/^\d+$/.test(rawClaimId)) return;
+
+        const claimBtn = elements.financeClaimsContainer.querySelector(
+            `.btn-credit-deposit[data-order-id="${rawClaimId}"]`
+        );
+        if (!claimBtn || !claimBtn.dataset) return;
+
+        prefillManualTopupForm(
+            {
+                studentId: claimBtn.dataset.studentId,
+                amount: claimBtn.dataset.amount,
+                reference: claimBtn.dataset.reference,
+                notes: claimBtn.dataset.notes,
+            },
+            elements
+        );
+        toggleModal(elements.manualTopupModal, 'show');
+    }
+
+    function initTeacherFinance(doc, win) {
         const documentRef = doc || (typeof document !== 'undefined' ? document : null);
         if (!documentRef) return;
 
@@ -428,6 +455,8 @@
                 resetManualTopupForm(elements);
             });
         }
+
+        prefillClaimByIdFromQuery(elements, win);
 
         if (elements.financeClaimsContainer) {
             elements.financeClaimsContainer.addEventListener('click', function (e) {

@@ -318,16 +318,50 @@ def mark_booking_reminders_read(booking):
         )
 
 
+def notify_dispute_opened(booking):
+    """Create and send an in-platform DISPUTE_OPENED notification to the teacher."""
+    try:
+        metadata = _build_booking_metadata(booking, booking.student_display_name)
+        metadata["held_amount"] = f"{booking.held_amount:.2f}"
+        return create_and_send_notification(
+            recipient=booking.teacher.user,
+            actor=booking.student,
+            event_type=Notification.EventType.DISPUTE_OPENED,
+            level=Notification.Level.WARNING,
+            title="New Lesson Dispute Opened",
+            message=(
+                f"{booking.student_display_name} opened a dispute for "
+                f"Booking #{booking.id} (${booking.held_amount:.2f})."
+            ),
+            action_url=reverse("payments:teacher_finance"),
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to emit dispute_opened notification for booking #%s",
+            booking.id,
+        )
+        return None
+
+
+_DISPUTE_OUTCOME_LABELS: dict[str, str] = {
+    "EXPIRED_AUTO_STUDENT": "as auto-expired in student favor (funds released)",
+    "STUDENT_FAVOR": "in student favor (funds released)",
+    "TEACHER_FAVOR": "in teacher favor (lesson completed)",
+}
+
+
 def notify_dispute_resolved(booking, *, resolution: str):
     """Create and send deduplicated in-platform DISPUTE_RESOLVED notifications to both parties."""
     from .models import Booking
 
     created = []
-    is_student_favor = resolution == Booking.DisputeResolution.STUDENT_FAVOR
-    outcome_label = (
-        "in student favor (funds released)"
-        if is_student_favor
-        else "in teacher favor (lesson completed)"
+    is_student_release = resolution in (
+        Booking.DisputeResolution.STUDENT_FAVOR,
+        Booking.DisputeResolution.EXPIRED_AUTO_STUDENT,
+    )
+    outcome_label = _DISPUTE_OUTCOME_LABELS.get(
+        resolution, "in teacher favor (lesson completed)"
     )
 
     targets = [
@@ -335,7 +369,11 @@ def notify_dispute_resolved(booking, *, resolution: str):
             "student",
             booking.student,
             booking.teacher_display_name,
-            Notification.Level.SUCCESS if is_student_favor else Notification.Level.INFO,
+            (
+                Notification.Level.SUCCESS
+                if is_student_release
+                else Notification.Level.INFO
+            ),
             (
                 f"Your dispute for Booking #{booking.id} with "
                 f"{booking.teacher_display_name} was resolved {outcome_label}."

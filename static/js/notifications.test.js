@@ -791,4 +791,71 @@ describe('Notifications Client Module', () => {
 
         client.disconnect();
     });
+
+    test('WebSocket wallet_balance_updated event updates navbar badge, wallet summary, shows toast, and dispatches tutor:wallet:updated', () => {
+        const navbarWalletAmount = new MockElement('span', 'navbarWalletAmount');
+        navbarWalletAmount.textContent = '$10.00';
+        const navbarWalletBadge = new MockElement('a', 'navbarWalletBadge');
+        let popoverContentArg = null;
+        global.window.bootstrap = {
+            Popover: {
+                getInstance: (el) => (el === navbarWalletBadge ? {
+                    setContent: (arg) => { popoverContentArg = arg; },
+                } : null),
+            },
+        };
+        const walletAvailableBalanceValue = new MockElement('div', 'walletAvailableBalanceValue');
+        walletAvailableBalanceValue.textContent = '$10.00';
+        const walletReservedBalanceValue = new MockElement('div', 'walletReservedBalanceValue');
+        const walletSettledBalanceValue = new MockElement('div', 'walletSettledBalanceValue');
+
+        const origGetById = global.document.getElementById.bind(global.document);
+        global.document.getElementById = (id) => {
+            if (id === 'navbarWalletAmount') return navbarWalletAmount;
+            if (id === 'navbarWalletBadge') return navbarWalletBadge;
+            if (id === 'walletAvailableBalanceValue') return walletAvailableBalanceValue;
+            if (id === 'walletReservedBalanceValue') return walletReservedBalanceValue;
+            if (id === 'walletSettledBalanceValue') return walletSettledBalanceValue;
+            return origGetById(id);
+        };
+
+        let dispatchedWalletEvent = null;
+        global.document.addEventListener('tutor:wallet:updated', (e) => {
+            dispatchedWalletEvent = e;
+        });
+
+        const client = notifications.initNotifications({
+            autoConnectWs: true,
+            WebSocketClass: MockWebSocket,
+        });
+        const ws = MockWebSocket.instances[0];
+        ws.simulateOpen();
+
+        const walletPayload = {
+            type: 'wallet_balance_updated',
+            entry_type: 'CREDIT',
+            amount: '40.00',
+            currency: 'USD',
+            available_balance: '50.00',
+            reserved_balance: '0.00',
+            settled_balance: '50.00',
+            level: 'success',
+            title: 'Deposit Credited',
+            message: '+$40.00 USD has been credited to your wallet.',
+            action_url: '/wallet/',
+        };
+        ws.simulateMessage(walletPayload);
+
+        assert.strictEqual(navbarWalletAmount.textContent, '$50.00');
+        assert.ok(popoverContentArg && popoverContentArg['.popover-body'].includes('$50.00'));
+        assert.strictEqual(walletAvailableBalanceValue.textContent, '$50.00');
+        assert.strictEqual(walletReservedBalanceValue.textContent, '$0.00');
+        assert.strictEqual(walletSettledBalanceValue.textContent, '$50.00');
+        assert.strictEqual(toastContainer.children.length, 1);
+        assert.notStrictEqual(dispatchedWalletEvent, null);
+        assert.strictEqual(dispatchedWalletEvent.type, 'tutor:wallet:updated');
+        assert.deepStrictEqual(dispatchedWalletEvent.detail, walletPayload);
+
+        client.disconnect();
+    });
 });
