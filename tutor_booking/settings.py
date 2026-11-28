@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import dj_database_url
+from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
@@ -293,7 +294,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     "reconcile-wallet-balances-daily": {
         "task": "wallet.tasks.reconcile_wallet_balances_task",
-        "schedule": 86400.0,
+        "schedule": crontab(hour=0, minute=0),
     },
     "expire-payout-tokens-hourly": {
         "task": "payments.tasks.expire_payout_tokens_task",
