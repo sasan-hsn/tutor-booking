@@ -6,12 +6,11 @@ import requests
 from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
 from payments import emails
-from payments.models import Order, PaymentAddress, Payout
+from payments.models import Order, Payment, PaymentAddress, Payout
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +33,27 @@ def is_transient_email_error(exc: Exception) -> bool:
     return False
 
 
+def _execute_payment_email_task(task, send_fn, label: str, entity_id: int) -> bool:
+    try:
+        return send_fn()
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
+        logger.exception(
+            "Transient error sending %s for #%s. Retrying...",
+            label,
+            entity_id,
+        )
+        raise task.retry(exc=exc)
+
+
+def _safe_enqueue_payment_email(celery_task, label: str, *args) -> None:
+    try:
+        celery_task.delay(*args)
+    except Exception:
+        logger.exception("Failed to enqueue %s task (args=%s)", label, args)
+
+
 @shared_task(
     bind=True,
     max_retries=3,
@@ -54,27 +74,21 @@ def send_receiving_address_change_alert_task(self, payment_address_id: int) -> b
         )
         return False
 
-    try:
-        return emails.send_receiving_address_change_alert_email(payment_address)
-    except TRANSIENT_EMAIL_ERRORS as exc:
-        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
-            raise
-        logger.exception(
-            "Transient error sending receiving address security alert for #%s. Retrying...",
-            payment_address_id,
-        )
-        raise self.retry(exc=exc)
+    return _execute_payment_email_task(
+        self,
+        lambda: emails.send_receiving_address_change_alert_email(payment_address),
+        "receiving address security alert",
+        payment_address_id,
+    )
 
 
 def safe_send_receiving_address_change_alert(payment_address_id: int) -> None:
     """Safely enqueue receiving address security alert email without blocking HTTP responses."""
-    try:
-        send_receiving_address_change_alert_task.delay(payment_address_id)
-    except Exception:
-        logger.exception(
-            "Failed to enqueue receiving address security alert task for #%s",
-            payment_address_id,
-        )
+    _safe_enqueue_payment_email(
+        send_receiving_address_change_alert_task,
+        "receiving address security alert",
+        payment_address_id,
+    )
 
 
 @shared_task(
@@ -98,27 +112,156 @@ def send_topup_claim_alert_task(self, order_id: int) -> bool:
         )
         return False
 
-    try:
-        return emails.send_topup_claim_alert_email(order)
-    except TRANSIENT_EMAIL_ERRORS as exc:
-        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
-            raise
-        logger.exception(
-            "Transient error sending top-up claim alert for Order #%s. Retrying...",
-            order_id,
-        )
-        raise self.retry(exc=exc)
+    return _execute_payment_email_task(
+        self,
+        lambda: emails.send_topup_claim_alert_email(order),
+        "top-up claim alert",
+        order_id,
+    )
 
 
 def safe_send_topup_claim_alert(order_id: int) -> None:
     """Safely enqueue top-up claim alert email without blocking HTTP responses."""
+    _safe_enqueue_payment_email(
+        send_topup_claim_alert_task,
+        "top-up claim alert",
+        order_id,
+    )
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_topup_credited_email_task",
+)
+def send_topup_credited_email_task(self, payment_id: int) -> bool:
+    """Async task to send deposit credited receipt email to the student."""
     try:
-        send_topup_claim_alert_task.delay(order_id)
-    except Exception:
-        logger.exception(
-            "Failed to enqueue top-up claim alert task for Order #%s",
-            order_id,
+        payment = Payment.objects.select_related(
+            "tenant",
+            "order__student",
+            "claimed_by",
+        ).get(pk=payment_id)
+    except Payment.DoesNotExist:
+        logger.warning(
+            "Payment #%s not found; skipping top-up credited email.",
+            payment_id,
         )
+        return False
+
+    return _execute_payment_email_task(
+        self,
+        lambda: emails.send_topup_credited_email(payment),
+        "top-up credited email",
+        payment_id,
+    )
+
+
+def safe_send_topup_credited_email(payment_id: int) -> None:
+    """Safely enqueue top-up credited receipt email without blocking HTTP responses."""
+    _safe_enqueue_payment_email(
+        send_topup_credited_email_task,
+        "top-up credited email",
+        payment_id,
+    )
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_payout_confirmation_email_task",
+)
+def send_payout_confirmation_email_task(
+    self,
+    payout_id: int,
+    raw_token: str,
+    confirmation_hours: int = 24,
+) -> bool:
+    """Async task to dispatch Stage 1 payout confirmation email."""
+    try:
+        payout = Payout.objects.select_related("tenant", "student").get(pk=payout_id)
+    except Payout.DoesNotExist:
+        logger.warning(
+            "Payout #%s not found; skipping payout confirmation email.",
+            payout_id,
+        )
+        return False
+
+    return _execute_payment_email_task(
+        self,
+        lambda: emails.send_payout_confirmation_email(
+            payout,
+            raw_token,
+            confirmation_hours=confirmation_hours,
+        ),
+        "payout confirmation email",
+        payout_id,
+    )
+
+
+def safe_send_payout_confirmation_email(
+    payout_id: int,
+    raw_token: str,
+    confirmation_hours: int = 24,
+) -> None:
+    """Safely enqueue payout confirmation email without blocking HTTP responses."""
+    _safe_enqueue_payment_email(
+        send_payout_confirmation_email_task,
+        "payout confirmation email",
+        payout_id,
+        raw_token,
+        confirmation_hours,
+    )
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_payout_status_email_task",
+)
+def send_payout_status_email_task(
+    self,
+    payout_id: int,
+    status: str,
+    reason: str = "",
+) -> bool:
+    """Async task to dispatch payout status update email to the student."""
+    try:
+        payout = Payout.objects.select_related("tenant", "student").get(pk=payout_id)
+    except Payout.DoesNotExist:
+        logger.warning(
+            "Payout #%s not found; skipping payout status email.",
+            payout_id,
+        )
+        return False
+
+    return _execute_payment_email_task(
+        self,
+        lambda: emails.send_payout_status_email(payout, status=status, reason=reason),
+        "payout status email",
+        payout_id,
+    )
+
+
+def safe_send_payout_status_email(
+    payout_id: int,
+    status: str,
+    reason: str = "",
+) -> None:
+    """Safely enqueue payout status email without blocking HTTP responses."""
+    _safe_enqueue_payment_email(
+        send_payout_status_email_task,
+        "payout status email",
+        payout_id,
+        status,
+        reason,
+    )
 
 
 @shared_task(name="payments.tasks.expire_payout_tokens_task")
@@ -169,6 +312,54 @@ def expire_orders_task() -> int:
     return expired_count
 
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="payments.tasks.send_payout_reminder_48h_task",
+)
+def send_payout_reminder_48h_task(
+    self, payout_id: int, reminder_hours: int = 48
+) -> bool:
+    """Async task to dispatch 48h payout reminder email to the teacher."""
+    try:
+        payout = Payout.objects.select_related(
+            "tenant__teacher_profile__user",
+            "student",
+        ).get(pk=payout_id)
+    except Payout.DoesNotExist:
+        logger.warning(
+            "Payout #%s not found; skipping 48h payout reminder email.",
+            payout_id,
+        )
+        return False
+
+    try:
+        return emails.send_payout_reminder_48h_email(
+            payout, reminder_hours=reminder_hours
+        )
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
+        logger.exception(
+            "Transient error sending 48h payout reminder for Payout #%s. Retrying...",
+            payout_id,
+        )
+        raise self.retry(exc=exc)
+
+
+def safe_send_payout_reminder_48h(payout_id: int, reminder_hours: int = 48) -> None:
+    """Safely enqueue 48h payout reminder email without blocking."""
+    try:
+        send_payout_reminder_48h_task.delay(payout_id, reminder_hours)
+    except Exception:
+        logger.exception(
+            "Failed to enqueue 48h payout reminder task for Payout #%s",
+            payout_id,
+        )
+
+
 @shared_task(name="payments.tasks.payout_reminder_task")
 def payout_reminder_task() -> int:
     """
@@ -195,23 +386,11 @@ def payout_reminder_task() -> int:
     )
 
     reminded_count = 0
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@tutorbooking.local")
 
     for payout in payouts:
         teacher_user = payout.tenant.teacher_profile.user
-        student_name = payout.student.get_full_name() or payout.student.username
-        subject = f"[Action Required] Payout Request Reminder: Payout #{payout.id}"
-        message = (
-            f"Hello {teacher_user.first_name or teacher_user.username},\n\n"
-            f"This is a reminder that payout request #{payout.id} submitted by {student_name} "
-            f"for {payout.amount_gross} {payout.tenant.default_currency} has been awaiting your review "
-            f"for over {reminder_hours} hours.\n\n"
-            f"Destination: {payout.destination}\n"
-            f"Provider: {payout.provider}\n\n"
-            f"Please review and process or reject this payout in your Teacher Dashboard Finance tab."
-        )
+        enqueued = False
 
-        should_send = False
         with transaction.atomic():
             locked_payout = Payout.objects.select_for_update().get(pk=payout.pk)
             if (
@@ -220,20 +399,17 @@ def payout_reminder_task() -> int:
             ):
                 locked_payout.reminder_48h_sent_at = now
                 locked_payout.save(update_fields=["reminder_48h_sent_at"])
-                should_send = True
+                transaction.on_commit(
+                    lambda pid=locked_payout.id, hrs=reminder_hours: safe_send_payout_reminder_48h(
+                        pid, hrs
+                    )
+                )
+                enqueued = True
 
-        if should_send:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=from_email,
-                recipient_list=[teacher_user.email],
-                fail_silently=False,
-            )
+        if enqueued:
             reminded_count += 1
-
             logger.info(
-                "Payout reminder sent: payout_id=%s teacher_id=%s",
+                "Payout reminder scheduled: payout_id=%s teacher_id=%s",
                 payout.id,
                 teacher_user.id,
             )

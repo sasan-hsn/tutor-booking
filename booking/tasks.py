@@ -10,7 +10,6 @@ import requests
 from anymail.exceptions import AnymailAPIError
 from celery import shared_task
 from django.conf import settings
-from django.core.cache import cache
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -879,6 +878,15 @@ def expire_disputes_task(now=None) -> int:
         booking.status = Booking.Status.CANCELLED
         booking.dispute_resolution = Booking.DisputeResolution.EXPIRED_AUTO_STUDENT
         booking.save(update_fields=["status", "dispute_resolution", "updated_at"])
+        notifications.notify_dispute_resolved(
+            booking,
+            resolution=Booking.DisputeResolution.EXPIRED_AUTO_STUDENT,
+        )
+        transaction.on_commit(
+            lambda bid=booking.id: safe_send_dispute_resolved_emails(
+                bid, Booking.DisputeResolution.EXPIRED_AUTO_STUDENT
+            )
+        )
 
     expired_count = _settle_booking_batch(
         candidates=candidates,
@@ -894,6 +902,98 @@ def expire_disputes_task(now=None) -> int:
         expired_count,
     )
     return expired_count
+
+
+def _execute_booking_email_task(task, send_fn, label: str, booking_id: int):
+    try:
+        return send_fn()
+    except TRANSIENT_EMAIL_ERRORS as exc:
+        if isinstance(exc, AnymailAPIError) and not is_transient_email_error(exc):
+            raise
+        logger.exception(
+            "Transient error sending %s for booking #%s. Retrying...",
+            label,
+            booking_id,
+        )
+        raise task.retry(exc=exc)
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="booking.tasks.send_dispute_opened_email_task",
+)
+def send_dispute_opened_email_task(self, booking_id: int) -> bool:
+    """Async task to dispatch teacher alert email when a student opens a dispute."""
+    try:
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
+    except Booking.DoesNotExist:
+        logger.warning(
+            "Booking #%s not found; skipping dispute opened email.",
+            booking_id,
+        )
+        return False
+
+    return _execute_booking_email_task(
+        self,
+        lambda: emails.send_dispute_opened_teacher_email(booking),
+        "dispute opened email",
+        booking_id,
+    )
+
+
+def safe_send_dispute_opened_email(booking_id: int) -> None:
+    """Safely enqueue dispute opened email without blocking HTTP responses."""
+    try:
+        send_dispute_opened_email_task.delay(booking_id)
+    except Exception:
+        logger.exception(
+            "Failed to enqueue dispute opened email task for booking #%s",
+            booking_id,
+        )
+
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    name="booking.tasks.send_dispute_resolved_emails_task",
+)
+def send_dispute_resolved_emails_task(self, booking_id: int, resolution: str) -> int:
+    """Async task to dispatch dispute resolution emails to student and teacher."""
+    try:
+        booking = Booking.objects.select_related("student", "teacher__user").get(
+            pk=booking_id
+        )
+    except Booking.DoesNotExist:
+        logger.warning(
+            "Booking #%s not found; skipping dispute resolved emails.",
+            booking_id,
+        )
+        return 0
+
+    return _execute_booking_email_task(
+        self,
+        lambda: emails.send_dispute_resolved_emails(booking, resolution=resolution),
+        "dispute resolved emails",
+        booking_id,
+    )
+
+
+def safe_send_dispute_resolved_emails(booking_id: int, resolution: str) -> None:
+    """Safely enqueue dispute resolved emails without blocking HTTP responses."""
+    try:
+        send_dispute_resolved_emails_task.delay(booking_id, resolution)
+    except Exception:
+        logger.exception(
+            "Failed to enqueue dispute resolved emails task for booking #%s",
+            booking_id,
+        )
 
 
 @shared_task(name="booking.tasks.dispute_warning_task")
@@ -926,13 +1026,6 @@ def dispute_warning_task(now=None) -> int:
         )
 
         for booking in disputes:
-            dedup_key = (
-                f"dispute_warning:{booking.id}:day{warning_day}:"
-                f"{booking.dispute_opened_at.isoformat()}"
-            )
-            if not cache.add(dedup_key, True, timeout=86400 * dispute_window_days):
-                continue
-
             try:
                 dispatched = emails.send_dispute_warning_teacher_email(
                     booking,
@@ -941,10 +1034,7 @@ def dispute_warning_task(now=None) -> int:
                 )
                 if dispatched:
                     sent_count += 1
-                else:
-                    cache.delete(dedup_key)
             except Exception:
-                cache.delete(dedup_key)
                 logger.exception(
                     "Failed to send Day %s dispute warning email for booking #%s.",
                     warning_day,

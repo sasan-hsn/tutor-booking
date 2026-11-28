@@ -1,0 +1,8 @@
+Hello {{ teacher_name }},
+
+An open dispute for Booking #{{ booking.id }} with {{ student_name }} has reached Day {{ warning_day }}.
+
+If unresolved, held funds (${{ amount_display }} {{ currency }}) will automatically be released back to the student's wallet in {{ days_label }}.
+
+Please review and resolve this dispute in your Finance Dashboard: {{ finance_url }}
+Site: {{ site_domain }}

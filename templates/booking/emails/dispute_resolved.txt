@@ -1,0 +1,12 @@
+Hello {{ display_name }},
+
+{{ intro }}
+
+Booking: #{{ booking.id }}
+Resolution: {{ outcome_label }}
+Amount: ${{ amount_display }} {{ currency }}
+
+{{ detail }}
+
+{{ cta_label }}: {{ cta_url }}
+Site: {{ site_domain }}

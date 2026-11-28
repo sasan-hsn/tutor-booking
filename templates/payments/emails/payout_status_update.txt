@@ -1,0 +1,15 @@
+Hello {{ student_name }},
+
+{{ intro_text }}
+
+Refund Request: Payout #{{ payout.id }}
+Status: {{ status_label }}
+Amount: ${{ amount_display }} {{ currency }}
+Destination: {{ destination }}
+{% if external_ref %}Transaction Reference: {{ external_ref }}
+{% endif %}{% if reason %}Reason: {{ reason }}
+{% endif %}
+{{ detail_text }}
+
+View your wallet: {{ wallet_url }}
+Site: {{ site_domain }}

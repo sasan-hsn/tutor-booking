@@ -1,0 +1,76 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}{{ subject_title }} – {{ site_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+    {% if status_code == "COMPLETED" %}
+    <span style="display: inline-block; padding: 4px 12px; background-color: #D1FAE5; color: #065F46; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Completed
+    </span>
+    {% elif status_code == "REJECTED" %}
+    <span style="display: inline-block; padding: 4px 12px; background-color: #FEE2E2; color: #991B1B; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Rejected
+    </span>
+    {% else %}
+    <span style="display: inline-block; padding: 4px 12px; background-color: #DBEAFE; color: #1E40AF; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Processing
+    </span>
+    {% endif %}
+</div>
+
+<h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: #2F3E32; line-height: 1.3;">
+    {{ heading }}
+</h1>
+
+<p style="margin: 0 0 20px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    Hello <strong>{{ student_name }}</strong>, {{ intro_text }}
+</p>
+
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAF9; border-radius: 12px; border: 1px solid #E8F0EA; margin-bottom: 24px;">
+    <tr>
+        <td style="padding: 20px;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; width: 35%; font-weight: 500;">Refund Request</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">Payout #{{ payout.id }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Amount</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">${{ amount_display }} {{ currency }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Destination</td>
+                    <td style="padding: 6px 0; font-size: 13px; color: #2F3E32; font-weight: 600; font-family: monospace; word-break: break-all;">{{ destination }}</td>
+                </tr>
+                {% if external_ref %}
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Transaction Reference</td>
+                    <td style="padding: 6px 0; font-size: 13px; color: #065F46; font-weight: 600; font-family: monospace; word-break: break-all;">{{ external_ref }}</td>
+                </tr>
+                {% endif %}
+                {% if reason %}
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Rejection Reason</td>
+                    <td style="padding: 6px 0; font-size: 13px; color: #991B1B; font-weight: 500;">{{ reason }}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0 0 24px; font-size: 14px; color: #5C6E61; line-height: 1.6;">
+    {{ detail_text }}
+</p>
+
+<div style="text-align: center; margin-bottom: 8px;">
+    <a href="{{ wallet_url }}" style="display: inline-block; background-color: #4F7A62; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; padding: 12px 28px; border-radius: 8px;">
+        View My Wallet
+    </a>
+</div>
+{% endblock %}
+
+{% block footer_note %}
+This is an automated wallet notification regarding your refund request on {{ site_name }}.
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Action Required: Pending Refund Reminder – {{ site_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+    <span style="display: inline-block; padding: 4px 12px; background-color: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+        Action Required &bull; {{ reminder_hours }}h+ Pending
+    </span>
+</div>
+
+<h1 style="margin: 0 0 16px; font-size: 22px; font-weight: 700; color: #2F3E32; line-height: 1.3;">
+    Pending Refund Request Reminder
+</h1>
+
+<p style="margin: 0 0 20px; font-size: 15px; color: #5C6E61; line-height: 1.6;">
+    Hello <strong>{{ teacher_name }}</strong>, payout request <strong>#{{ payout.id }}</strong> from <strong>{{ student_name }}</strong> has been waiting in your review queue for more than <strong>{{ reminder_hours }} hours</strong>.
+</p>
+
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAF9; border-radius: 12px; border: 1px solid #E8F0EA; margin-bottom: 24px;">
+    <tr>
+        <td style="padding: 20px;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; width: 35%; font-weight: 500;">Payout ID</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">#{{ payout.id }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Student</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">{{ student_name }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Requested Amount</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">${{ amount_gross|floatformat:2 }} {{ currency }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Destination</td>
+                    <td style="padding: 6px 0; font-size: 13px; color: #2F3E32; font-weight: 600; font-family: monospace; word-break: break-all;">{{ destination }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; font-size: 13px; color: #5C6E61; font-weight: 500;">Provider</td>
+                    <td style="padding: 6px 0; font-size: 14px; color: #2F3E32; font-weight: 600;">{{ provider }}</td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+
+<p style="margin: 0 0 24px; font-size: 14px; color: #5C6E61; line-height: 1.6;">
+    Please review this refund request in your Finance dashboard and mark it as Processing, Completed, or Rejected.
+</p>
+
+<div style="text-align: center; margin-bottom: 8px;">
+    <a href="{{ finance_url }}" style="display: inline-block; background-color: #DB8A52; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; padding: 12px 28px; border-radius: 8px;">
+        Review Payout in Finance Dashboard
+    </a>
+</div>
+{% endblock %}
+
+{% block footer_note %}
+You are receiving this high-priority reminder because a verified student refund has awaited review for over {{ reminder_hours }} hours.
+{% endblock %}

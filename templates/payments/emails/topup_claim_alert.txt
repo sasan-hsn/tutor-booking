@@ -7,5 +7,5 @@ Transfer Time: {{ paid_at_str }}
 {% if txhash %}Reference / TXHash: {{ txhash }}
 {% endif %}Network: BNB Smart Chain (BEP-20) USDT
 
-Review and credit this deposit in your Finance dashboard: {{ finance_url }}
+Review and credit this deposit in your Finance dashboard: {{ claim_url|default:finance_url }}
 Site: {{ site_domain }}

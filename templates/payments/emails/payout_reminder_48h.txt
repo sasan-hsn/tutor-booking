@@ -1,0 +1,9 @@
+Hello {{ teacher_name }},
+
+This is a reminder that payout request #{{ payout.id }} submitted by {{ student_name }} for ${{ amount_gross|floatformat:2 }} {{ currency }} has been awaiting your review for over {{ reminder_hours }} hours.
+
+Destination: {{ destination }}
+Provider: {{ provider }}
+
+Please review and process or reject this payout in your Teacher Dashboard Finance tab: {{ finance_url }}
+Site: {{ site_domain }}

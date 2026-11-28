@@ -94,15 +94,16 @@ class StudentPayoutFlowTests(RoleTestCase):
         self.assertEqual(request_url, "/wallet/payouts/request/")
 
         # Small amount ($0.50) must be accepted (no unrequested minimum payout threshold)
-        resp = self.student_client.post(
-            request_url,
-            {
-                "amount": "25.50",
-                "destination": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
-                "notes": "Unused lesson balance",
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = self.student_client.post(
+                request_url,
+                {
+                    "amount": "25.50",
+                    "destination": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+                    "notes": "Unused lesson balance",
+                },
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
         self.assertEqual(resp.status_code, 200)
         payload = resp.json()
         self.assertTrue(payload["success"])

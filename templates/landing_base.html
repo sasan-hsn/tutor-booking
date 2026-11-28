@@ -103,4 +103,14 @@
         </div>
     </footer>
 </div>
+{% if user.is_authenticated %}
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1090;" id="notificationToastContainer" aria-live="polite" aria-atomic="true"></div>
+{% endif %}
 {% endblock %}
+
+{% if user.is_authenticated %}
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/notifications.js' %}"></script>
+{% endblock %}
+{% endif %}

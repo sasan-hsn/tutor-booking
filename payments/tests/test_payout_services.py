@@ -64,13 +64,14 @@ class CreatePayoutRequestTests(TestCase):
         destination = "0x71C8000000000000000000000000000000000000"
         amount = Decimal("25.00")
 
-        payout = create_payout_request(
-            tenant=self.tenant,
-            student=self.student,
-            amount_gross=amount,
-            destination=destination,
-            provider="crypto_usdt",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            payout = create_payout_request(
+                tenant=self.tenant,
+                student=self.student,
+                amount_gross=amount,
+                destination=destination,
+                provider="crypto_usdt",
+            )
 
         self.assertIsNotNone(payout.pk)
         self.assertEqual(payout.status, Payout.Status.PENDING_CONFIRMATION)
